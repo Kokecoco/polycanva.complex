@@ -31,8 +31,10 @@ function compress() {
 
         async function typeLog(msg, delay=30) {
             for (let i = 0; i < msg.length; i++) {
-                logDiv.innerHTML += msg[i];
-                await new Promise(r => setTimeout(r, delay));
+              const char = msg[i]; 
+              const lastHTML = logDiv.innerHTML; 
+              logDiv.innerHTML = lastHTML + char;                
+              await new Promise(r => setTimeout(r, delay));
             }
             logDiv.innerHTML += "<br>";
         }
