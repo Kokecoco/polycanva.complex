@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>世界最高の圧縮ソフト</title>
+<style>
+  body { font-family: sans-serif; text-align: center; margin: 40px; }
+  button { margin: 10px; padding: 10px 20px; border-radius: 10px; }
+  #log { margin-top: 20px; white-space: pre-wrap; text-align: left; display: inline-block; }
+  #dots { font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>圧縮ソフト</h1>
+<p>ファイルをアップロードすると、独自のアルゴリズムを用いて世界最強レベルまで圧縮します。</p>
+<input type="file" id="fileInput"><br>
+<button onclick="compress()">圧縮</button>
+<div id="log"></div>
+<div id="dots"></div>
+
+<script>
+function compress() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return alert("ファイルを選んでください");
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        const bytes = new Uint8Array(reader.result);
+        const logDiv = document.getElementById("log");
+        logDiv.textContent = "";
+
+        async function typeLog(msg, delay=30) {
+            for (let i = 0; i < msg.length; i++) {
+                logDiv.textContent += msg[i];
+                await new Promise(r => setTimeout(r, delay));
+            }
+            logDiv.textContent += "\n";
+        }
+
+        async function runCompression() {
+            await typeLog("圧縮開始…");
+
+            // 圧縮中アニメーション
+            const dotsDiv = document.getElementById("dots");
+            let count = 0;
+            const dotInterval = setInterval(() => {
+                dotsDiv.textContent = "圧縮中" + ".".repeat(count % 4);
+                count++;
+            }, 300);
+
+            // 圧縮処理（2倍に増やすだけ）
+            await new Promise(r => setTimeout(r, 2000)); // 演出用の待ち時間
+            const doubled = new Uint8Array(bytes.length * 2);
+            for (let i = 0; i < bytes.length; i++) {
+                doubled[i*2] = bytes[i];
+                doubled[i*2+1] = bytes[i];
+            }
+
+            await typeLog("核融合検知…");
+
+
+            clearInterval(dotInterval);
+            dotsDiv.textContent = "";
+
+            downloadFile(doubled, file.name + ".lol");
+            await typeLog(`圧縮完了！元サイズ: ${bytes.length}B → 圧縮後: ${doubled.length}B`);
+            await typeLog("圧縮完了");
+        }
+
+        runCompression();
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function downloadFile(data, filename) {
+    const blob = new Blob([data]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
