@@ -31,10 +31,10 @@ function compress() {
 
         async function typeLog(msg, delay=30) {
             for (let i = 0; i < msg.length; i++) {
-                logDiv.textContent += msg[i];
+                logDiv.innerHTML += msg[i];
                 await new Promise(r => setTimeout(r, delay));
             }
-            logDiv.textContent += "\n";
+            logDiv.innerHTML += "<br>";
         }
 
         async function runCompression() {
@@ -65,6 +65,8 @@ function compress() {
             downloadFile(doubled, file.name + ".lol");
             await typeLog(`圧縮完了！元サイズ: ${bytes.length}B → 圧縮後: ${doubled.length}B`);
             await typeLog("圧縮完了");
+            await typeLog("発生した核融合を除去するために、<a href='unzipper.html'>核融合除去</a>を行うことをおすすめします。");
+
         }
 
         runCompression();
