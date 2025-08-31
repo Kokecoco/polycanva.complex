@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>核融合を取り除く</title>
+<style>
+  body { font-family: sans-serif; text-align: center; margin: 40px; }
+  button { margin: 10px; padding: 10px 20px; border-radius: 10px; }
+  #log { margin-top: 20px; white-space: pre-wrap; text-align: left; display: inline-block; }
+  #dots { font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>核融合を取り除く</h1>
+<p><a href="zipper.html">世界最高の圧縮ソフト</a>を用いて、もし核融合が発生してしまった場合にそれを取り除くツールです。</p>
+
+<input type="file" id="fileInput"><br>
+<button onclick="decompress()">核融合を取り除く</button>
+
+<div id="log"></div>
+<div id="dots"></div>
+
+<script>
+function decompress() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return alert("ファイルを選んでください");
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        const bytes = new Uint8Array(reader.result);
+        const logDiv = document.getElementById("log");
+        logDiv.textContent = "";
+
+        async function typeLog(msg, delay=30) {
+            for (let i = 0; i < msg.length; i++) {
+                logDiv.textContent += msg[i];
+                await new Promise(r => setTimeout(r, delay));
+            }
+            logDiv.textContent += "\n";
+        }
+
+        async function runDecompression() {
+            await typeLog("展開開始…");
+            await typeLog("展開中…");
+
+            // 展開中アニメーション
+            const dotsDiv = document.getElementById("dots");
+            let count = 0;
+            const dotInterval = setInterval(() => {
+                dotsDiv.textContent = "展開中" + ".".repeat(count % 4);
+                count++;
+            }, 300);
+
+            await new Promise(r => setTimeout(r, 1000));
+
+            // 展開処理（2バイトごとに1バイトを取り出す）
+            const restored = new Uint8Array(bytes.length / 2);
+            for (let i = 0; i < restored.length; i++) {
+                restored[i] = bytes[i*2];
+            }
+
+            clearInterval(dotInterval);
+            dotsDiv.textContent = "";
+
+            downloadFile(restored, file.name.replace(/\.lol$/, "") + "_restored");
+            await typeLog(`展開完了！元サイズ: ${restored.length}B`);
+        }
+
+        runDecompression();
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function downloadFile(data, filename) {
+    const blob = new Blob([data]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
