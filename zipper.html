@@ -29,15 +29,35 @@ function compress() {
         const logDiv = document.getElementById("log");
         logDiv.textContent = "";
 
-        async function typeLog(msg, delay=30) {
-            for (let i = 0; i < msg.length; i++) {
-              const char = msg[i]; 
-              const lastHTML = logDiv.innerHTML; 
-              logDiv.innerHTML = lastHTML + char;                
-              await new Promise(r => setTimeout(r, delay));
-            }
-            logDiv.innerHTML += "<br>";
+async function typeLogHTML(msg, delay=30) {
+    const logDiv = document.getElementById("log");
+    const tagRegex = /<[^>]*>.*?<\/[^>]*>/g; // 単純な閉じタグまでのマッチ
+    let lastIndex = 0;
+
+    let match;
+    while ((match = tagRegex.exec(msg)) !== null) {
+        // タグまでのテキストを1文字ずつ表示
+        const textPart = msg.slice(lastIndex, match.index);
+        for (let char of textPart) {
+            logDiv.innerHTML += char;
+            await new Promise(r => setTimeout(r, delay));
         }
+
+        // タグ全体を一度に追加
+        logDiv.innerHTML += match[0];
+        lastIndex = match.index + match[0].length;
+    }
+
+    // 残りのテキスト
+    const remaining = msg.slice(lastIndex);
+    for (let char of remaining) {
+        logDiv.innerHTML += char;
+        await new Promise(r => setTimeout(r, delay));
+    }
+
+    logDiv.innerHTML += "<br>";
+}
+
 
         async function runCompression() {
             await typeLog("圧縮開始…");
@@ -58,16 +78,16 @@ function compress() {
                 doubled[i*2+1] = bytes[i];
             }
 
-            await typeLog("核融合検知…");
+            await typeLogHTML("核融合検知…");
 
 
             clearInterval(dotInterval);
             dotsDiv.textContent = "";
 
             downloadFile(doubled, file.name + ".lol");
-            await typeLog(`圧縮完了！元サイズ: ${bytes.length}B → 圧縮後: ${doubled.length}B`);
-            await typeLog("圧縮完了");
-            await typeLog("発生した核融合を除去するために、<a href='unzipper.html'>核融合除去</a>を行うことをおすすめします。");
+            await typeLogHTML(`圧縮完了！元サイズ: ${bytes.length}B → 圧縮後: ${doubled.length}B`);
+            await typeLogHTML("圧縮完了");
+            await typeLogHTML("発生した核融合を除去するために、<a href='unzipper.html'>核融合除去</a>を行うことをおすすめします。");
 
         }
 
