@@ -18,7 +18,7 @@
         
         // テキスト生成パイプラインを準備（初回はモデルのダウンロードに時間がかかります）
         outputElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
-        const generator = await pipeline('text-generation', 'Xenova/rinna-japanese-gpt2-small');
+        const generator = await pipeline('text-generation', 'Xenova/cyberagent-open-calm-small');
         outputElement.textContent = "準備完了！";
 
         async function generateMeigen() {
