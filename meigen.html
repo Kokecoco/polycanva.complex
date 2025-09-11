@@ -73,7 +73,7 @@
 
         // 準備（一度だけ実行）
         outputElement.textContent = "AIの準備をしています...";
-        const generator = await pipeline('text-generation', 'Xenova/distilgpt2');
+        const generator = await pipeline('text-generation', 'Xenova/gpt2-medium');
         outputElement.textContent = "準備完了！ボタンを押してください";
 
         async function generateAndTranslate() {
