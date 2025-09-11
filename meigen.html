@@ -23,7 +23,7 @@
 
         async function generateMeigen() {
             outputElement.textContent = "迷言を考えています...";
-            const prompt = "面白い迷言を一つだけ教えて。";
+            const prompt = "日本語の面白い迷言を一つ考えてください。";
             
             const result = await generator(prompt, {
                 max_new_tokens: 50, // 生成する最大文字数
