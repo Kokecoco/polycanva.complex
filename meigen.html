@@ -8,6 +8,59 @@
     <p id="meigen-output">ボタンを押して生成してください</p>
     <button id="generate-button">新しい迷言を生成する</button>
 
+        <!-- ▼▼▼ ここからがインスペクタ（ログ表示）用のコード ▼▼▼ -->
+    
+    <!-- ログ表示用のUI -->
+    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;">
+      <div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div>
+      <pre id="dev-log-content"></pre>
+    </div>
+
+    <script>
+      // --- ログを画面上のパネルに追加する関数 ---
+      function logToPanel(message, isError = false) {
+        const logContent = document.getElementById('dev-log-content');
+        if (logContent) {
+            const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message;
+            logContent.innerHTML += coloredMessage.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n\n';
+            const logPanel = document.getElementById('dev-log-panel');
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+      }
+
+      // --- JavaScriptエラーの監視 ---
+      window.onerror = function(message, source, lineno, colno, error) {
+        const errorMessage = `[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`;
+        logToPanel(errorMessage, true);
+      };
+      window.onunhandledrejection = function(event) {
+        logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true);
+      };
+
+      // --- リソースの読み込みを監視 ---
+      const observer = new PerformanceObserver((list) => {
+        list.getEntries().forEach((entry) => {
+            logToPanel(`[リソース監視]\n  ファイル: ${entry.name}\n  読込時間: ${entry.duration.toFixed(2)}ms`);
+        });
+      });
+      observer.observe({ type: "resource", buffered: true });
+
+      // --- Fetch APIの監視 ---
+      const originalFetch = window.fetch;
+      window.fetch = function() {
+        const [url, options] = arguments;
+        logToPanel(`[Fetch APIリクエスト]\n  URL: ${url}\n  Method: ${options ? options.method || 'GET' : 'GET'}`);
+        return originalFetch.apply(this, arguments).then((response) => {
+          logToPanel(`[Fetch APIレスポンス]\n  URL: ${response.url}\n  Status: ${response.status} ${response.statusText}`);
+          return response;
+        }).catch((error) => {
+          logToPanel(`[Fetch APIエラー]\n  URL: ${url}\n  エラー: ${error}`, true);
+          throw error;
+        });
+      };
+    </script>
+    <!-- ▲▲▲ ここまでがインスペクタ用のコード ▲▲▲ -->
+    
     <!-- Transformers.jsを読み込む -->
     <script type="module">
         import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
