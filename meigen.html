@@ -104,7 +104,7 @@
                 const translationResult = await response.json();
                 
                 // --- 3. 最終結果を表示 ---
-                outputElement.textContent = translationResult.translated_text;
+                outputElement.textContent = "原文:"+englishText+"　日本語訳:"+translationResult.translated_text;
 
             } catch (error) {
                 console.error("エラーが発生しました:", error);
