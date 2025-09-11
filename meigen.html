@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ブラウザAI迷言ジェネレーター</title>
+    <title>ブラウザAI迷言ジェネレーター (翻訳版)</title>
 </head>
 <body>
     <h1>今日のAI迷言</h1>
-    <p id="meigen-output">生成中...</p>
+    <p id="meigen-output">ボタンを押して生成してください</p>
     <button id="generate-button">新しい迷言を生成する</button>
-    <button onclick="generateError()">わざとエラーを起こす</button> <!-- エラーテスト用ボタン -->
 
     <!-- Transformers.jsを読み込む -->
     <script type="module">
@@ -15,117 +14,54 @@
 
         const outputElement = document.getElementById('meigen-output');
         const generateButton = document.getElementById('generate-button');
-        
-        // テキスト生成パイプラインを準備（初回はモデルのダウンロードに時間がかかります）
-        outputElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
-        const generator = await pipeline('text-generation', 'Xenova/cyberagent-open-calm-small');
-        outputElement.textContent = "準備完了！";
 
-        async function generateMeigen() {
-            outputElement.textContent = "迷言を考えています...";
-            const prompt = "日本語の面白い迷言を一つ考えてください。";
-            
-            const result = await generator(prompt, {
-                max_new_tokens: 50, // 生成する最大文字数
-                do_sample: true,
-                temperature: 0.7, // 数値が高いほど創造的になる
-            });
-            
-            // 生成されたテキストを表示
-            outputElement.textContent = result[0].generated_text;
-        }
+        // ★★★ ステップ1でコピーしたあなたのGASウェブアプリのURLをここに貼り付け ★★★
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzPJS6reXcVq0YlWijAVtcmDJ4NGOoABhi1yWOso0V9Bg57rNI5zI54ZX0w2O5M0YT3/exec";
 
-        generateButton.addEventListener('click', generateMeigen);
-    </script>
-    
-    <!-- ▼▼▼ ここからが監視・ログ表示用のコード ▼▼▼ -->
-    
-    <!-- ログ表示用のUI -->
-    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;">
-      <div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div>
-      <pre id="dev-log-content"></pre>
-    </div>
+        // 準備（一度だけ実行）
+        outputElement.textContent = "AIの準備をしています...";
+        const generator = await pipeline('text-generation', 'Xenova/distilgpt2');
+        outputElement.textContent = "準備完了！ボタンを押してください";
 
-    <script>
-      // --- ログを画面上のパネルに追加する関数 ---
-      function logToPanel(message, isError = false) {
-        const logContent = document.getElementById('dev-log-content');
-        if (logContent) {
-            const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message;
-            logContent.innerHTML += coloredMessage + '\n\n'; // innerHTMLを使って色を反映
-          // 自動で一番下にスクロール
-          const logPanel = document.getElementById('dev-log-panel');
-          logPanel.scrollTop = logPanel.scrollHeight;
-        }
-      }
+        async function generateAndTranslate() {
+            generateButton.disabled = true;
 
-      // --- JavaScriptエラーの監視 ---
-      // 通常のエラー
-      window.onerror = function(message, source, lineno, colno, error) {
-        const errorMessage = `[JS Error]
-  メッセージ: ${message}
-  ファイル: ${source}
-  行: ${lineno}, 列: ${colno}
-  エラーオブジェクト: ${error}`;
-        logToPanel(errorMessage, true);
-        return true; // trueを返すとブラウザコンソールへの出力を抑制
-      };
-      
-      // Promiseの未処理のエラー (例: async/await内でのcatch漏れ)
-      window.onunhandledrejection = function(event) {
-        const errorMessage = `[JS Promise Error]
-  理由: ${event.reason}`;
-        logToPanel(errorMessage, true);
-      };
+            try {
+                // --- 1. 英語のテキストを生成 ---
+                outputElement.textContent = "英語で迷言を考えています...";
+                const prompt = "A funny philosophical quote is, \"";
+                const englishResult = await generator(prompt, {
+                    max_new_tokens: 30,
+                    return_full_text: false, // プロンプトを含めない
+                });
+                const englishText = englishResult[0].generated_text;
 
-      // --- リソースの読み込みを監視 ---
-      try {
-        const observer = new PerformanceObserver((list) => {
-          list.getEntries().forEach((entry) => {
-            if (entry.initiatorType !== 'xmlhttprequest' && entry.initiatorType !== 'fetch') {
-              const logMessage = `[リソース監視]
-  ファイル名: ${entry.name}
-  種別: ${entry.initiatorType}
-  読込時間: ${entry.duration.toFixed(2)}ms`;
-              logToPanel(logMessage);
+                // --- 2. GASの翻訳APIにリクエスト ---
+                outputElement.textContent = "Google翻訳で日本語にしています...";
+                const response = await fetch(GAS_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのdoPostはtext/plainでも受け取れる
+                    body: JSON.stringify({ text: englishText }),
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`翻訳APIエラー: ${response.status}`);
+                }
+
+                const translationResult = await response.json();
+                
+                // --- 3. 最終結果を表示 ---
+                outputElement.textContent = translationResult.translated_text;
+
+            } catch (error) {
+                console.error("エラーが発生しました:", error);
+                outputElement.textContent = `エラーが発生しました。${error.message}`;
+            } finally {
+                generateButton.disabled = false;
             }
-          });
-        });
-        observer.observe({ type: "resource", buffered: true });
-      } catch (e) {
-        logToPanel(`PerformanceObserverは対応していません: ${e.message}`, true);
-      }
+        }
 
-      // --- Fetch APIの監視 ---
-      const originalFetch = window.fetch;
-      window.fetch = function() {
-        const [url, options] = arguments;
-        const logMessageReq = `[Fetch APIリクエスト]
-  URL: ${url}
-  Method: ${options ? options.method || 'GET' : 'GET'}`;
-        logToPanel(logMessageReq);
-
-        return originalFetch.apply(this, arguments).then((response) => {
-          const logMessageRes = `[Fetch APIレスポンス]
-  URL: ${response.url}
-  Status: ${response.status} ${response.statusText}`;
-          logToPanel(logMessageRes);
-          return response;
-        }).catch((error) => {
-          const logMessageErr = `[Fetch APIエラー]
-  URL: ${url}
-  エラー: ${error}`;
-          logToPanel(logMessageErr, true);
-          throw error;
-        });
-      };
-      
-      // --- エラーテスト用の関数 ---
-      function generateError() {
-          logToPanel("わざとエラーを発生させます...");
-          undefinedFunction(); // 存在しない関数を呼び出してエラーを発生
-      }
-
+        generateButton.addEventListener('click', generateAndTranslate);
     </script>
 </body>
 </html>
