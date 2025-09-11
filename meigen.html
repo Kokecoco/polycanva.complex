@@ -1,119 +1,100 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ブラウザAI迷言ジェネレーター (翻訳版)</title>
+    <title>ブラウザAI迷言ジェネレーター (原文・翻訳表示版)</title>
+    <meta charset="UTF-8">
+    <style>
+        /* 見た目を整えるための簡単なCSS */
+        body { font-family: sans-serif; line-height: 1.6; }
+        #result-container { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .result-box { margin-top: 10px; }
+        .result-box h3 { margin: 0 0 5px 0; font-size: 1em; color: #555; }
+        .result-box p { margin: 0; padding: 10px; background-color: #f4f4f4; border-radius: 3px; min-height: 1.2em;}
+    </style>
 </head>
 <body>
     <h1>今日のAI迷言</h1>
-    <p id="meigen-output">ボタンを押して生成してください</p>
     <button id="generate-button">新しい迷言を生成する</button>
 
-        <!-- ▼▼▼ ここからがインスペクタ（ログ表示）用のコード ▼▼▼ -->
-    
-    <!-- ログ表示用のUI -->
-    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;">
-      <div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div>
-      <pre id="dev-log-content"></pre>
+    <div id="result-container">
+        <div class="result-box">
+            <h3>原文 (English)</h3>
+            <p id="original-text">-</p>
+        </div>
+        <div class="result-box">
+            <h3>翻訳 (Japanese)</h3>
+            <p id="translated-text">ボタンを押して生成してください</p>
+        </div>
     </div>
 
+    <!-- ▼▼▼ デバッグ用インスペクタのコード（変更なし・省略可能） ▼▼▼ -->
+    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;"><div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div><pre id="dev-log-content"></pre></div>
     <script>
-      // --- ログを画面上のパネルに追加する関数 ---
-      function logToPanel(message, isError = false) {
-        const logContent = document.getElementById('dev-log-content');
-        if (logContent) {
-            const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message;
-            logContent.innerHTML += coloredMessage.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n\n';
-            const logPanel = document.getElementById('dev-log-panel');
-            logPanel.scrollTop = logPanel.scrollHeight;
-        }
-      }
-
-      // --- JavaScriptエラーの監視 ---
-      window.onerror = function(message, source, lineno, colno, error) {
-        const errorMessage = `[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`;
-        logToPanel(errorMessage, true);
-      };
-      window.onunhandledrejection = function(event) {
-        logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true);
-      };
-
-      // --- リソースの読み込みを監視 ---
-      const observer = new PerformanceObserver((list) => {
-        list.getEntries().forEach((entry) => {
-            logToPanel(`[リソース監視]\n  ファイル: ${entry.name}\n  読込時間: ${entry.duration.toFixed(2)}ms`);
-        });
-      });
-      observer.observe({ type: "resource", buffered: true });
-
-      // --- Fetch APIの監視 ---
+      function logToPanel(message, isError = false) { const logContent = document.getElementById('dev-log-content'); if (logContent) { const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message; logContent.innerHTML += coloredMessage.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n\n'; const logPanel = document.getElementById('dev-log-panel'); logPanel.scrollTop = logPanel.scrollHeight; } }
+      window.onerror = function(message, source, lineno, colno, error) { logToPanel(`[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`, true); };
+      window.onunhandledrejection = function(event) { logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true); };
+      try { const observer = new PerformanceObserver((list) => { list.getEntries().forEach((entry) => { logToPanel(`[リソース監視]\n  ファイル: ${entry.name}\n  読込時間: ${entry.duration.toFixed(2)}ms`); }); }); observer.observe({ type: "resource", buffered: true }); } catch(e) { console.warn("PerformanceObserver is not supported."); }
       const originalFetch = window.fetch;
-      window.fetch = function() {
-        const [url, options] = arguments;
-        logToPanel(`[Fetch APIリクエスト]\n  URL: ${url}\n  Method: ${options ? options.method || 'GET' : 'GET'}`);
-        return originalFetch.apply(this, arguments).then((response) => {
-          logToPanel(`[Fetch APIレスポンス]\n  URL: ${response.url}\n  Status: ${response.status} ${response.statusText}`);
-          return response;
-        }).catch((error) => {
-          logToPanel(`[Fetch APIエラー]\n  URL: ${url}\n  エラー: ${error}`, true);
-          throw error;
-        });
-      };
+      window.fetch = function() { const [url, options] = arguments; logToPanel(`[Fetch APIリクエスト]\n  URL: ${url}\n  Method: ${options ? options.method || 'GET' : 'GET'}`); return originalFetch.apply(this, arguments).then((response) => { logToPanel(`[Fetch APIレスポンス]\n  URL: ${response.url}\n  Status: ${response.status} ${response.statusText}`); return response.clone(); }).catch((error) => { logToPanel(`[Fetch APIエラー]\n  URL: ${url}\n  エラー: ${error}`, true); throw error; }); };
     </script>
-    <!-- ▲▲▲ ここまでがインスペクタ用のコード ▲▲▲ -->
-    
-    <!-- Transformers.jsを読み込む -->
+    <!-- ▲▲▲ インスペクタ用のコード ▲▲▲ -->
+
+    <!-- ▼▼▼ アプリケーション本体のコード ▼▼▼ -->
     <script type="module">
         import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
-        const outputElement = document.getElementById('meigen-output');
+        const originalTextElement = document.getElementById('original-text');
+        const translatedTextElement = document.getElementById('translated-text');
         const generateButton = document.getElementById('generate-button');
 
-        // ★★★ ステップ1でコピーしたあなたのGASウェブアプリのURLをここに貼り付け ★★★
+        // ★★★★★ 重要 ★★★★★
+        // 以下のURLを、あなたがデプロイしたGoogle Apps ScriptのウェブアプリURLに書き換えてください。
         const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzPJS6reXcVq0YlWijAVtcmDJ4NGOoABhi1yWOso0V9Bg57rNI5zI54ZX0w2O5M0YT3/exec";
 
-        // 準備（一度だけ実行）
-        outputElement.textContent = "AIの準備をしています...";
+        // 1. AIモデルの準備
+        translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
         const generator = await pipeline('text-generation', 'Xenova/gpt2');
-        outputElement.textContent = "準備完了！ボタンを押してください";
+        translatedTextElement.textContent = "準備完了！ボタンを押してください";
 
+        // 2. ボタンがクリックされた時の処理
         async function generateAndTranslate() {
             generateButton.disabled = true;
+            originalTextElement.textContent = "-";
+            translatedTextElement.textContent = "英語で迷言を考えています...";
 
             try {
-                // --- 1. 英語のテキストを生成 ---
-                outputElement.textContent = "英語で迷言を考えています...";
-                const prompt = "A funny philosophical quote is, \"";
+                // 2-1. 英語でテキストを生成する
+                const prompt = "A creative and witty quote about life is: \"";
                 const englishResult = await generator(prompt, {
-                    max_new_tokens: 30,
-                    return_full_text: false, // プロンプトを含めない
+                    max_new_tokens: 30, return_full_text: false, do_sample: true, temperature: 0.7,
                 });
-                const englishText = englishResult[0].generated_text;
+                
+                let englishText = englishResult[0].generated_text.split('"')[0].trim();
+                originalTextElement.textContent = englishText; // ★ 原文を表示
+                translatedTextElement.textContent = "Google翻訳で日本語にしています...";
 
-                // --- 2. GASの翻訳APIにリクエスト ---
-                outputElement.textContent = "Google翻訳で日本語にしています...";
+                // 2-2. GASの翻訳APIにリクエストを送信する (CORS対応版)
                 const response = await fetch(GAS_API_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのdoPostはtext/plainでも受け取れる
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: englishText }),
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`翻訳APIエラー: ${response.status}`);
-                }
-
+                if (!response.ok) throw new Error(`翻訳APIエラー: ${response.status}`);
                 const translationResult = await response.json();
                 
-                // --- 3. 最終結果を表示 ---
-                outputElement.textContent = "原文:"+englishText+"　日本語訳:"+translationResult.translated_text;
+                if (translationResult.status === "success") {
+                    translatedTextElement.textContent = translationResult.translated_text; // ★ 翻訳文を表示
+                } else {
+                    throw new Error(`翻訳APIからのエラー: ${translationResult.message}`);
+                }
 
             } catch (error) {
-                console.error("エラーが発生しました:", error);
-                outputElement.textContent = `エラーが発生しました。${error.message}`;
+                translatedTextElement.textContent = `エラーが発生しました。詳細は右下のログを確認してください。`;
             } finally {
                 generateButton.disabled = false;
             }
         }
-
         generateButton.addEventListener('click', generateAndTranslate);
     </script>
 </body>
