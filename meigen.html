@@ -1,10 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ブラウザAI迷言ジェネレーター (最終完成版)</title>
+    <title>ブラウザAI迷言ジェネレーター (安定動作版)</title>
     <meta charset="UTF-8">
     <style>
-        /* 見た目を整えるための簡単なCSS */
         body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
         #result-container { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
         .result-box { margin-top: 10px; }
@@ -14,7 +13,9 @@
 </head>
 <body>
     <h1>今日のAI迷言</h1>
-    <button id="generate-button">新しい迷言を生成する</button>
+    <!-- ★★★★★ 重要な修正点 ★★★★★ -->
+    <!-- type="button" を指定して、フォーム送信の誤動作を完全に防ぎます -->
+    <button id="generate-button" type="button">新しい迷言を生成する</button>
 
     <div id="result-container">
         <div class="result-box">
@@ -28,10 +29,7 @@
     </div>
 
     <!-- ▼▼▼ デバッグ用インスペクタ（ログ表示）のコード ▼▼▼ -->
-    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;">
-      <div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div>
-      <pre id="dev-log-content"></pre>
-    </div>
+    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;"><div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div><pre id="dev-log-content"></pre></div>
     <script>
       function logToPanel(message, isError = false) { const logContent = document.getElementById('dev-log-content'); if (logContent) { const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message; logContent.innerHTML += coloredMessage.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n\n'; const logPanel = document.getElementById('dev-log-panel'); logPanel.scrollTop = logPanel.scrollHeight; } }
       window.onerror = function(message, source, lineno, colno, error) { logToPanel(`[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`, true); }; window.onunhandledrejection = function(event) { logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true); };
@@ -48,22 +46,23 @@
         const translatedTextElement = document.getElementById('translated-text');
         const generateButton = document.getElementById('generate-button');
 
-        // ★★★★★ ご指定の新しいGoogle Apps ScriptウェブアプリURLに更新しました ★★★★★
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxJAyOjSJQfQLRvPB6X4DuuCyW5JCMDEIjyGLbrhdXUH5Kc2J31OSGi2OzUVo5HiWiy/exec";
+        // ★★★★★ 重要 ★★★★★
+        // 以下のURLを、あなたが新しくデプロイしたGoogle Apps ScriptのURLに書き換えてください。
+        const GAS_API_URL = "ここにあなたの新しいGASのURLを貼り付け";
 
-        // 1. AIモデルの準備
+        // AIモデルの準備
         translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
         const generator = await pipeline('text-generation', 'Xenova/gpt2');
         translatedTextElement.textContent = "準備完了！ボタンを押してください";
 
-        // 2. ボタンがクリックされた時の処理
+        // ボタンがクリックされた時の処理
         async function generateAndTranslate() {
             generateButton.disabled = true;
             originalTextElement.textContent = "-";
             translatedTextElement.textContent = "英語で迷言を考えています...";
 
             try {
-                // 2-1. 英語でテキストを生成する
+                // 英語でテキストを生成
                 const prompt = "A creative and witty quote about life is: \"";
                 const englishResult = await generator(prompt, {
                     max_new_tokens: 30, return_full_text: false, do_sample: true, temperature: 0.7,
@@ -73,7 +72,7 @@
                 originalTextElement.textContent = englishText;
                 translatedTextElement.textContent = "Google翻訳で日本語にしています...";
 
-                // 2-2. GASの翻訳APIにリクエストを送信する (CORS対応版)
+                // GASの翻訳APIにPOSTリクエストを送信
                 const response = await fetch(GAS_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
