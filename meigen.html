@@ -94,7 +94,7 @@
         async function initialize() {
             try {
                 translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
-                const generator = await pipeline('text-generation', 'Xenova/flan-t5-base');
+                const generator = await pipeline('text-generation', 'Xenova/opt-350m');
                 translatedTextElement.textContent = "準備完了！ボタンを押してください";
                 // グローバルスコープで利用できるようにする
                 window.generator = generator;
