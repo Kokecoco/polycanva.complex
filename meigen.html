@@ -94,7 +94,7 @@
         async function initialize() {
             try {
                 translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
-                const generator = await pipeline('text-generation', 'Xenova/gpt2');
+                const generator = await pipeline('text-generation', 'Xenova/flan-t5-base');
                 translatedTextElement.textContent = "準備完了！ボタンを押してください";
                 // グローバルスコープで利用できるようにする
                 window.generator = generator;
@@ -118,7 +118,7 @@
 
             try {
                 // 英語でテキストを生成
-                const prompt = "A creative and witty quote about life is: \"";
+                const prompt = "Generate a single, deep, and witty quote about life:";
                 const englishResult = await window.generator(prompt, {
                     max_new_tokens: 30, return_full_text: false, do_sample: true, temperature: 0.7,
                 });
