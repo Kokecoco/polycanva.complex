@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ブラウザAI迷言ジェネレーター (GAS連携版)</title>
+    <title>ブラウザAI名言ジェネレーター (GAS連携版)</title>
     <meta charset="UTF-8">
     <style>
         body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
@@ -15,8 +15,8 @@
     </style>
 </head>
 <body>
-    <h1>今日のAI迷言</h1>
-    <button id="generate-button" type="button">新しい迷言を生成する</button>
+    <h1>今日のAI名言</h1>
+    <button id="generate-button" type="button">新しい名言を生成する</button>
 
     <div id="result-container">
         <div class="result-box">
@@ -114,7 +114,7 @@
 
             generateButton.disabled = true;
             originalTextElement.textContent = "-";
-            translatedTextElement.textContent = "英語で迷言を考えています...";
+            translatedTextElement.textContent = "英語で名言を考えています...";
 
             try {
                 // 英語でテキストを生成
