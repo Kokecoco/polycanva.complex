@@ -49,7 +49,7 @@
 
         // ★★★★★ 重要 ★★★★★
         // 以下のURLを、あなたがデプロイしたGoogle Apps ScriptのURLに書き換えてください。
-        const GAS_API_URL = "ここにあなたのGASウェブアプリのURLを貼り付けてください";
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbynue36OhjVX1uhdZr9iK1vq1oRwZV0V8N56tLrY7vMH66aesO04hTcg4rbr5QFR59L7Q/exec";
 
         /**
          * GASの翻訳APIを呼び出し、英語のテキストを日本語に翻訳します。
@@ -59,7 +59,7 @@
          */
         async function translateEnglishToJapanese(englishText) {
             // GASウェブアプリのURLが設定されているかチェック
-            if (GAS_API_URL === "ここにあなたのGASウェブアプリのURLを貼り付けてください") {
+            if (GAS_API_URL === "https://script.google.com/macros/s/AKfycbynue36OhjVX1uhdZr9iK1vq1oRwZV0V8N56tLrY7vMH66aesO04hTcg4rbr5QFR59L7Q/exec") {
                 throw new Error("GAS_API_URLが設定されていません。コード内のURLをあなたのウェブアプリのURLに書き換えてください。");
             }
             
