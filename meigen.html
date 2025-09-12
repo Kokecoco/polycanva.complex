@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ブラウザAI迷言ジェネレーター (原文・翻訳表示版)</title>
+    <title>ブラウザAI迷言ジェネレーター (最終完成版)</title>
     <meta charset="UTF-8">
     <style>
         /* 見た目を整えるための簡単なCSS */
-        body { font-family: sans-serif; line-height: 1.6; }
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
         #result-container { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
         .result-box { margin-top: 10px; }
         .result-box h3 { margin: 0 0 5px 0; font-size: 1em; color: #555; }
@@ -27,15 +27,16 @@
         </div>
     </div>
 
-    <!-- ▼▼▼ デバッグ用インスペクタのコード（変更なし・省略可能） ▼▼▼ -->
-    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;"><div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div><pre id="dev-log-content"></pre></div>
+    <!-- ▼▼▼ デバッグ用インスペクタ（ログ表示）のコード ▼▼▼ -->
+    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999;">
+      <div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div>
+      <pre id="dev-log-content"></pre>
+    </div>
     <script>
       function logToPanel(message, isError = false) { const logContent = document.getElementById('dev-log-content'); if (logContent) { const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message; logContent.innerHTML += coloredMessage.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n\n'; const logPanel = document.getElementById('dev-log-panel'); logPanel.scrollTop = logPanel.scrollHeight; } }
-      window.onerror = function(message, source, lineno, colno, error) { logToPanel(`[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`, true); };
-      window.onunhandledrejection = function(event) { logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true); };
+      window.onerror = function(message, source, lineno, colno, error) { logToPanel(`[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`, true); }; window.onunhandledrejection = function(event) { logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true); };
       try { const observer = new PerformanceObserver((list) => { list.getEntries().forEach((entry) => { logToPanel(`[リソース監視]\n  ファイル: ${entry.name}\n  読込時間: ${entry.duration.toFixed(2)}ms`); }); }); observer.observe({ type: "resource", buffered: true }); } catch(e) { console.warn("PerformanceObserver is not supported."); }
-      const originalFetch = window.fetch;
-      window.fetch = function() { const [url, options] = arguments; logToPanel(`[Fetch APIリクエスト]\n  URL: ${url}\n  Method: ${options ? options.method || 'GET' : 'GET'}`); return originalFetch.apply(this, arguments).then((response) => { logToPanel(`[Fetch APIレスポンス]\n  URL: ${response.url}\n  Status: ${response.status} ${response.statusText}`); return response.clone(); }).catch((error) => { logToPanel(`[Fetch APIエラー]\n  URL: ${url}\n  エラー: ${error}`, true); throw error; }); };
+      const originalFetch = window.fetch; window.fetch = function() { const [url, options] = arguments; logToPanel(`[Fetch APIリクエスト]\n  URL: ${url}\n  Method: ${options ? options.method || 'GET' : 'GET'}`); return originalFetch.apply(this, arguments).then((response) => { logToPanel(`[Fetch APIレスポンス]\n  URL: ${response.url}\n  Status: ${response.status} ${response.statusText}`); return response.clone(); }).catch((error) => { logToPanel(`[Fetch APIエラー]\n  URL: ${url}\n  エラー: ${error}`, true); throw error; }); };
     </script>
     <!-- ▲▲▲ インスペクタ用のコード ▲▲▲ -->
 
@@ -47,9 +48,8 @@
         const translatedTextElement = document.getElementById('translated-text');
         const generateButton = document.getElementById('generate-button');
 
-        // ★★★★★ 重要 ★★★★★
-        // 以下のURLを、あなたがデプロイしたGoogle Apps ScriptのウェブアプリURLに書き換えてください。
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzeoAiiHBXT6DgONfR2Sxrloj44Fwe_nI0xKHS-AksY2MEw_nNiWCxOVduLezPBoz9g/exec";
+        // ご指定のGoogle Apps ScriptウェブアプリURL
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbybcT5kOQoqQzQ1gPkoTGviHjQw18kAa4Yt4cyEK_c1OgPK_t0JTcTilkVeu3b_ci4Z/exec";
 
         // 1. AIモデルの準備
         translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
@@ -70,7 +70,7 @@
                 });
                 
                 let englishText = englishResult[0].generated_text.split('"')[0].trim();
-                originalTextElement.textContent = englishText; // ★ 原文を表示
+                originalTextElement.textContent = englishText;
                 translatedTextElement.textContent = "Google翻訳で日本語にしています...";
 
                 // 2-2. GASの翻訳APIにリクエストを送信する (CORS対応版)
@@ -80,17 +80,18 @@
                     body: JSON.stringify({ text: englishText }),
                 });
                 
-                if (!response.ok) throw new Error(`翻訳APIエラー: ${response.status}`);
+                if (!response.ok) throw new Error(`翻訳APIエラー: HTTPステータス ${response.status}`);
                 const translationResult = await response.json();
                 
                 if (translationResult.status === "success") {
-                    translatedTextElement.textContent = translationResult.translated_text; // ★ 翻訳文を表示
+                    translatedTextElement.textContent = translationResult.translated_text;
                 } else {
                     throw new Error(`翻訳APIからのエラー: ${translationResult.message}`);
                 }
 
             } catch (error) {
                 translatedTextElement.textContent = `エラーが発生しました。詳細は右下のログを確認してください。`;
+                console.error("詳細なエラー情報:", error);
             } finally {
                 generateButton.disabled = false;
             }
