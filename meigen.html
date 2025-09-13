@@ -94,7 +94,7 @@
         async function initialize() {
             try {
                 translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
-                const generator = await pipeline('text-generation', 'Xenova/Qwen1.5-0.5B-Chat');
+                const generator = await pipeline('text-generation', 'Xenova/gpt2');
                 translatedTextElement.textContent = "準備完了！ボタンを押してください";
                 // グローバルスコープで利用できるようにする
                 window.generator = generator;
@@ -118,28 +118,15 @@
 
             try {
                 // Qwen1.5-Chatモデルに最適なプロンプト形式
-                const messages = [
-                    { role: "system", content: "You are a helpful assistant who creates witty and deep quotes." },
-                    { role: "user", content: "Generate a single, creative, and thought-provoking quote about the universe or consciousness." },
-                ];
-                // ライブラリの機能で、モデル用のプロンプトを自動生成
-                const prompt = window.generator.tokenizer.apply_chat_template(messages, { tokenize: false, add_generation_prompt: true });
-
-                logToPanel(`[生成開始] モデルに以下のプロンプトを渡します:\n${prompt}`);
+                const prompt = "Generate a single, deep, and witty quote about life:";
 
                 // AIにテキスト生成を命令
                 const englishResult = await window.generator(prompt, {
-                    max_new_tokens: 60,
-                    do_sample: true,
-                    temperature: 0.7,
-                    top_k: 50,
+                    max_new_tokens: 30, return_full_text: false, do_sample: true, temperature: 0.7,
                 });
-            
-                // モデルの出力から、アシスタントの返答部分だけを綺麗に抽出
-                const full_text = englishResult[0].generated_text;
-                const assistant_response = full_text.split('<|im_end|>\nassistant')[1];
-                const englishText = assistant_response ? assistant_response.replace(/<\|im_end\|>/g, '').trim() : "（生成に失敗しました）";
-            
+
+                let englishText = englishResult[0].generated_text.split('"')[0].trim();
+
                 originalTextElement.textContent = englishText;
                 translatedTextElement.textContent = "Google翻訳で日本語にしています...";
 
