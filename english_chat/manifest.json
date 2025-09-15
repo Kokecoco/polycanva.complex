@@ -1,0 +1,10 @@
+{
+    "name": "Offline AI English Chat",
+    "short_name": "AI Chat",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#4a90e2",
+    "description": "An AI-powered English conversation partner that works offline.",
+    "icons": []
+}
