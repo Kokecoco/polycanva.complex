@@ -3,53 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Offline AI English Chat</title>
+    <title>Gemini English Chat</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#4a90e2">
+    <!-- アイコン用のライブラリ (Font Awesome) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Offline AI English Chat</h1>
-        <p id="status">Initializing application...</p>
-        
-        <div class="settings">
-            <label for="difficulty">Eiken Level:</label>
-            <select id="difficulty">
-                <!-- CEFR A1/A2 レベルを併記 -->
-                <option value="CEFR A1 (Eiken Grade 5) for basic, simple daily phrases only">Grade 5</option>
-                <option value="CEFR A2 (Eiken Grade 3) for simple communication using basic tenses" selected>Grade 3</option>
-                <option value="CEFR B1 (Eiken Grade 2) for complex sentences and expressing opinions">Grade 2</option>
-                <!-- 準1級: B2 レベルを強調 -->
-                <option value="CEFR B2 (Eiken Grade Pre-1) focusing on idiomatic expressions and abstract topics">準1級</option>
-                <option value="CEFR C1 (Eiken Grade 1) for fluent, complex, and professional discussions">Grade 1</option>
-            </select>
+    <div class="chat-container">
+        <!-- プロフィール入力モーダル -->
+        <div id="profile-modal" class="modal-overlay">
+            <div class="modal-content">
+                <h2>Your Profile</h2>
+                <p>この情報はAIのペルソナ設定にのみ利用されます。</p>
+                <input type="number" id="age" placeholder="Your age (e.g., 25)">
+                <input type="text" id="hobby" placeholder="Your hobby (e.g., watching movies)">
+                <select id="cefr-level">
+                    <option value="A1">CEFR A1 (Beginner)</option>
+                    <option value="A2" selected>CEFR A2 (Elementary)</option>
+                    <option value="B1">CEFR B1 (Intermediate)</option>
+                    <option value="B2">CEFR B2 (Upper-Intermediate)</option>
+                </select>
+                <button id="save-profile-btn">Start Chat</button>
+            </div>
         </div>
 
-        <div id="chatbox"></div>
+        <!-- チャット画面本体 -->
+        <header class="chat-header">
+            <div class="friend-info">
+                <i class="fas fa-user-circle friend-icon"></i>
+                <span class="friend-name">My AI Friend</span>
+            </div>
+            <button id="clear-history-btn" title="Clear History"><i class="fas fa-trash"></i></button>
+        </header>
 
-        <div id="controls">
-            <input type="text" id="userInput" placeholder="Type your message..." disabled>
-            <button id="sendButton" disabled>Send</button>
-        </div>
-        
-        <div class="feedback-controls">
-            <button id="offlineFeedbackButton" disabled>Get Quick Feedback (Offline)</button>
-            <button id="onlineFeedbackButton" disabled>Get Detailed Feedback (Online)</button>
-        </div>
+        <main id="chat-window" class="chat-window">
+            <!-- メッセージはここに動的に追加される -->
+        </main>
 
-        <div id="feedbackResult"></div>
+        <footer class="chat-input-area">
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+        </footer>
+        <div id="loading" class="hidden">
+            <div class="spinner"></div>
+        </div>
     </div>
-
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(registration => console.log('ServiceWorker registration successful with scope: ', registration.scope))
-                    .catch(err => console.log('ServiceWorker registration failed: ', err));
-            });
-        }
-    </script>
-    <script type="module" src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
