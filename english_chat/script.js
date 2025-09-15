@@ -1,6 +1,6 @@
 // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 // ★ ここに、GASをデプロイした時に取得したウェブアプリURLを貼り付けます ★
-const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbxZ3dXLR-fklRdhxnzJuxlG-QBbe9vaQuuSjPs_tO9obe4qL3CDJEJizMKQQwmH8ECVCA/exec';
+const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycby12LWuHyTJKNuqSf4yyGegy3qNl8DrpAzSgymBqHeSLpms8dJMsxr_7umol78hXHFUMA/exec';
 // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
 // 要素の取得
