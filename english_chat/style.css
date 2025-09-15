@@ -134,11 +134,19 @@ body {
     max-width: 400px;
     text-align: center;
 }
-.modal-content input, .modal-content select, .modal-content button {
+/* ▼▼▼ このセレクタに textarea を追加し、font-family を指定 ▼▼▼ */
+.modal-content input, .modal-content select, .modal-content textarea, .modal-content button {
     display: block; width: 95%; padding: 12px; margin: 10px auto; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 .modal-content button { background-color: #007bff; color: white; cursor: pointer; border: none; }
 .modal-content p { color: #666; font-size: 14px; }
+
+/* ▼▼▼ このスタイルを末尾に追加 ▼▼▼ */
+.modal-content textarea {
+    resize: vertical; /* 縦方向のみリサイズ可能にする */
+    min-height: 80px; /* 最低限の高さを確保 */
+}
 
 /* --- ローディングスピナー --- */
 #loading {
