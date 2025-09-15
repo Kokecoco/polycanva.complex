@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline AI English Chat</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4a90e2">
+</head>
+<body>
+    <div class="container">
+        <h1>Offline AI English Chat</h1>
+        <p id="status">Initializing application...</p>
+        
+        <div class="settings">
+            <label for="difficulty">Eiken Level:</label>
+            <select id="difficulty">
+                <option value="Grade 5 (Beginner)">Grade 5</option>
+                <option value="Grade 3 (Intermediate)" selected>Grade 3</option>
+                <option value="Grade 2 (Advanced)">Grade 2</option>
+                <option value="Grade 1 (Expert)">Grade 1</option>
+            </select>
+        </div>
+
+        <div id="chatbox"></div>
+
+        <div id="controls">
+            <input type="text" id="userInput" placeholder="Type your message..." disabled>
+            <button id="sendButton" disabled>Send</button>
+        </div>
+        
+        <div class="feedback-controls">
+            <button id="offlineFeedbackButton" disabled>Get Quick Feedback (Offline)</button>
+            <button id="onlineFeedbackButton" disabled>Get Detailed Feedback (Online)</button>
+        </div>
+
+        <div id="feedbackResult"></div>
+    </div>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => console.log('ServiceWorker registration successful with scope: ', registration.scope))
+                    .catch(err => console.log('ServiceWorker registration failed: ', err));
+            });
+        }
+    </script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
