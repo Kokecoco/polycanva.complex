@@ -1,107 +1,163 @@
+/* --- 基本スタイル --- */
+:root {
+    --line-bg-color: #79acdc;
+    --header-bg-color: #f0f2f5;
+    --my-bubble-color: #8de041;
+    --friend-bubble-color: #ffffff;
+    --text-color: #000;
+    --input-bg-color: #ffffff;
+}
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background-color: #f4f7f9;
     margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #e9e9e9;
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 100vh;
+    height: 100vh;
 }
-.container {
-    width: 95%;
-    max-width: 700px;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    padding: 20px;
-    box-sizing: border-box;
+
+/* --- チャットコンテナ --- */
+.chat-container {
+    width: 100%;
+    max-width: 450px;
+    height: 95vh;
+    max-height: 800px;
     display: flex;
     flex-direction: column;
+    background-color: var(--line-bg-color);
+    border-radius: 16px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    overflow: hidden;
 }
-h1 {
-    text-align: center;
-    color: #333;
-    margin-top: 0;
+
+/* --- ヘッダー --- */
+.chat-header {
+    padding: 10px 15px;
+    background-color: var(--header-bg-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #dcdcdc;
+    flex-shrink: 0;
 }
-#status {
-    text-align: center;
-    color: #666;
+.friend-info { display: flex; align-items: center; }
+.friend-icon { font-size: 36px; color: #5c5c5c; margin-right: 10px; }
+.friend-name { font-weight: bold; }
+#clear-history-btn { background: none; border: none; font-size: 18px; color: #888; cursor: pointer; }
+
+/* --- チャットウィンドウ --- */
+.chat-window {
+    flex-grow: 1;
+    padding: 20px 10px;
+    overflow-y: auto;
+}
+
+/* --- メッセージ共通 --- */
+.message-row {
+    display: flex;
     margin-bottom: 15px;
-    min-height: 20px;
+    align-items: flex-start;
 }
-#chatbox {
-    border: 1px solid #ddd;
-    height: 400px;
-    overflow-y: scroll;
-    padding: 10px;
-    margin-bottom: 15px;
-    background-color: #fafafa;
-    border-radius: 4px;
-}
-.message {
-    margin-bottom: 10px;
-    padding: 8px 12px;
+.message-bubble {
+    padding: 10px 15px;
     border-radius: 18px;
-    max-width: 80%;
+    max-width: 70%;
+    line-height: 1.5;
     word-wrap: break-word;
 }
-.user-msg {
-    background-color: #4a90e2;
-    color: white;
-    align-self: flex-end;
-    margin-left: auto;
+
+/* --- 相手 (AI) のメッセージ --- */
+.ai-message .message-bubble {
+    background-color: var(--friend-bubble-color);
+    color: var(--text-color);
+    border-top-left-radius: 0;
 }
-.ai-msg {
-    background-color: #e9e9eb;
-    color: #333;
-    align-self: flex-start;
+.ai-icon { font-size: 32px; color: #5c5c5c; margin-right: 8px; }
+
+/* --- 自分 (User) のメッセージ --- */
+.user-message {
+    justify-content: flex-end; /* 右寄せ */
 }
-.message strong {
-    display: block;
-    font-size: 0.8em;
-    margin-bottom: 4px;
-    opacity: 0.8;
+.user-message .message-bubble {
+    background-color: var(--my-bubble-color);
+    color: var(--text-color);
+    border-top-right-radius: 0;
 }
-#controls {
+
+/* --- 入力エリア --- */
+.chat-input-area {
     display: flex;
-    gap: 10px;
-}
-#userInput {
-    flex-grow: 1;
     padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 20px;
+    background-color: var(--header-bg-color);
+    border-top: 1px solid #dcdcdc;
+    flex-shrink: 0;
 }
-button {
-    padding: 10px 15px;
+#message-input {
+    flex-grow: 1;
     border: none;
-    background-color: #4a90e2;
-    color: white;
+    padding: 10px 15px;
     border-radius: 20px;
+    margin-right: 10px;
+    font-size: 16px;
+}
+#message-input:focus { outline: none; }
+#send-btn {
+    background-color: var(--my-bubble-color);
+    border: none;
+    color: var(--text-color);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 18px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    flex-shrink: 0;
 }
-button:hover:not(:disabled) {
-    background-color: #357abd;
-}
-button:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-}
-.settings, .feedback-controls {
+
+/* --- プロフィールモーダル --- */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6);
     display: flex;
-    gap: 10px;
-    margin-bottom: 15px;
+    justify-content: center;
     align-items: center;
-    flex-wrap: wrap;
+    z-index: 1000;
 }
-#feedbackResult {
-    margin-top: 15px;
-    background-color: #f0f8ff;
-    padding: 15px;
-    border-radius: 5px;
-    border: 1px solid #b0d4f1;
-    white-space: pre-wrap;
-    font-size: 0.9em;
-    line-height: 1.6;
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
 }
+.modal-content input, .modal-content select, .modal-content button {
+    display: block; width: 95%; padding: 12px; margin: 10px auto; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;
+}
+.modal-content button { background-color: #007bff; color: white; cursor: pointer; border: none; }
+.modal-content p { color: #666; font-size: 14px; }
+
+/* --- ローディングスピナー --- */
+#loading {
+    position: absolute;
+    bottom: 60px; /* Adjust as needed */
+    left: 10px;
+    display: flex;
+    align-items: center;
+}
+.spinner {
+    border: 4px solid rgba(0,0,0,0.1);
+    border-left-color: #ffffff;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.hidden { display: none; }
