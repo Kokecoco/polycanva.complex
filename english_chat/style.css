@@ -67,6 +67,10 @@ body {
     line-height: 1.5;
     word-wrap: break-word;
 }
+.message-bubble a {
+    color: #007bff;
+    text-decoration: underline;
+}
 
 /* --- 相手 (AI) のメッセージ --- */
 .ai-message .message-bubble {
@@ -78,7 +82,7 @@ body {
 
 /* --- 自分 (User) のメッセージ --- */
 .user-message {
-    justify-content: flex-end; /* 右寄せ */
+    justify-content: flex-end;
 }
 .user-message .message-bubble {
     background-color: var(--my-bubble-color);
@@ -134,35 +138,34 @@ body {
     max-width: 400px;
     text-align: center;
 }
-/* ▼▼▼ このセレクタに textarea を追加し、font-family を指定 ▼▼▼ */
 .modal-content input, .modal-content select, .modal-content textarea, .modal-content button {
     display: block; width: 95%; padding: 12px; margin: 10px auto; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 .modal-content button { background-color: #007bff; color: white; cursor: pointer; border: none; }
 .modal-content p { color: #666; font-size: 14px; }
-
-/* ▼▼▼ このスタイルを末尾に追加 ▼▼▼ */
 .modal-content textarea {
-    resize: vertical; /* 縦方向のみリサイズ可能にする */
-    min-height: 80px; /* 最低限の高さを確保 */
+    resize: vertical;
+    min-height: 80px;
 }
 
 /* --- ローディングスピナー --- */
-#loading {
-    position: absolute;
-    bottom: 60px; /* Adjust as needed */
-    left: 10px;
+.loading-bubble {
     display: flex;
     align-items: center;
+    padding: 10px 15px;
+    background-color: #f0f0f0;
+    border-radius: 18px;
+    border-top-left-radius: 0;
 }
 .spinner {
-    border: 4px solid rgba(0,0,0,0.1);
-    border-left-color: #ffffff;
+    border: 3px solid rgba(0,0,0,0.1);
+    border-left-color: #888;
     border-radius: 50%;
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     animation: spin 1s linear infinite;
+    margin: 0 4px;
 }
 @keyframes spin {
     to { transform: rotate(360deg); }
