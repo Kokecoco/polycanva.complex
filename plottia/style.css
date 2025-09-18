@@ -1,79 +1,30 @@
-/* (前半のスタイルは変更なし) */
 body { margin: 0; font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; overflow: hidden; background-color: #e9e9e9; }
 .hidden { display: none !important; }
 
-/* (ファイルマネージャーのスタイルは変更なし) */
-#file-manager-overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;justify-content:center;align-items:center;background-color:rgba(0,0,0,.1)}
-#file-manager{background:#fff;padding:20px 40px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:80%;max-width:600px;text-align:center}
-#file-manager h1{color:#333}
-#file-list{list-style:none;padding:0;margin:30px 0;max-height:50vh;overflow-y:auto}
-#file-list li{display:flex;align-items:center;padding:15px;margin-bottom:10px;background:#f7f7f7;border-radius:5px;text-align:left}
-#file-list .file-name{font-weight:700;cursor:pointer;flex-grow:1}
-#file-list .file-name:hover{color:#007bff}
-#file-list .file-meta{font-size:12px;color:#888;margin-left:20px}
-#file-list .file-actions button{background:0 0;border:none;cursor:pointer;font-size:16px;color:#aaa;margin-left:10px}
-#file-list .file-actions button:hover{color:#333}
-#create-new-file-btn{width:100%;padding:15px;font-size:16px;background-color:#007bff;color:#fff;border:none;border-radius:5px;cursor:pointer;transition:background-color .2s}
-#create-new-file-btn:hover{background-color:#0056b3}
+/* --- ダークモード --- */
+body.dark-mode { background-color: #2c2c2c; } body.dark-mode #file-manager { background: #3a3a3a; color: #f1f1f1; } body.dark-mode #file-manager h1 { color: #f1f1f1; } body.dark-mode #file-list li { background: #4a4a4a; } body.dark-mode #board { background-color: #333; background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px); } body.dark-mode .note-header, body.dark-mode .note-body { background-color: #4f4f4f; color: #f1f1f1; } body.dark-mode .section { background-color: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.2); } body.dark-mode .section-header, body.dark-mode .section-controls, body.dark-mode .shape .shape-visual, body.dark-mode .text-box:hover .delete-btn, body.dark-mode .text-box:hover .lock-btn, body.dark-mode .drawing .delete-btn, body.dark-mode .drawing .lock-btn, body.dark-mode .drawing .drawing-controls { background-color: #555; } body.dark-mode .section-title, body.dark-mode .section-title-input { background-color: #555; color: #f1f1f1; } body.dark-mode .shape .shape-visual { border-color: #888; } body.dark-mode .shape .shape-label { color: #f1f1f1; } body.dark-mode .text-content { color: #f1f1f1; } body.dark-mode #connector-svg-layer .connector-line { stroke: #ccc; } body.dark-mode #connector-svg-layer #arrowhead polygon { fill: #ccc; } body.dark-mode #minimap { background-color: rgba(40, 40, 40, 0.7); border-color: #555; } body.dark-mode .minimap-element { background-color: rgba(255, 255, 255, 0.2); }
+
+/* --- ファイルマネージャー --- */
+#file-manager-overlay{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;justify-content:center;align-items:center;background-color:rgba(0,0,0,.1);z-index: 10002;} #file-manager{background:#fff;padding:20px 40px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.2);width:80%;max-width:600px;text-align:center} #file-manager h1{color:#333} #file-list{list-style:none;padding:0;margin:30px 0;max-height:50vh;overflow-y:auto} #file-list li{display:flex;align-items:center;padding:15px;margin-bottom:10px;background:#f7f7f7;border-radius:5px;text-align:left} #file-list .file-name{font-weight:700;cursor:pointer;flex-grow:1} #file-list .file-name:hover{color:#007bff} #file-list .file-meta{font-size:12px;color:#888;margin-left:20px} #file-list .file-actions button{background:0 0;border:none;cursor:pointer;font-size:16px;color:#aaa;margin-left:10px} #file-list .file-actions button:hover{color:#333} #create-new-file-btn{width:100%;padding:15px;font-size:16px;background-color:#007bff;color:#fff;border:none;border-radius:5px;cursor:pointer;transition:background-color .2s} #create-new-file-btn:hover{background-color:#0056b3}
 
 /* --- メインアプリ --- */
-#toolbar{position:fixed;top:10px;left:10px;z-index:10001;display:flex;gap:10px;align-items:center}
-#toolbar button{padding:10px 15px;font-size:16px;background-color:#333;color:#fff;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:background-color .2s}
-#toolbar button:hover{background-color:#555}
-#toolbar button.active { background-color: #007bff; }
-/* ▼▼▼ 追加 ▼▼▼ */
-#toolbar button:disabled { background-color: #555; color: #888; cursor: not-allowed; }
-/* ▲▲▲ 追加 ▲▲▲ */
-.toolbar-divider{height:25px;width:1px;background-color:#555;margin:0 5px}
+#toolbar{position:fixed;top:10px;left:10px;z-index:10001;display:flex;gap:10px;align-items:center} #toolbar button{padding:10px 15px;font-size:16px;background-color:#333;color:#fff;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,.2);transition:background-color .2s} #toolbar button:hover{background-color:#555} #toolbar button.active { background-color: #007bff; } #toolbar button:disabled { background-color: #555; color: #888; cursor: not-allowed; } .toolbar-divider{height:25px;width:1px;background-color:#555;margin:0 5px}
+#zoom-controls{position:fixed;bottom:10px;right:220px;z-index:10001;display:flex;align-items:center;gap:10px;background-color:rgba(255,255,255,.8);padding:5px 10px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,.2)} #zoom-controls button{background:0 0;border:none;cursor:pointer;font-size:14px;padding:5px} #zoom-display{font-size:14px;font-weight:700;min-width:40px;text-align:center}
 
-/* (以降のスタイルは前回から変更なし) */
-#zoom-controls{position:fixed;bottom:10px;right:10px;z-index:10001;display:flex;align-items:center;gap:10px;background-color:rgba(255,255,255,.8);padding:5px 10px;border-radius:5px;box-shadow:0 2px 5px rgba(0,0,0,.2)}
-#zoom-controls button{background:0 0;border:none;cursor:pointer;font-size:14px;padding:5px}
-#zoom-display{font-size:14px;font-weight:700;min-width:40px;text-align:center}
-body.is-dragging, body.is-dragging * { user-select: none; }
-body.connector-mode { cursor: crosshair; }
-#board{position:absolute;width:5000px;height:5000px;background-color:#f0f0f0;background-image:linear-gradient(rgba(0,0,0,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.05) 1px,transparent 1px);background-size:20px 20px;transform-origin:0 0;cursor:grab}
-#board.grabbing{cursor:grabbing}
-#connector-svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 500; }
-#connector-svg-layer .connector-line { stroke: #333; stroke-width: 2px; transition: stroke 0.2s; marker-end: url(#arrowhead); }
-#connector-svg-layer .connector-line.selected { stroke: #007bff; stroke-width: 4px; pointer-events: all; cursor: pointer; }
-.lock-btn{width:20px;height:20px;cursor:pointer;color:rgba(0,0,0,.5);display:flex;justify-content:center;align-items:center;border-radius:50%}
-.lock-btn:hover{background-color:rgba(0,0,0,.1)}
-.locked .lock-btn{color:#007bff}
-.note.selected .note-body, .section.selected, .text-box.selected, .shape.selected { outline: 2px solid #007bff; outline-offset: 2px; }
-.locked{cursor:not-allowed!important}
-.locked > *{cursor:not-allowed!important}
-.shape { position: absolute; width: 150px; height: 150px; background-color: white; border: 2px solid #333; display: flex; justify-content: center; align-items: center; cursor: move; }
-.shape.circle { border-radius: 50%; }
-.shape .shape-label { font-size: 16px; padding: 10px; outline: none; white-space: pre-wrap; text-align: center; width: 100%; box-sizing: border-box; }
-.shape .delete-btn, .shape .lock-btn, .shape .color-picker { position: absolute; top: -35px; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); display: none; padding: 5px; border-radius: 5px; align-items: center; }
-.shape:hover .delete-btn, .shape:hover .lock-btn, .shape:hover .color-picker, .shape.selected .delete-btn, .shape.selected .lock-btn, .shape.selected .color-picker { display: flex; }
-.shape .delete-btn { right: 0; }
-.shape .lock-btn { right: 35px; }
-.shape .color-picker { right: 70px; gap: 4px; }
-.section{position:absolute;min-width:300px;min-height:300px;width:400px;height:400px;border:1px solid rgba(0,0,0,.2);border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,.1);background-color:rgba(255,255,255,.7);display:flex}
-.section-header{position:absolute;top:-32px;left:0;height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;cursor:move}
-.section-title,.section-title-input{font-size:16px;font-weight:700;padding:5px;border-radius:3px;background-color:#fff;border:1px solid transparent}
-.section-title{cursor:text}
-.section-title-input{border:1px solid #007bff;outline:0}
-.section-controls{display:flex;align-items:center;background-color:#fff;border-radius:3px;padding:2px;box-shadow:0 1px 3px rgba(0,0,0,.2)}
-.section-controls .color-picker{display:flex;gap:4px}
-.note{position:absolute;min-width:200px;min-height:200px;width:220px;height:220px;box-shadow:0 5px 15px rgba(0,0,0,.2);display:flex;flex-direction:column;transition:box-shadow .2s;border-radius:3px;overflow:hidden}
-.note:hover{box-shadow:0 8px 25px rgba(0,0,0,.3)}
-.note-header{height:30px;width:100%;cursor:move;display:flex;justify-content:flex-end;align-items:center;padding:0 5px;box-sizing:border-box;flex-shrink:0}
-.note-header .color-picker{display:flex;gap:4px;margin-right:auto;padding-left:5px}
-.color-dot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:1px solid rgba(0,0,0,.2)}
-.delete-btn{width:20px;height:20px;cursor:pointer;color:rgba(0,0,0,.5);display:flex;justify-content:center;align-items:center;border-radius:50%}
-.delete-btn:hover{background-color:rgba(0,0,0,.1);color:#000}
-.note-body{flex-grow:1;position:relative;padding:10px;font-size:16px;line-height:1.5}
-.note-view{width:100%;height:100%;box-sizing:border-box;white-space:pre-wrap;word-wrap:break-word;cursor:text}
-.note-view ul{margin:0;padding-left:20px}
-.note-content{position:absolute;top:0;left:0;width:100%;height:100%;padding:10px;box-sizing:border-box;border:none;outline:0;background-color:transparent;resize:none;font-size:16px;line-height:1.5;font-family:inherit}
-.resizer{position:absolute;width:15px;height:15px;right:0;bottom:0;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(0,0,0,.1) 50%)}
-.text-box{position:absolute;padding:5px;cursor:move;border:1px solid transparent;transition:border-color .2s;min-width:20px}
-.text-box:hover{border-color:rgba(0,0,0,.3)}
-.text-box .delete-btn,.text-box .lock-btn{position:absolute;top:-10px;background-color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);display:none}
-.text-box .delete-btn{right:-10px}
-.text-box .lock-btn{right:15px}
-.text-box:hover .delete-btn,.text-box:hover .lock-btn{display:flex}
-.text-content{outline:0;font-size:20px;line-height:1.4;white-space:pre-wrap}
+body.is-dragging, body.is-dragging * { user-select: none; } body.connector-mode, body.drawing-mode { cursor: crosshair; }
+#board{position:absolute;width:10000px;height:10000px;background-color:#f0f0f0;background-image:linear-gradient(rgba(0,0,0,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.05) 1px,transparent 1px);background-size:20px 20px;transform-origin:0 0;cursor:grab} #board.grabbing{cursor:grabbing}
+#guide-container { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 9999; } .guide-line { position: absolute; background-color: #ff00ff; } .guide-line.horizontal { width: 100%; height: 1px; } .guide-line.vertical { height: 100%; width: 1px; }
+#connector-svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 500; } #connector-svg-layer .connector-line { stroke: #333; stroke-width: 2px; transition: stroke 0.2s; marker-end: url(#arrowhead); } #connector-svg-layer .connector-line.selected { stroke: #007bff; stroke-width: 4px; pointer-events: all; cursor: pointer; }
+#minimap { position: fixed; bottom: 10px; right: 10px; width: 200px; height: 200px; background-color: rgba(240, 240, 240, 0.7); border: 1px solid #ccc; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 10001; overflow: hidden; backdrop-filter: blur(4px); }
+#minimap-viewport { position: absolute; border: 2px solid rgba(255,0,0,0.8); cursor: move; }
+.minimap-element { position: absolute; background-color: rgba(0, 0, 0, 0.2); }
+.lock-btn{width:20px;height:20px;cursor:pointer;color:rgba(0,0,0,.5);display:flex;justify-content:center;align-items:center;border-radius:50%} .lock-btn:hover{background-color:rgba(0,0,0,.1)} .locked .lock-btn{color:#007bff}
+.note.selected .note-body, .section.selected, .text-box.selected, .shape.selected, .drawing.selected { outline: 2px solid #007bff; outline-offset: 2px; }
+.locked{cursor:not-allowed!important} .locked > *{cursor:not-allowed!important}
+
+.drawing { position: absolute; cursor: move; } .drawing .drawing-canvas { display: block; } .drawing .delete-btn, .drawing .lock-btn, .drawing .drawing-controls { position: absolute; top: -35px; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); display: none; padding: 5px; border-radius: 5px; align-items: center; } .drawing:hover .delete-btn, .drawing:hover .lock-btn, .drawing:hover .drawing-controls, .drawing.selected .delete-btn, .drawing.selected .lock-btn, .drawing.selected .drawing-controls { display: flex; } .drawing .delete-btn { right: 0; } .drawing .lock-btn { right: 35px; } .drawing .drawing-controls { left: 0; gap: 8px; } .drawing .drawing-controls input[type="color"] { width: 25px; height: 25px; border: none; padding: 0; background: none; cursor: pointer; } .drawing .drawing-controls input[type="range"] { width: 80px; }
+
+.shape { position: absolute; width: 150px; height: 150px; display: flex; justify-content: center; align-items: center; cursor: move; } .shape-visual { position: absolute; width: 100%; height: 100%; background-color: white; border: 2px solid #333; } .shape.circle .shape-visual { border-radius: 50%; } .shape.diamond .shape-visual { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); } .shape .shape-label { position: relative; z-index: 1; font-size: 16px; padding: 10px; outline: none; white-space: pre-wrap; text-align: center; width: 100%; box-sizing: border-box; } .shape .delete-btn, .shape .lock-btn, .shape .color-picker { position: absolute; top: -35px; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); display: none; padding: 5px; border-radius: 5px; align-items: center; } .shape:hover .delete-btn, .shape:hover .lock-btn, .shape:hover .color-picker, .shape.selected .delete-btn, .shape.selected .lock-btn, .shape.selected .color-picker { display: flex; } .shape .delete-btn { right: 0; } .shape .lock-btn { right: 35px; } .shape .color-picker { right: 70px; gap: 4px; }
+.section{position:absolute;min-width:300px;min-height:300px;width:400px;height:400px;border:1px solid rgba(0,0,0,.2);border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,.1);background-color:rgba(255,255,255,.7);display:flex} .section-header{position:absolute;top:-32px;left:0;height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;cursor:move} .section-title,.section-title-input{font-size:16px;font-weight:700;padding:5px;border-radius:3px;background-color:#fff;border:1px solid transparent} .section-title{cursor:text} .section-title-input{border:1px solid #007bff;outline:0} .section-controls{display:flex;align-items:center;background-color:#fff;border-radius:3px;padding:2px;box-shadow:0 1px 3px rgba(0,0,0,.2)} .section-controls .color-picker{display:flex;gap:4px}
+.note{position:absolute;min-width:200px;min-height:200px;width:220px;height:220px;box-shadow:0 5px 15px rgba(0,0,0,.2);display:flex;flex-direction:column;transition:box-shadow .2s;border-radius:3px;overflow:hidden} .note:hover{box-shadow:0 8px 25px rgba(0,0,0,.3)} .note-header{height:30px;width:100%;cursor:move;display:flex;justify-content:flex-end;align-items:center;padding:0 5px;box-sizing:border-box;flex-shrink:0} .note-header .color-picker{display:flex;gap:4px;margin-right:auto;padding-left:5px} .color-dot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:1px solid rgba(0,0,0,.2)} .delete-btn{width:20px;height:20px;cursor:pointer;color:rgba(0,0,0,.5);display:flex;justify-content:center;align-items:center;border-radius:50%} .delete-btn:hover{background-color:rgba(0,0,0,.1);color:#000} .note-body{flex-grow:1;position:relative;padding:10px;font-size:16px;line-height:1.5} .note-view{width:100%;height:100%;box-sizing:border-box;white-space:pre-wrap;word-wrap:break-word;cursor:text} .note-view ul{margin:0;padding-left:20px} .note-content{position:absolute;top:0;left:0;width:100%;height:100%;padding:10px;box-sizing:border-box;border:none;outline:0;background-color:transparent;resize:none;font-size:16px;line-height:1.5;font-family:inherit} .resizer{position:absolute;width:15px;height:15px;right:0;bottom:0;cursor:se-resize;background:linear-gradient(135deg,transparent 50%,rgba(0,0,0,.1) 50%)}
+.text-box{position:absolute;padding:5px;cursor:move;border:1px solid transparent;transition:border-color .2s;min-width:20px} .text-box:hover{border-color:rgba(0,0,0,.3)} .text-box .delete-btn,.text-box .lock-btn{position:absolute;top:-10px;background-color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);display:none} .text-box .delete-btn{right:-10px} .text-box .lock-btn{right:15px} .text-box:hover .delete-btn,.text-box:hover .lock-btn{display:flex} .text-content{outline:0;font-size:20px;line-height:1.4;white-space:pre-wrap}
