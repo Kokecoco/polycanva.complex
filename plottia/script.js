@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileManagerOverlay = document.getElementById('file-manager-overlay'); const fileList = document.getElementById('file-list'); const createNewFileBtn = document.getElementById('create-new-file-btn'); const mainApp = document.getElementById('main-app'); const backToFilesBtn = document.getElementById('back-to-files-btn'); const board = document.getElementById('board'); let svgLayer = document.getElementById('connector-svg-layer'); const addNoteBtn = document.getElementById('add-note-btn'); const addSectionBtn = document.getElementById('add-section-btn'); const addTextBtn = document.getElementById('add-text-btn'); const addShapeSquareBtn = document.getElementById('add-shape-square-btn'); const addShapeCircleBtn = document.getElementById('add-shape-circle-btn'); const addShapeDiamondBtn = document.getElementById('add-shape-diamond-btn'); const addConnectorBtn = document.getElementById('add-connector-btn'); const penToolBtn = document.getElementById('pen-tool-btn'); const eraserToolBtn = document.getElementById('eraser-tool-btn'); const exportBtn = document.getElementById('export-btn'); const imageExportBtn = document.getElementById('image-export-btn'); const importBtn = document.getElementById('import-btn'); const importFileInput = document.getElementById('import-file-input'); const cleanupBtn = document.getElementById('cleanup-btn'); const zoomDisplay = document.getElementById('zoom-display'); const zoomResetBtn = document.getElementById('zoom-reset-btn'); const undoBtn = document.getElementById('undo-btn'); const redoBtn = document.getElementById('redo-btn'); const darkModeBtn = document.getElementById('dark-mode-btn'); const minimap = document.getElementById('minimap'); const guideContainer = document.getElementById('guide-container');
     const strokeWidthSlider = document.getElementById('stroke-width-slider'); const strokeWidthDisplay = document.getElementById('stroke-width-display');
     
-    // ★★★ 新しいアーキテクチャのための要素取得と設定 ★★★
     const drawingLayer = document.getElementById('drawing-layer');
     const objectContainer = document.getElementById('object-container');
     const ctx = drawingLayer.getContext('2d');
@@ -13,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- グローバル変数 ---
     let currentFileId = null; 
     let notes = [], sections = [], textBoxes = [], shapes = [], connectors = [];
-    let paths = []; // ★★★ すべての描画パスを保持する配列
+    let paths = [];
     let selectedElement = null; let boardState = {}; let isConnectorMode = false, connectorStartId = null; let isPenMode = false, isEraserMode = false; let historyStack = [], redoStack = []; const HISTORY_LIMIT = 50; let initialPinchDistance = null;
     let currentStrokeWidth = 5;
 
@@ -35,7 +34,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function redo() { if (redoStack.length === 0) return; historyStack.push(getCurrentState()); const nextState = redoStack.pop(); loadStateFromObject(nextState); saveState(); updateUndoRedoButtons(); }
     function updateUndoRedoButtons() { undoBtn.disabled = historyStack.length === 0; redoBtn.disabled = redoStack.length === 0; }
     
-    function getCurrentState() { return { notes: notes.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, content: el.querySelector('.note-content').value, color: el.dataset.color, isLocked: el.classList.contains('locked') })), sections: sections.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, title: el.querySelector('.section-title').textContent, color: el.style.backgroundColor, isLocked: el.classList.contains('locked') })), textBoxes: textBoxes.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, zIndex: el.style.zIndex, content: el.querySelector('.text-content').innerHTML, width: el.style.width, isLocked: el.classList.contains('locked') })), shapes: shapes.map(el => ({ id: el.id, type: el.dataset.shapeType, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, label: el.querySelector('.shape-label').innerHTML, color: el.querySelector('.shape-visual').style.backgroundColor, isLocked: el.classList.contains('locked') })), paths: paths, connectors: connectors.map(c => ({ id: c.id, startId: c.startId, endId: c.endId })), board: boardState }; }
+    // ★★★ UNDO/REDOのバグを修正した最終版 ★★★
+    function getCurrentState() {
+        return {
+            notes: notes.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, content: el.querySelector('.note-content').value, color: el.dataset.color, isLocked: el.classList.contains('locked') })),
+            sections: sections.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, title: el.querySelector('.section-title').textContent, color: el.style.backgroundColor, isLocked: el.classList.contains('locked') })),
+            textBoxes: textBoxes.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, zIndex: el.style.zIndex, content: el.querySelector('.text-content').innerHTML, width: el.style.width, isLocked: el.classList.contains('locked') })),
+            shapes: shapes.map(el => ({ id: el.id, type: el.dataset.shapeType, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, label: el.querySelector('.shape-label').innerHTML, color: el.querySelector('.shape-visual').style.backgroundColor, isLocked: el.classList.contains('locked') })),
+            paths: paths.map(path => ({
+                ...path,
+                points: [...path.points]
+            })),
+            connectors: connectors.map(c => ({ id: c.id, startId: c.startId, endId: c.endId })),
+            board: { ...boardState }
+        };
+    }
+
     function loadStateFromObject(state) { 
         boardState = { panX: 0, panY: 0, scale: 1.0, noteZIndexCounter: 1000, sectionZIndexCounter: 1, ...state.board }; 
         objectContainer.innerHTML = '';
@@ -73,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.stroke();
             }
         });
-        // 描画後は必ずsource-overに戻す
         ctx.globalCompositeOperation = 'source-over';
     }
 
@@ -134,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateMinimap() { minimap.innerHTML = ''; const minimapScale = minimap.offsetWidth / board.offsetWidth; [...notes, ...sections, ...textBoxes, ...shapes].forEach(el => { const elRect = { left: parseFloat(el.style.left) * minimapScale, top: parseFloat(el.style.top) * minimapScale, width: el.offsetWidth * minimapScale, height: el.offsetHeight * minimapScale }; const mapEl = document.createElement('div'); mapEl.className = 'minimap-element'; mapEl.style.cssText = `left:${elRect.left}px; top:${elRect.top}px; width:${elRect.width}px; height:${elRect.height}px;`; minimap.appendChild(mapEl); }); const viewport = document.createElement('div'); viewport.id = 'minimap-viewport'; minimap.appendChild(viewport); const viewRect = { width: window.innerWidth / boardState.scale * minimapScale, height: window.innerHeight / boardState.scale * minimapScale, left: -boardState.panX * minimapScale, top: -boardState.panY * minimapScale }; viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`; const onMinimapDown = e => { e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; boardState.panX -= dx / minimapScale; boardState.panY -= dy / minimapScale; applyTransform(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; viewport.addEventListener('mousedown', onMinimapDown); viewport.addEventListener('touchstart', onMinimapDown, {passive: false}); }
     
     window.addEventListener('keydown', e => { if (mainApp.classList.contains('hidden')) return; if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); } if (e.ctrlKey && e.key.toLowerCase() === 'y' || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z')) { e.preventDefault(); redo(); } if (!selectedElement) return; if (document.activeElement.isContentEditable || /TEXTAREA|INPUT/.test(document.activeElement.tagName)) return; if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (selectedElement.type === 'connector') { recordHistory(); connectors = connectors.filter(c => c.id !== selectedElement.id); drawAllConnectors(); saveState(); clearSelection(); return; } if (selectedElement.classList.contains('locked')) return; selectedElement.querySelector('.delete-btn')?.click(); } if (e.ctrlKey && e.key.toLowerCase() === 'd') { e.preventDefault(); if (selectedElement.classList.contains('locked') || selectedElement.type === 'connector') return; let originalData, createFn; const fileData = JSON.parse(localStorage.getItem(currentFileId)); if (selectedElement.classList.contains('note')) { originalData = fileData.notes.find(n => n.id === selectedElement.id); createFn = createNote; } else if (selectedElement.classList.contains('section')) { originalData = fileData.sections.find(s => s.id === selectedElement.id); createFn = createSection; } else if (selectedElement.classList.contains('text-box')) { originalData = fileData.textBoxes.find(t => t.id === selectedElement.id); createFn = createTextBox; } else if (selectedElement.classList.contains('shape')) { originalData = fileData.shapes.find(s => s.id === selectedElement.id); createFn = createShape; } if (createFn) { recordHistory(); const dataToClone = { ...originalData }; delete dataToClone.id; delete dataToClone.zIndex; dataToClone.x = `${parseFloat(dataToClone.x) + 20 / boardState.scale}px`; dataToClone.y = `${parseFloat(dataToClone.y) + 20 / boardState.scale}px`; createFn(dataToClone); } } });
-    window.addEventListener('wheel', e => { e.preventDefault(); recordHistory(); if (e.shiftKey) { boardState.panX -= e.deltaY; } else { const z = 1.1, o = boardState.scale; let n=e.deltaY<0?o*z:o/z; n=Math.max(0.2,Math.min(n,3.0)); boardState.scale=n; boardState.panX=e.clientX-((e.clientX-boardState.panX)/o*n); boardState.panY=e.clientY-((e.clientY-boardState.panY)/o*n); } applyTransform(); saveState(); }, { passive: false });
+    window.addEventListener('wheel', e => { e.preventDefault(); if (mainApp.classList.contains('hidden')) return; recordHistory(); if (e.shiftKey) { boardState.panX -= e.deltaY; } else { const z = 1.1, o = boardState.scale; let n=e.deltaY<0?o*z:o/z; n=Math.max(0.2,Math.min(n,3.0)); boardState.scale=n; boardState.panX=e.clientX-((e.clientX-boardState.panX)/o*n); boardState.panY=e.clientY-((e.clientY-boardState.panY)/o*n); } applyTransform(); saveState(); }, { passive: false });
     
     function getCanvasCoordinates(e) {
         const coords = getEventCoordinates(e);
@@ -183,7 +196,6 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         
-        recordHistory();
         const startCoords = getCanvasCoordinates(e);
 
         const newPath = {
@@ -202,12 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const onPointerUp = () => {
-            if (newPath.points.length < 2) {
-                paths.pop();
-                historyStack.pop();
-                updateUndoRedoButtons();
-            } else {
+            if (newPath.points.length > 1) {
                 commitChange();
+            } else {
+                paths.pop();
             }
             document.removeEventListener('mousemove', onPointerMove);
             document.removeEventListener('mouseup', onPointerUp);
@@ -229,10 +239,83 @@ document.addEventListener('DOMContentLoaded', () => {
     backToFilesBtn.addEventListener('click', showFileManager); createNewFileBtn.addEventListener('click', createNewFile);
     darkModeBtn.addEventListener('click', () => { document.body.classList.toggle('dark-mode'); localStorage.setItem('plottia-dark-mode', document.body.classList.contains('dark-mode') ? '1' : '0' ); });
     exportBtn.addEventListener('click', () => { saveState(); const d = localStorage.getItem(currentFileId); if (!d) { alert('エクスポートするデータがありません。'); return; } const b = new Blob([d],{type:'application/json'}); const a = document.createElement('a'); a.download=`${getFileMetadata().find(f=>f.id===currentFileId)?.name || 'board'}.plottia`; a.href=URL.createObjectURL(b); a.click(); URL.revokeObjectURL(a.href); });
-    imageExportBtn.addEventListener('click', () => exportAsImage());
     importBtn.addEventListener('click', () => importFileInput.click()); importFileInput.addEventListener('change', e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{try{ JSON.parse(ev.target.result); if(confirm('現在のボードをインポートした内容で上書きします。よろしいですか？')){ recordHistory(); localStorage.setItem(currentFileId, ev.target.result); loadState();}}catch(err){alert('無効なファイルです。')}}; r.readAsText(f); e.target.value='';});
     cleanupBtn.addEventListener('click', () => { if (confirm('すべてのファイルとデータを消去して完全にリセットします。この操作は元に戻せません。よろしいですか？')) { localStorage.clear(); location.reload(); } });
     undoBtn.addEventListener('click', undo); redoBtn.addEventListener('click', redo);
+    
+    async function exportAsImage() {
+        const PADDING = 50;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        paths.forEach(path => {
+            path.points.forEach(p => {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            });
+        });
+
+        [...notes, ...sections, ...textBoxes, ...shapes].forEach(el => {
+            const left = parseFloat(el.style.left);
+            const top = parseFloat(el.style.top);
+            const width = el.offsetWidth;
+            const height = el.offsetHeight;
+            minX = Math.min(minX, left);
+            minY = Math.min(minY, top);
+            maxX = Math.max(maxX, left + width);
+            maxY = Math.max(maxY, top + height);
+        });
+
+        if (!isFinite(minX)) {
+            alert('エクスポートするコンテンツがありません。');
+            return;
+        }
+        
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+        const exportWidth = contentWidth + PADDING * 2;
+        const exportHeight = contentHeight + PADDING * 2;
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = exportWidth;
+        tempCanvas.height = exportHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+
+        const isDarkMode = document.body.classList.contains('dark-mode');
+        tempCtx.fillStyle = isDarkMode ? '#2c2c2c' : '#e9e9e9';
+        tempCtx.fillRect(0, 0, exportWidth, exportHeight);
+
+        tempCtx.drawImage(
+            drawingLayer,
+            minX, minY, contentWidth, contentHeight,
+            PADDING, PADDING, contentWidth, contentHeight
+        );
+
+        try {
+            const objectCanvas = await html2canvas(objectContainer, {
+                backgroundColor: null,
+                width: contentWidth,
+                height: contentHeight,
+                x: minX,
+                y: minY,
+                scale: 1
+            });
+            
+            tempCtx.drawImage(objectCanvas, PADDING, PADDING);
+
+        } catch (error) {
+            console.error('画像のエクスポートに失敗しました:', error);
+            alert('画像のエクスポートに失敗しました。コンソールを確認してください。');
+            return;
+        }
+
+        const a = document.createElement('a');
+        a.href = tempCanvas.toDataURL('image/png');
+        a.download = `plottia-board-${Date.now()}.png`;
+        a.click();
+    }
+    imageExportBtn.addEventListener('click', exportAsImage);
 
     strokeWidthSlider.addEventListener('input', e => { const newWidth = e.target.value; currentStrokeWidth = parseInt(newWidth, 10); strokeWidthDisplay.textContent = newWidth; localStorage.setItem('plottia_stroke_width', newWidth); });
     const savedWidth = localStorage.getItem('plottia_stroke_width'); if (savedWidth) { currentStrokeWidth = parseInt(savedWidth, 10); strokeWidthSlider.value = savedWidth; strokeWidthDisplay.textContent = savedWidth; }
