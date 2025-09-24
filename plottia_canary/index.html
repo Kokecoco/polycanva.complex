@@ -16,18 +16,33 @@
         </div>
     </div>
 
+    <!-- オフライン編集コンフリクト解決モーダル -->
+    <div id="conflict-overlay" class="hidden">
+        <div id="conflict-modal">
+            <h2>編集の競合</h2>
+            <p>このファイルは、あなたがオフラインの間に他のユーザーによって更新されています。</p>
+            <p>どのように処理しますか？</p>
+            <div class="conflict-actions">
+                <button id="conflict-resolve-overwrite"><strong>オンラインの最新版を使う</strong><br><small>（自分のオフラインでの変更は破棄されます）</small></button>
+                <button id="conflict-resolve-fork"><strong>自分の変更を別ファイルとして保存</strong><br><small>（新しいファイルを作成し、オンライン版に参加します）</small></button>
+                <button id="conflict-resolve-force"><strong>自分の変更で強制上書き</strong><br><small>（他の人の変更が失われる危険があります）</small></button>
+            </div>
+        </div>
+    </div>
+
+
     <div id="main-app" class="hidden">
+        <!-- ツールバーの変更 -->
         <div id="toolbar">
             <button id="back-to-files-btn" title="ファイル一覧に戻る"><i class="fas fa-arrow-left"></i></button>
-            <span class="toolbar-divider"></span>
-            <!-- Collaboration UI Start -->
-            <div id="collaboration-status" title="コラボレーション情報">
-                <i class="fas fa-users"></i>
-                <span id="peer-count">1</span>
-                <button id="share-link-btn" title="招待リンクをコピー"><i class="fas fa-share-alt"></i></button>
+            <div id="collaboration-ui">
+                <button id="share-room-btn" title="招待リンクをコピー"><i class="fas fa-share-alt"></i> 共有</button>
+                <div id="user-list-container">
+                    <span>接続中:</span>
+                    <ul id="user-list"></ul>
+                </div>
             </div>
             <span class="toolbar-divider"></span>
-            <!-- Collaboration UI End -->
             <button id="undo-btn" title="元に戻す (Ctrl+Z)"><i class="fas fa-undo"></i></button>
             <button id="redo-btn" title="やり直す (Ctrl+Y)"><i class="fas fa-redo"></i></button>
             <span class="toolbar-divider"></span>
@@ -71,25 +86,11 @@
         
         <div id="minimap"></div>
     </div>
-    <!-- Conflict Resolution Modal -->
-    <div id="conflict-overlay" class="hidden">
-        <div id="conflict-dialog">
-            <h2>編集の競合</h2>
-            <p>
-                あなたがオフラインの間に、他のユーザーによってボードが更新されました。
-                どちらの変更を保持しますか？
-            </p>
-            <div class="conflict-actions">
-                <button id="conflict-resolve-remote">他の人の最新の変更を取り込む</button>
-                <button id="conflict-resolve-local">自分の変更で上書きする</button>
-                <button id="conflict-resolve-copy">自分の変更をコピーとして保存</button>
-            </div>
-        </div>
-    </div>
+    <!-- 必要なライブラリの読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-    <!-- PeerJS Library -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peer.min.js"></script>
+    <!-- PeerJSライブラリを追加 -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
