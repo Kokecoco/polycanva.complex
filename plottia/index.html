@@ -31,20 +31,27 @@
             <button id="add-shape-circle-btn" title="円形"><i class="far fa-circle"></i></button>
             <button id="add-shape-diamond-btn" title="ひし形"><i class="far fa-gem"></i></button>
             <button id="add-connector-btn" title="コネクター"><i class="fas fa-share-alt"></i></button>
+            <span class="toolbar-divider"></span>
             <button id="pen-tool-btn" title="ペンツール"><i class="fas fa-pencil-alt"></i></button>
+            <button id="eraser-tool-btn" title="消しゴム"><i class="fas fa-eraser"></i></button>
+            <div id="stroke-width-controls" title="線の太さ">
+                <i class="fas fa-paint-brush"></i>
+                <input type="range" id="stroke-width-slider" min="1" max="50" value="5">
+                <span id="stroke-width-display">5</span>
+            </div>
             <span class="toolbar-divider"></span>
             <button id="dark-mode-btn" title="ダークモード切替"><i class="fas fa-moon"></i></button>
-            <button id="export-btn" title="保存"><i class="fas fa-download"></i></button>
-            <button id="import-btn" title="復元"><i class="fas fa-upload"></i></button>
+            <button id="export-btn" title="Plottia形式で保存 (.plottia)"><i class="fas fa-save"></i></button>
+            <button id="image-export-btn" title="画像として保存 (.png)"><i class="fas fa-image"></i></button>
+            <button id="import-btn" title="ファイルから復元"><i class="fas fa-upload"></i></button>
             <button id="cleanup-btn" title="全データ消去"><i class="fas fa-trash"></i></button>
-            
-            <!-- ▼▼▼ この一行を修正 ▼▼▼ -->
             <input type="file" id="import-file-input" accept=".plottia" style="display: none;">
-            <!-- ▲▲▲ この一行を修正 ▲▲▲ -->
-
         </div>
 
         <div id="board">
+            <canvas id="drawing-layer"></canvas>
+            <div id="object-container">
+            </div>
             <div id="guide-container"></div>
             <svg id="connector-svg-layer"></svg>
         </div>
