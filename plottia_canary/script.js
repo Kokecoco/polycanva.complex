@@ -722,13 +722,76 @@ document.addEventListener('DOMContentLoaded', () => {
     showFileManager();
 });
 
+const errorOverlay = document.getElementById('error-overlay');
+const errorDetails = document.getElementById('error-details');
+const copyErrorBtn = document.getElementById('copy-error-btn');
+const closeErrorBtn = document.getElementById('close-error-btn');
+
+/**
+ * エラーモーダルを表示する関数
+ * @param {string} errorMessage - 表示するエラーメッセージ
+ */
+function showErrorModal(errorMessage) {
+    if (errorOverlay && errorDetails) {
+        errorDetails.value = errorMessage;
+        errorOverlay.classList.remove('hidden');
+    } else {
+        // モーダルが何らかの理由で存在しない場合のフォールバック
+        console.error("CRITICAL ERROR (modal not found):\n", errorMessage);
+        prompt("エラーが発生しました。詳細をコピーしてください:", errorMessage);
+    }
+}
+
+copyErrorBtn.addEventListener('click', () => {
+    errorDetails.select();
+    navigator.clipboard.writeText(errorDetails.value)
+        .then(() => {
+            const originalText = copyErrorBtn.innerHTML;
+            copyErrorBtn.innerHTML = '<i class="fas fa-check"></i> コピーしました';
+            setTimeout(() => {
+                copyErrorBtn.innerHTML = originalText;
+            }, 2000);
+        })
+        .catch(err => {
+            alert('コピーに失敗しました。');
+            console.error('Failed to copy error details:', err);
+        });
+});
+
+closeErrorBtn.addEventListener('click', () => {
+    errorOverlay.classList.add('hidden');
+});
+
+
+// 捕捉されなかった通常のJavaScriptエラーを捕捉
 window.onerror = function(message, source, lineno, colno, error) {
-    console.error("JavaScript Error:", message, source, lineno, colno, error);
-    // alert("予期せぬエラーが発生しました。");
+    let formattedMessage = "予期せぬJavaScriptエラーが発生しました。\n\n";
+    formattedMessage += "メッセージ: " + message + "\n";
+    formattedMessage += "ファイル: " + (source || '不明') + "\n";
+    formattedMessage += "行番号: " + (lineno || '不明') + "\n";
+    formattedMessage += "列番号: " + (colno || '不明') + "\n";
+    if (error && error.stack) {
+        formattedMessage += "\nスタックトレース:\n" + error.stack;
+    }
+
+    showErrorModal(formattedMessage);
+    
+    // デフォルトのエラー処理（コンソールへの出力など）を抑制する場合はtrueを返す
     return true; 
 };
 
+// Promiseで捕捉されなかったエラーを捕捉
 window.addEventListener('unhandledrejection', function(event) {
-    console.error('Unhandled Promise Rejection:', event.reason);
-    // alert('捕捉されなかったエラーが発生しました。');
+    let formattedMessage = '捕捉されなかったPromiseのエラーが発生しました。\n\n';
+    if (event.reason instanceof Error) {
+        formattedMessage += "エラー名: " + event.reason.name + "\n";
+        formattedMessage += "メッセージ: " + event.reason.message + "\n";
+        if (event.reason.stack) {
+            formattedMessage += "\nスタックトレース:\n" + event.reason.stack;
+        }
+    } else {
+        formattedMessage += "理由: " + String(event.reason);
+    }
+    
+    showErrorModal(formattedMessage);
 });

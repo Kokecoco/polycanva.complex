@@ -154,3 +154,84 @@ body.dark-mode #stroke-width-controls {
 .conflict-actions button small {
     color: #555;
 }
+/* style.css の末尾に追加 */
+
+/* --- エラーモーダル --- */
+#error-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 30000;
+}
+#error-modal {
+    background: #fff;
+    padding: 20px 30px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 600px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    color: #333;
+}
+body.dark-mode #error-modal {
+    background: #3a3a3a;
+    color: #f1f1f1;
+}
+#error-modal h2 {
+    margin-top: 0;
+    color: #d9534f;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#error-details {
+    width: 100%;
+    height: 150px;
+    margin-top: 15px;
+    padding: 10px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    background-color: #f9f9f9;
+    color: #333;
+    resize: vertical;
+}
+body.dark-mode #error-details {
+    background-color: #2c2c2c;
+    color: #f1f1f1;
+    border-color: #555;
+}
+.error-actions {
+    margin-top: 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+.error-actions button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+}
+#copy-error-btn {
+    background-color: #007bff;
+    color: white;
+}
+#copy-error-btn:hover {
+    background-color: #0056b3;
+}
+#close-error-btn {
+    background-color: #6c757d;
+    color: white;
+}
+#close-error-btn:hover {
+    background-color: #5a6268;
+}

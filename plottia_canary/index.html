@@ -92,5 +92,16 @@
     <!-- PeerJSライブラリを追加 -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
+<div id="error-overlay" class="hidden">
+    <div id="error-modal">
+        <h2><i class="fas fa-exclamation-triangle"></i> アプリケーションエラー</h2>
+        <p>予期せぬエラーが発生しました。開発者に報告するため、以下の詳細をコピーしてください。</p>
+        <textarea id="error-details" readonly></textarea>
+        <div class="error-actions">
+            <button id="copy-error-btn"><i class="fas fa-copy"></i> クリップボードにコピー</button>
+            <button id="close-error-btn">閉じる</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
