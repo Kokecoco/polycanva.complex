@@ -16,6 +16,94 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedElement = null; let boardState = {}; let isConnectorMode = false, connectorStartId = null; let isPenMode = false, isEraserMode = false; let historyStack = [], redoStack = []; const HISTORY_LIMIT = 50; let initialPinchDistance = null;
     let currentStrokeWidth = 5;
 
+    const db = {
+        _db: null,
+        _dbName: 'PlottiaDB',
+        _storeName: 'boards',
+
+        async _getDB() {
+            if (this._db) return this._db;
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(this._dbName, 1);
+                request.onerror = e => reject('IndexedDBのオープンに失敗しました:', e.target.error);
+                request.onsuccess = e => {
+                    this._db = e.target.result;
+                    resolve(this._db);
+                };
+                request.onupgradeneeded = e => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(this._storeName)) {
+                        db.createObjectStore(this._storeName);
+                    }
+                };
+            });
+        },
+
+        async set(key, value) {
+            const db = await this._getDB();
+            return new Promise((resolve, reject) => {
+                // データをJSON文字列に変換し、pakoで圧縮
+                const compressed = pako.deflate(JSON.stringify(value));
+                
+                const transaction = db.transaction(this._storeName, 'readwrite');
+                const store = transaction.objectStore(this._storeName);
+                const request = store.put(compressed, key);
+            
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = e => reject('データの保存に失敗しました:', e.target.error);
+            });
+        },
+
+        async get(key) {
+            const db = await this._getDB();
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(this._storeName, 'readonly');
+                const store = transaction.objectStore(this._storeName);
+                const request = store.get(key);
+            
+                request.onsuccess = e => {
+                    if (e.target.result) {
+                        try {
+                            // 取得した圧縮データをpakoで解凍し、JSONにパース
+                            const decompressed = pako.inflate(e.target.result, { to: 'string' });
+                            resolve(JSON.parse(decompressed));
+                        } catch (err) {
+                            console.error('データの解凍またはパースに失敗しました:', err);
+                            resolve(null); // 破損データの場合はnullを返す
+                        }
+                    } else {
+                        resolve(null); // データが存在しない
+                    }
+                };
+                request.onerror = e => reject('データの取得に失敗しました:', e.target.error);
+            });
+        },
+    
+        async remove(key) {
+            const db = await this._getDB();
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(this._storeName, 'readwrite');
+                const store = transaction.objectStore(this._storeName);
+                store.delete(key);
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = e => reject('データの削除に失敗しました:', e.target.error);
+            });
+        }
+    };
+
+const channel = new BroadcastChannel('plottia_sync_channel');
+
+channel.onmessage = (event) => {
+    const { type, fileId, state } = event.data;
+
+    // もし他のタブで更新されたファイルが、このタブで開いているファイルと同じなら
+    if (type === 'update' && fileId === currentFileId) {
+        console.log('別タブからの更新を検知しました。ボードを同期します。');
+        // 履歴スタックを操作せずに、直接ボードの状態を読み込む
+        loadStateFromObject(state);
+    }
+};
+
     const noteColors = ['#ffc', '#cfc', '#ccf', '#fcc', '#cff', '#fff']; const sectionColors = ['rgba(255, 0, 0, 0.1)', 'rgba(0, 0, 255, 0.1)', 'rgba(0, 128, 0, 0.1)', 'rgba(128, 0, 128, 0.1)', 'rgba(255, 165, 0, 0.1)', 'rgba(220, 220, 220, 0.5)']; const shapeColors = ['#ffffff', '#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
 
     function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
@@ -27,14 +115,54 @@ document.addEventListener('DOMContentLoaded', () => {
     function createNewFile() { const name = prompt('新しいファイルの名前を入力してください:', '無題のボード'); if (!name) return; const metadata = getFileMetadata(); const newFile = { id: `plottia_board_${Date.now()}`, name: name, lastModified: Date.now() }; metadata.push(newFile); saveFileMetadata(metadata); const emptyBoardData = { notes: [], sections: [], textBoxes: [], shapes: [], paths: [], connectors: [], board: { panX: 0, panY: 0, scale: 1.0, noteZIndexCounter: 1000, sectionZIndexCounter: 1 } }; localStorage.setItem(newFile.id, JSON.stringify(emptyBoardData)); openFile(newFile.id); }
     function openFile(fileId) { currentFileId = fileId; fileManagerOverlay.classList.add('hidden'); mainApp.classList.remove('hidden'); loadState(); }
     function renameFile(fileId, oldName) { const newName = prompt('新しいファイル名を入力してください:', oldName); if (!newName || newName === oldName) return; let metadata = getFileMetadata(); const fileIndex = metadata.findIndex(f => f.id === fileId); if (fileIndex > -1) { metadata[fileIndex].name = newName; metadata[fileIndex].lastModified = Date.now(); saveFileMetadata(metadata); showFileManager(); } }
-    function deleteFile(fileId, fileName) { if (!confirm(`「${fileName}」を完全に削除します。よろしいですか？`)) return; let metadata = getFileMetadata(); metadata = metadata.filter(f => f.id !== fileId); saveFileMetadata(metadata); localStorage.removeItem(fileId); showFileManager(); }
+    async function deleteFile(fileId, fileName) {
+        if (!confirm(`「${fileName}」を完全に削除します。よろしいですか？`)) return;
+        try {
+            let metadata = getFileMetadata();
+            metadata = metadata.filter(f => f.id !== fileId);
+            saveFileMetadata(metadata);
+            await db.remove(fileId);
+            showFileManager();
+        } catch (err) {
+            alert(`ファイルの削除中にエラーが発生しました:\n${err.message}`);
+            console.error(err); // コンソールが使える環境のために残しておく
+        }
+    }
+    // ★★★ 修正箇所 ★★★
+    // 操作「前」の状態を履歴に記録する
+    function recordHistory() {
+        const currentState = getCurrentState();
+        historyStack.push(currentState);
+        if (historyStack.length > HISTORY_LIMIT) {
+            historyStack.shift();
+        }
+        redoStack = []; // 新しい操作が行われたらRedoスタックはクリア
+        updateUndoRedoButtons();
+    }
     
-    function recordHistory() { const currentState = getCurrentState(); historyStack.push(currentState); if (historyStack.length > HISTORY_LIMIT) { historyStack.shift(); } redoStack = []; updateUndoRedoButtons(); }
-    function undo() { if (historyStack.length === 0) return; redoStack.push(getCurrentState()); const prevState = historyStack.pop(); loadStateFromObject(prevState); saveState(); updateUndoRedoButtons(); }
-    function redo() { if (redoStack.length === 0) return; historyStack.push(getCurrentState()); const nextState = redoStack.pop(); loadStateFromObject(nextState); saveState(); updateUndoRedoButtons(); }
-    function updateUndoRedoButtons() { undoBtn.disabled = historyStack.length === 0; redoBtn.disabled = redoStack.length === 0; }
+    function undo() {
+        if (historyStack.length === 0) return;
+        redoStack.push(getCurrentState());
+        const prevState = historyStack.pop();
+        loadStateFromObject(prevState);
+        saveState();
+        updateUndoRedoButtons();
+    }
+
+    function redo() {
+        if (redoStack.length === 0) return;
+        historyStack.push(getCurrentState());
+        const nextState = redoStack.pop();
+        loadStateFromObject(nextState);
+        saveState();
+        updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+        undoBtn.disabled = historyStack.length === 0;
+        redoBtn.disabled = redoStack.length === 0;
+    }
     
-    // ★★★ UNDO/REDOのバグを修正した最終版 ★★★
     function getCurrentState() {
         return {
             notes: notes.map(el => ({ id: el.id, x: el.style.left, y: el.style.top, width: el.style.width, height: el.style.height, zIndex: el.style.zIndex, content: el.querySelector('.note-content').value, color: el.dataset.color, isLocked: el.classList.contains('locked') })),
@@ -67,9 +195,53 @@ document.addEventListener('DOMContentLoaded', () => {
         applyTransform(); 
     }
     
-    function commitChange() { recordHistory(); saveState(); }
-    function saveState() { if (!currentFileId) return; let metadata = getFileMetadata(); const fileIndex = metadata.findIndex(f => f.id === currentFileId); if (fileIndex > -1) { metadata[fileIndex].lastModified = Date.now(); saveFileMetadata(metadata); } localStorage.setItem(currentFileId, JSON.stringify(getCurrentState())); }
-    function loadState() { if (!currentFileId) return; const stateJSON = localStorage.getItem(currentFileId); if (!stateJSON) { showFileManager(); return; } const state = JSON.parse(stateJSON); loadStateFromObject(state); historyStack = [state]; redoStack = []; updateUndoRedoButtons(); }
+    // ★★★ 修正箇所 ★★★
+    // commitChange関数を削除。代わりにsaveStateを直接呼び出す。
+    async function saveState() {
+        if (!currentFileId) return;
+        try {
+            let metadata = getFileMetadata();
+            const fileIndex = metadata.findIndex(f => f.id === currentFileId);
+            if (fileIndex > -1) {
+                metadata[fileIndex].lastModified = Date.now();
+                saveFileMetadata(metadata);
+            }
+            
+            const currentState = getCurrentState();
+            await db.set(currentFileId, currentState);
+            
+            if (channel) {
+                channel.postMessage({
+                    type: 'update',
+                    fileId: currentFileId,
+                    state: currentState
+                });
+            }
+        } catch (err) {
+            alert(`データの保存中にエラーが発生しました:\n${err.message}`);
+            console.error(err);
+        }
+    }
+    async function loadState() {
+        if (!currentFileId) return;
+        try {
+            const state = await db.get(currentFileId);
+            if (!state) {
+                // 新規ファイルなどの場合、空の状態で初期化
+                const emptyBoardData = { notes: [], sections: [], textBoxes: [], shapes: [], paths: [], connectors: [], board: { panX: 0, panY: 0, scale: 1.0, noteZIndexCounter: 1000, sectionZIndexCounter: 1 } };
+                loadStateFromObject(emptyBoardData);
+            } else {
+                loadStateFromObject(state);
+            }
+            historyStack = [];
+            redoStack = [];
+            updateUndoRedoButtons();
+        } catch (err) {
+            alert(`データの読み込み中にエラーが発生しました:\n${err.message}`);
+            console.error(err);
+            showFileManager(); // エラー時はファイルマネージャーに戻る
+        }
+    }
 
     function redrawCanvas() {
         ctx.clearRect(0, 0, drawingLayer.width, drawingLayer.height);
@@ -102,41 +274,117 @@ document.addEventListener('DOMContentLoaded', () => {
     function togglePenMode(forceOff = false) { isPenMode = forceOff ? false : !isPenMode; if (isPenMode) { penToolBtn.classList.add('active'); document.body.classList.add('pen-mode'); drawingLayer.style.pointerEvents = 'auto'; toggleConnectorMode(true); toggleEraserMode(true); clearSelection(); } else { penToolBtn.classList.remove('active'); document.body.classList.remove('pen-mode'); if (!isEraserMode) drawingLayer.style.pointerEvents = 'none'; } }
     function toggleEraserMode(forceOff = false) { isEraserMode = forceOff ? false : !isEraserMode; if (isEraserMode) { eraserToolBtn.classList.add('active'); document.body.classList.add('eraser-mode'); drawingLayer.style.pointerEvents = 'auto'; toggleConnectorMode(true); togglePenMode(true); clearSelection(); } else { eraserToolBtn.classList.remove('active'); document.body.classList.remove('eraser-mode'); if (!isPenMode) drawingLayer.style.pointerEvents = 'none'; } }
 
-    function createNote(data = {}) { const note = document.createElement('div'); note.classList.add('note'); note.id = data.id || `note-${Date.now()}`; if (!data.id) { note.style.left = `${((window.innerWidth/2)-110-boardState.panX)/boardState.scale}px`; note.style.top = `${((window.innerHeight/2)-110-boardState.panY)/boardState.scale}px`; } else { note.style.left = data.x; note.style.top = data.y; } note.style.width = data.width || '220px'; note.style.height = data.height || '220px'; note.style.zIndex = data.zIndex || boardState.noteZIndexCounter++; const noteColor = data.color || noteColors[Math.floor(Math.random()*noteColors.length)]; note.dataset.color = noteColor; const rawContent = data.content || ''; note.innerHTML = `<div class="note-header"><div class="color-picker">${noteColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${parseMarkdown(rawContent)}</div><textarea class="note-content" style="display: none;">${rawContent}</textarea></div><div class="resizer"></div>`; updateNoteColor(note, noteColor); objectContainer.appendChild(note); notes.push(note); if (!data.id) commitChange(); if (data.isLocked) { note.classList.add('locked'); note.querySelector('.lock-btn i').className = 'fas fa-lock'; }
-    const onMouseDown = (e) => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(note.id); return; } selectElement(note); if(!note.classList.contains('locked')) { recordHistory(); note.style.zIndex = boardState.noteZIndexCounter++; saveState(); } }; note.addEventListener('mousedown', onMouseDown); note.addEventListener('touchstart', onMouseDown, {passive: false});
-    const header = note.querySelector('.note-header'); const onHeaderDown = e => { if (note.classList.contains('locked') || isConnectorMode) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); note.style.zIndex = boardState.noteZIndexCounter++; let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(note, {movementX: dx, movementY: dy}); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; header.addEventListener('mousedown', onHeaderDown); header.addEventListener('touchstart', onHeaderDown, {passive: false});
-    const resizer = note.querySelector('.resizer'); const onResizeDown = e => { if (note.classList.contains('locked')) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); const startW = note.offsetWidth, startH = note.offsetHeight; const startPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); note.style.width = `${startW + (currentPos.x - startPos.x) / boardState.scale}px`; note.style.height = `${startH + (currentPos.y - startPos.y) / boardState.scale}px`; drawAllConnectors(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; resizer.addEventListener('mousedown', onResizeDown); resizer.addEventListener('touchstart', onResizeDown, {passive: false});
-    const noteBody = note.querySelector('.note-body'); const view = note.querySelector('.note-view'); const content = note.querySelector('.note-content'); const deleteBtn = note.querySelector('.delete-btn'); const colorDots = note.querySelectorAll('.color-dot'); const lockBtn = note.querySelector('.lock-btn');
-    noteBody.addEventListener('dblclick', (e) => { if (note.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); view.style.display = 'none'; content.style.display = 'block'; content.focus(); });
-    content.addEventListener('blur', () => { if (note.classList.contains('locked')) return; view.innerHTML = parseMarkdown(content.value); view.style.display = 'block'; content.style.display = 'none'; commitChange(); });
-    deleteBtn.addEventListener('click', (e) => { if (note.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === note) clearSelection(); recordHistory(); notes = notes.filter(n => n.id !== note.id); connectors = connectors.filter(c => c.startId !== note.id && c.endId !== note.id); drawAllConnectors(); note.remove(); saveState(); });
-    colorDots.forEach(dot => { dot.addEventListener('click', e => { if (note.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); updateNoteColor(note, dot.dataset.color); saveState(); }); });
-    lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = note.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; if(isLocked) clearSelection(); saveState(); }); }
+    function createNote(data = {}) {
+        // ★★★ 修正箇所 ★★★
+        // 新規作成の場合、要素を追加する「前」に履歴を記録
+        if (!data.id) recordHistory();
+        const note = document.createElement('div');
+        note.classList.add('note');
+        note.id = data.id || `note-${Date.now()}`;
+        if (!data.id) {
+            note.style.left = `${((window.innerWidth/2)-110-boardState.panX)/boardState.scale}px`;
+            note.style.top = `${((window.innerHeight/2)-110-boardState.panY)/boardState.scale}px`;
+        } else {
+            note.style.left = data.x;
+            note.style.top = data.y;
+        }
+        note.style.width = data.width || '220px';
+        note.style.height = data.height || '220px';
+        note.style.zIndex = data.zIndex || boardState.noteZIndexCounter++;
+        const noteColor = data.color || noteColors[Math.floor(Math.random()*noteColors.length)];
+        note.dataset.color = noteColor;
+        const rawContent = data.content || '';
+        note.innerHTML = `<div class="note-header"><div class="color-picker">${noteColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${parseMarkdown(rawContent)}</div><textarea class="note-content" style="display: none;">${rawContent}</textarea></div><div class="resizer"></div>`;
+        updateNoteColor(note, noteColor);
+        objectContainer.appendChild(note);
+        notes.push(note);
+        // ★★★ 修正箇所 ★★★
+        // 新規作成の場合、要素を追加した「後」で状態を保存
+        if (!data.id) saveState();
+        if (data.isLocked) { note.classList.add('locked'); note.querySelector('.lock-btn i').className = 'fas fa-lock'; }
+    
+        const onMouseDown = (e) => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(note.id); return; } selectElement(note); if(!note.classList.contains('locked')) { recordHistory(); note.style.zIndex = boardState.noteZIndexCounter++; saveState(); } }; note.addEventListener('mousedown', onMouseDown); note.addEventListener('touchstart', onMouseDown, {passive: false});
+        const header = note.querySelector('.note-header'); const onHeaderDown = e => { if (note.classList.contains('locked') || isConnectorMode) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); note.style.zIndex = boardState.noteZIndexCounter++; let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(note, {movementX: dx, movementY: dy}); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; header.addEventListener('mousedown', onHeaderDown); header.addEventListener('touchstart', onHeaderDown, {passive: false});
+        const resizer = note.querySelector('.resizer'); const onResizeDown = e => { if (note.classList.contains('locked')) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); const startW = note.offsetWidth, startH = note.offsetHeight; const startPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); note.style.width = `${startW + (currentPos.x - startPos.x) / boardState.scale}px`; note.style.height = `${startH + (currentPos.y - startPos.y) / boardState.scale}px`; drawAllConnectors(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; resizer.addEventListener('mousedown', onResizeDown); resizer.addEventListener('touchstart', onResizeDown, {passive: false});
+        const noteBody = note.querySelector('.note-body'); const view = note.querySelector('.note-view'); const content = note.querySelector('.note-content'); const deleteBtn = note.querySelector('.delete-btn'); const colorDots = note.querySelectorAll('.color-dot'); const lockBtn = note.querySelector('.lock-btn');
+        noteBody.addEventListener('dblclick', (e) => { if (note.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); view.style.display = 'none'; content.style.display = 'block'; content.focus(); });
+        // ★★★ 修正箇所 ★★★
+        // 編集完了時にsaveStateのみ呼び出す
+        content.addEventListener('blur', () => { if (note.classList.contains('locked')) return; view.innerHTML = parseMarkdown(content.value); view.style.display = 'block'; content.style.display = 'none'; saveState(); });
+        deleteBtn.addEventListener('click', (e) => { if (note.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === note) clearSelection(); recordHistory(); notes = notes.filter(n => n.id !== note.id); connectors = connectors.filter(c => c.startId !== note.id && c.endId !== note.id); drawAllConnectors(); note.remove(); saveState(); });
+        colorDots.forEach(dot => { dot.addEventListener('click', e => { if (note.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); updateNoteColor(note, dot.dataset.color); saveState(); }); });
+        lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = note.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; if(isLocked) clearSelection(); saveState(); });
+    }
     function updateNoteColor(note, color) { note.dataset.color = color; note.querySelector('.note-header').style.backgroundColor = color; note.querySelector('.note-body').style.backgroundColor = color; }
 
-    function createSection(data = {}) { const section = document.createElement('div'); section.classList.add('section'); section.id = data.id || `section-${Date.now()}`; if (!data.id) { section.style.left = `${((window.innerWidth/2)-200-boardState.panX)/boardState.scale}px`; section.style.top = `${((window.innerHeight/2)-200-boardState.panY)/boardState.scale}px`; } else { section.style.left = data.x; section.style.top = data.y; } section.style.width = data.width || '400px'; section.style.height = data.height || '400px'; section.style.zIndex = data.zIndex || boardState.sectionZIndexCounter++; section.style.backgroundColor = data.color || sectionColors[Math.floor(Math.random()*sectionColors.length)]; const title = data.title || '新しいセクション'; section.innerHTML = `<div class="section-header"><div class="section-title">${title}</div><div class="section-controls"><div class="color-picker">${sectionColors.map(c=>`<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`; objectContainer.appendChild(section); sections.push(section); if (!data.id) commitChange(); if (data.isLocked) { section.classList.add('locked'); section.querySelector('.lock-btn i').className = 'fas fa-lock'; }
-    const startSectionDrag = (e) => { if (section.classList.contains('locked')) return; recordHistory(); document.body.classList.add('is-dragging'); section.style.zIndex = boardState.sectionZIndexCounter++; let attachedElements = []; const startLeft = parseFloat(section.style.left), startTop = parseFloat(section.style.top); [...notes, ...shapes, ...textBoxes].forEach(el => { const elLeft=parseFloat(el.style.left), elTop=parseFloat(el.style.top); if (elLeft > startLeft && elLeft + el.offsetWidth < startLeft + section.offsetWidth && elTop > startTop && elTop + el.offsetHeight < startTop + section.offsetHeight) { attachedElements.push({element: el, offsetX: elLeft - startLeft, offsetY: elTop - startTop}); } }); let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(section, {movementX: dx, movementY: dy}, attachedElements); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); };
-    const header = section.querySelector('.section-header'); const onHeaderDown = e => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(section.id); return; } selectElement(section); startSectionDrag(e); }; header.addEventListener('mousedown', onHeaderDown); header.addEventListener('touchstart', onHeaderDown, {passive: false});
-    const onSectionDown = e => { if (e.target === section) { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(section.id); return; } selectElement(section); startSectionDrag(e); }}; section.addEventListener('mousedown', onSectionDown); section.addEventListener('touchstart', onSectionDown, {passive: false});
-    const resizer = section.querySelector('.resizer'); const onResizeDown = e => { if (section.classList.contains('locked')) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); const startW=section.offsetWidth, startH=section.offsetHeight; const startPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); section.style.width=`${startW+(currentPos.x-startPos.x)/boardState.scale}px`; section.style.height=`${startH+(currentPos.y-startPos.y)/boardState.scale}px`; drawAllConnectors(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; resizer.addEventListener('mousedown', onResizeDown); resizer.addEventListener('touchstart', onResizeDown, {passive: false});
-    const titleEl = section.querySelector('.section-title'); titleEl.addEventListener('dblclick', e => { if (section.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); const i=document.createElement('input'); i.type='text'; i.value=titleEl.textContent; i.className='section-title-input'; titleEl.replaceWith(i); i.focus(); i.select(); i.addEventListener('blur',()=>{titleEl.textContent=i.value||"無題";i.replaceWith(titleEl);commitChange();}); i.addEventListener('keydown',(ev)=>{if(ev.key==='Enter')i.blur();}); });
-    const deleteBtn = section.querySelector('.delete-btn'); deleteBtn.addEventListener('click', e => { if (section.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === section) clearSelection(); recordHistory(); sections = sections.filter(s => s.id !== section.id); connectors = connectors.filter(c => c.startId !== section.id && c.endId !== section.id); drawAllConnectors(); section.remove(); saveState(); });
-    const colorDots = section.querySelectorAll('.color-dot'); colorDots.forEach(dot => { dot.addEventListener('click', e => { if (section.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); section.style.backgroundColor = dot.dataset.color; saveState(); }); });
-    const lockBtn = section.querySelector('.lock-btn'); lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = section.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; if(isLocked) clearSelection(); saveState(); }); }
+    function createSection(data = {}) {
+        // ★★★ 修正箇所 ★★★
+        if (!data.id) recordHistory();
+        const section = document.createElement('div'); section.classList.add('section'); section.id = data.id || `section-${Date.now()}`; if (!data.id) { section.style.left = `${((window.innerWidth/2)-200-boardState.panX)/boardState.scale}px`; section.style.top = `${((window.innerHeight/2)-200-boardState.panY)/boardState.scale}px`; } else { section.style.left = data.x; section.style.top = data.y; } section.style.width = data.width || '400px'; section.style.height = data.height || '400px'; section.style.zIndex = data.zIndex || boardState.sectionZIndexCounter++; section.style.backgroundColor = data.color || sectionColors[Math.floor(Math.random()*sectionColors.length)]; const title = data.title || '新しいセクション'; section.innerHTML = `<div class="section-header"><div class="section-title">${title}</div><div class="section-controls"><div class="color-picker">${sectionColors.map(c=>`<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`; objectContainer.appendChild(section); sections.push(section);
+        // ★★★ 修正箇所 ★★★
+        if (!data.id) saveState();
+        if (data.isLocked) { section.classList.add('locked'); section.querySelector('.lock-btn i').className = 'fas fa-lock'; }
+        const startSectionDrag = (e) => { if (section.classList.contains('locked')) return; recordHistory(); document.body.classList.add('is-dragging'); section.style.zIndex = boardState.sectionZIndexCounter++; let attachedElements = []; const startLeft = parseFloat(section.style.left), startTop = parseFloat(section.style.top); [...notes, ...shapes, ...textBoxes].forEach(el => { const elLeft=parseFloat(el.style.left), elTop=parseFloat(el.style.top); if (elLeft > startLeft && elLeft + el.offsetWidth < startLeft + section.offsetWidth && elTop > startTop && elTop + el.offsetHeight < startTop + section.offsetHeight) { attachedElements.push({element: el, offsetX: elLeft - startLeft, offsetY: elTop - startTop}); } }); let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(section, {movementX: dx, movementY: dy}, attachedElements); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); };
+        const header = section.querySelector('.section-header'); const onHeaderDown = e => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(section.id); return; } selectElement(section); startSectionDrag(e); }; header.addEventListener('mousedown', onHeaderDown); header.addEventListener('touchstart', onHeaderDown, {passive: false});
+        const onSectionDown = e => { if (e.target === section) { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(section.id); return; } selectElement(section); startSectionDrag(e); }}; section.addEventListener('mousedown', onSectionDown); section.addEventListener('touchstart', onSectionDown, {passive: false});
+        const resizer = section.querySelector('.resizer'); const onResizeDown = e => { if (section.classList.contains('locked')) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); const startW=section.offsetWidth, startH=section.offsetHeight; const startPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); section.style.width=`${startW+(currentPos.x-startPos.x)/boardState.scale}px`; section.style.height=`${startH+(currentPos.y-startPos.y)/boardState.scale}px`; drawAllConnectors(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; resizer.addEventListener('mousedown', onResizeDown); resizer.addEventListener('touchstart', onResizeDown, {passive: false});
+        const titleEl = section.querySelector('.section-title'); titleEl.addEventListener('dblclick', e => { if (section.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); const i=document.createElement('input'); i.type='text'; i.value=titleEl.textContent; i.className='section-title-input'; titleEl.replaceWith(i); i.focus(); i.select(); i.addEventListener('blur',()=>{titleEl.textContent=i.value||"無題";i.replaceWith(titleEl);saveState();}); i.addEventListener('keydown',(ev)=>{if(ev.key==='Enter')i.blur();}); });
+        const deleteBtn = section.querySelector('.delete-btn'); deleteBtn.addEventListener('click', e => { if (section.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === section) clearSelection(); recordHistory(); sections = sections.filter(s => s.id !== section.id); connectors = connectors.filter(c => c.startId !== section.id && c.endId !== section.id); drawAllConnectors(); section.remove(); saveState(); });
+        const colorDots = section.querySelectorAll('.color-dot'); colorDots.forEach(dot => { dot.addEventListener('click', e => { if (section.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); section.style.backgroundColor = dot.dataset.color; saveState(); }); });
+        const lockBtn = section.querySelector('.lock-btn'); lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = section.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; if(isLocked) clearSelection(); saveState(); });
+    }
 
-    function createTextBox(data = {}) { const textBox = document.createElement('div'); textBox.classList.add('text-box'); textBox.id = data.id || `text-${Date.now()}`; if (!data.id) { textBox.style.left = `${((window.innerWidth/2)-100-boardState.panX)/boardState.scale}px`; textBox.style.top = `${((window.innerHeight/2)-50-boardState.panY)/boardState.scale}px`; } else { textBox.style.left = data.x; textBox.style.top = data.y; } textBox.style.zIndex = data.zIndex || boardState.noteZIndexCounter++; textBox.style.width = data.width || 'auto'; textBox.innerHTML = `<div class="text-content" contenteditable="false">${data.content || 'テキストを入力'}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`; objectContainer.appendChild(textBox); textBoxes.push(textBox); if (!data.id) commitChange(); if (data.isLocked) { textBox.classList.add('locked'); textBox.querySelector('.lock-btn i').className = 'fas fa-lock'; textBox.querySelector('.text-content').contentEditable = 'false'; } else { textBox.querySelector('.text-content').contentEditable = 'true'; }
-    const content = textBox.querySelector('.text-content'); const onTextBoxDown = e => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(textBox.id); return; } selectElement(textBox); if (textBox.classList.contains('locked')) return; if (e.target !== content) { document.body.classList.add('is-dragging'); recordHistory(); textBox.style.zIndex = boardState.noteZIndexCounter++; let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(textBox, {movementX: dx, movementY: dy}); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); } }; textBox.addEventListener('mousedown', onTextBoxDown); textBox.addEventListener('touchstart', onTextBoxDown, {passive: false});
-    content.addEventListener('input', () => { if (textBox.classList.contains('locked')) return; textBox.style.width = 'auto'; commitChange(); }); content.addEventListener('mousedown', e => e.stopPropagation());
-    const deleteBtn = textBox.querySelector('.delete-btn'); deleteBtn.addEventListener('click', e => { if (textBox.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === textBox) clearSelection(); recordHistory(); textBoxes = textBoxes.filter(t => t.id !== textBox.id); connectors = connectors.filter(c => c.startId !== textBox.id && c.endId !== textBox.id); drawAllConnectors(); textBox.remove(); saveState(); });
-    const lockBtn = textBox.querySelector('.lock-btn'); lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = textBox.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; content.contentEditable = !isLocked; if(isLocked) clearSelection(); saveState(); }); }
+    function createTextBox(data = {}) {
+        // ★★★ 修正箇所 ★★★
+        if (!data.id) recordHistory();
+        const textBox = document.createElement('div'); textBox.classList.add('text-box'); textBox.id = data.id || `text-${Date.now()}`; if (!data.id) { textBox.style.left = `${((window.innerWidth/2)-100-boardState.panX)/boardState.scale}px`; textBox.style.top = `${((window.innerHeight/2)-50-boardState.panY)/boardState.scale}px`; } else { textBox.style.left = data.x; textBox.style.top = data.y; } textBox.style.zIndex = data.zIndex || boardState.noteZIndexCounter++; textBox.style.width = data.width || 'auto'; textBox.innerHTML = `<div class="text-content" contenteditable="false">${data.content || 'テキストを入力'}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`; objectContainer.appendChild(textBox); textBoxes.push(textBox);
+        // ★★★ 修正箇所 ★★★
+        if (!data.id) saveState();
+        if (data.isLocked) { textBox.classList.add('locked'); textBox.querySelector('.lock-btn i').className = 'fas fa-lock'; textBox.querySelector('.text-content').contentEditable = 'false'; } else { textBox.querySelector('.text-content').contentEditable = 'true'; }
+        const content = textBox.querySelector('.text-content'); const onTextBoxDown = e => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(textBox.id); return; } selectElement(textBox); if (textBox.classList.contains('locked')) return; if (e.target !== content) { document.body.classList.add('is-dragging'); recordHistory(); textBox.style.zIndex = boardState.noteZIndexCounter++; let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(textBox, {movementX: dx, movementY: dy}); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); } }; textBox.addEventListener('mousedown', onTextBoxDown); textBox.addEventListener('touchstart', onTextBoxDown, {passive: false});
+        
+        // ★★★ 修正箇所 ★★★
+        // inputイベントでの履歴作成をやめ、focus/blurで管理する
+        let originalContentOnFocus;
+        content.addEventListener('focus', () => {
+            if (textBox.classList.contains('locked')) return;
+            originalContentOnFocus = content.innerHTML;
+            recordHistory();
+        });
+        content.addEventListener('blur', () => {
+            if (textBox.classList.contains('locked')) return;
+            if (originalContentOnFocus !== content.innerHTML) {
+                saveState();
+            } else {
+                // 変更がなければ履歴をキャンセル
+                if(historyStack.length > 0) historyStack.pop();
+                updateUndoRedoButtons();
+            }
+        });
+        content.addEventListener('input', () => { if (textBox.classList.contains('locked')) return; textBox.style.width = 'auto'; });
+        content.addEventListener('mousedown', e => e.stopPropagation());
+        
+        const deleteBtn = textBox.querySelector('.delete-btn'); deleteBtn.addEventListener('click', e => { if (textBox.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === textBox) clearSelection(); recordHistory(); textBoxes = textBoxes.filter(t => t.id !== textBox.id); connectors = connectors.filter(c => c.startId !== textBox.id && c.endId !== textBox.id); drawAllConnectors(); textBox.remove(); saveState(); });
+        const lockBtn = textBox.querySelector('.lock-btn'); lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = textBox.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; content.contentEditable = !isLocked; if(isLocked) clearSelection(); saveState(); });
+    }
 
-    function createShape(data = {}) { const shape = document.createElement('div'); shape.classList.add('shape', data.type); shape.dataset.shapeType = data.type; shape.id = data.id || `shape-${Date.now()}`; if (!data.id) { shape.style.left = `${((window.innerWidth/2)-75-boardState.panX)/boardState.scale}px`; shape.style.top = `${((window.innerHeight/2)-75-boardState.panY)/boardState.scale}px`; } else { shape.style.left = data.x; shape.style.top = data.y; } shape.style.width = data.width || '150px'; shape.style.height = data.height || '150px'; shape.style.zIndex = data.zIndex || boardState.noteZIndexCounter++; shape.innerHTML = `<div class="shape-visual"></div><div class="shape-label" contenteditable="false">${data.label || ''}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div>`; objectContainer.appendChild(shape); shapes.push(shape); const visual = shape.querySelector('.shape-visual'); visual.style.backgroundColor = data.color || shapeColors[0]; if (!data.id) commitChange(); if (data.isLocked) { shape.classList.add('locked'); shape.querySelector('.lock-btn i').className = 'fas fa-lock'; }
-    const onShapeDown = e => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(shape.id); return; } selectElement(shape); if (shape.classList.contains('locked')) return; if (e.target.classList.contains('shape-visual') || e.target.classList.contains('shape')) { document.body.classList.add('is-dragging'); recordHistory(); shape.style.zIndex = boardState.noteZIndexCounter++; let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(shape, {movementX: dx, movementY: dy}); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); } }; shape.addEventListener('mousedown', onShapeDown); shape.addEventListener('touchstart', onShapeDown, {passive: false});
-    const resizer = shape.querySelector('.resizer'); const onResizeDown = e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); const startW=shape.offsetWidth, startH=shape.offsetHeight; const startPos = getEventCoordinates(e); const aspectRatio = startW / startH; const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); if (ev.shiftKey) { const deltaX = currentPos.x - startPos.x; const newWidth = startW + deltaX / boardState.scale; shape.style.width=`${newWidth}px`; shape.style.height=`${newWidth / aspectRatio}px`; } else { shape.style.width=`${startW+(currentPos.x-startPos.x)/boardState.scale}px`; shape.style.height=`${startH+(currentPos.y-startPos.y)/boardState.scale}px`; } drawAllConnectors(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; resizer.addEventListener('mousedown', onResizeDown); resizer.addEventListener('touchstart', onResizeDown, {passive: false});
-    const label = shape.querySelector('.shape-label'); label.addEventListener('dblclick', e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); label.contentEditable = 'true'; label.focus(); }); label.addEventListener('blur', () => { label.contentEditable = 'false'; commitChange(); }); label.addEventListener('mousedown', e => e.stopPropagation());
-    const deleteBtn = shape.querySelector('.delete-btn'); deleteBtn.addEventListener('click', e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === shape) clearSelection(); recordHistory(); shapes = shapes.filter(s => s.id !== shape.id); connectors = connectors.filter(c => c.startId !== shape.id && c.endId !== shape.id); drawAllConnectors(); shape.remove(); saveState(); });
-    const colorDots = shape.querySelectorAll('.color-dot'); colorDots.forEach(dot => { dot.addEventListener('click', e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); shape.querySelector('.shape-visual').style.backgroundColor = dot.dataset.color; saveState(); }); });
-    const lockBtn = shape.querySelector('.lock-btn'); lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = shape.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; if(isLocked) clearSelection(); saveState(); }); }
+    function createShape(data = {}) {
+        // ★★★ 修正箇所 ★★★
+        if (!data.id) recordHistory();
+        const shape = document.createElement('div'); shape.classList.add('shape', data.type); shape.dataset.shapeType = data.type; shape.id = data.id || `shape-${Date.now()}`; if (!data.id) { shape.style.left = `${((window.innerWidth/2)-75-boardState.panX)/boardState.scale}px`; shape.style.top = `${((window.innerHeight/2)-75-boardState.panY)/boardState.scale}px`; } else { shape.style.left = data.x; shape.style.top = data.y; } shape.style.width = data.width || '150px'; shape.style.height = data.height || '150px'; shape.style.zIndex = data.zIndex || boardState.noteZIndexCounter++; shape.innerHTML = `<div class="shape-visual"></div><div class="shape-label" contenteditable="false">${data.label || ''}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div>`; objectContainer.appendChild(shape); shapes.push(shape); const visual = shape.querySelector('.shape-visual'); visual.style.backgroundColor = data.color || shapeColors[0];
+        // ★★★ 修正箇所 ★★★
+        if (!data.id) saveState();
+        if (data.isLocked) { shape.classList.add('locked'); shape.querySelector('.lock-btn i').className = 'fas fa-lock'; }
+        const onShapeDown = e => { e.stopPropagation(); if (isConnectorMode) { handleConnectorClick(shape.id); return; } selectElement(shape); if (shape.classList.contains('locked')) return; if (e.target.classList.contains('shape-visual') || e.target.classList.contains('shape')) { document.body.classList.add('is-dragging'); recordHistory(); shape.style.zIndex = boardState.noteZIndexCounter++; let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; handleDrag(shape, {movementX: dx, movementY: dy}); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); clearGuides(); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); } }; shape.addEventListener('mousedown', onShapeDown); shape.addEventListener('touchstart', onShapeDown, {passive: false});
+        const resizer = shape.querySelector('.resizer'); const onResizeDown = e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); const startW=shape.offsetWidth, startH=shape.offsetHeight; const startPos = getEventCoordinates(e); const aspectRatio = startW / startH; const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); if (ev.shiftKey) { const deltaX = currentPos.x - startPos.x; const newWidth = startW + deltaX / boardState.scale; shape.style.width=`${newWidth}px`; shape.style.height=`${newWidth / aspectRatio}px`; } else { shape.style.width=`${startW+(currentPos.x-startPos.x)/boardState.scale}px`; shape.style.height=`${startH+(currentPos.y-startPos.y)/boardState.scale}px`; } drawAllConnectors(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; resizer.addEventListener('mousedown', onResizeDown); resizer.addEventListener('touchstart', onResizeDown, {passive: false});
+        const label = shape.querySelector('.shape-label'); label.addEventListener('dblclick', e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); label.contentEditable = 'true'; label.focus(); });
+        // ★★★ 修正箇所 ★★★
+        label.addEventListener('blur', () => { label.contentEditable = 'false'; saveState(); });
+        label.addEventListener('mousedown', e => e.stopPropagation());
+        const deleteBtn = shape.querySelector('.delete-btn'); deleteBtn.addEventListener('click', e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); if (selectedElement === shape) clearSelection(); recordHistory(); shapes = shapes.filter(s => s.id !== shape.id); connectors = connectors.filter(c => c.startId !== shape.id && c.endId !== shape.id); drawAllConnectors(); shape.remove(); saveState(); });
+        const colorDots = shape.querySelectorAll('.color-dot'); colorDots.forEach(dot => { dot.addEventListener('click', e => { if (shape.classList.contains('locked')) return; e.stopPropagation(); recordHistory(); shape.querySelector('.shape-visual').style.backgroundColor = dot.dataset.color; saveState(); }); });
+        const lockBtn = shape.querySelector('.lock-btn'); lockBtn.addEventListener('click', e => { e.stopPropagation(); recordHistory(); const isLocked = shape.classList.toggle('locked'); lockBtn.querySelector('i').className = isLocked ? 'fas fa-lock' : 'fas fa-unlock'; if(isLocked) clearSelection(); saveState(); });
+    }
 
     function handleDrag(element, event, attachedElements = []) { const currentLeft = parseFloat(element.style.left); const currentTop = parseFloat(element.style.top); const snapped = snapAndGuide(element, currentLeft + event.movementX/boardState.scale, currentTop + event.movementY/boardState.scale); const dx = snapped.x - currentLeft; const dy = snapped.y - currentTop; element.style.left = `${snapped.x}px`; element.style.top = `${snapped.y}px`; attachedElements.forEach(item => { const el = item.element; el.style.left = `${parseFloat(el.style.left) + dx}px`; el.style.top = `${parseFloat(el.style.top) + dy}px`; }); drawAllConnectors(); }
     const SNAP_THRESHOLD = 5;
@@ -147,7 +395,25 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateMinimap() { minimap.innerHTML = ''; const minimapScale = minimap.offsetWidth / board.offsetWidth; [...notes, ...sections, ...textBoxes, ...shapes].forEach(el => { const elRect = { left: parseFloat(el.style.left) * minimapScale, top: parseFloat(el.style.top) * minimapScale, width: el.offsetWidth * minimapScale, height: el.offsetHeight * minimapScale }; const mapEl = document.createElement('div'); mapEl.className = 'minimap-element'; mapEl.style.cssText = `left:${elRect.left}px; top:${elRect.top}px; width:${elRect.width}px; height:${elRect.height}px;`; minimap.appendChild(mapEl); }); const viewport = document.createElement('div'); viewport.id = 'minimap-viewport'; minimap.appendChild(viewport); const viewRect = { width: window.innerWidth / boardState.scale * minimapScale, height: window.innerHeight / boardState.scale * minimapScale, left: -boardState.panX * minimapScale, top: -boardState.panY * minimapScale }; viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`; const onMinimapDown = e => { e.stopPropagation(); document.body.classList.add('is-dragging'); recordHistory(); let lastPos = getEventCoordinates(e); const onPointerMove = ev => { ev.preventDefault(); const currentPos = getEventCoordinates(ev); const dx = currentPos.x - lastPos.x; const dy = currentPos.y - lastPos.y; lastPos = currentPos; boardState.panX -= dx / minimapScale; boardState.panY -= dy / minimapScale; applyTransform(); }; const onPointerUp = () => { document.body.classList.remove('is-dragging'); document.removeEventListener('mousemove', onPointerMove); document.removeEventListener('mouseup', onPointerUp); document.removeEventListener('touchmove', onPointerMove); document.removeEventListener('touchend', onPointerUp); saveState(); }; document.addEventListener('mousemove', onPointerMove); document.addEventListener('mouseup', onPointerUp); document.addEventListener('touchmove', onPointerMove, {passive: false}); document.addEventListener('touchend', onPointerUp); }; viewport.addEventListener('mousedown', onMinimapDown); viewport.addEventListener('touchstart', onMinimapDown, {passive: false}); }
     
     window.addEventListener('keydown', e => { if (mainApp.classList.contains('hidden')) return; if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); } if (e.ctrlKey && e.key.toLowerCase() === 'y' || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z')) { e.preventDefault(); redo(); } if (!selectedElement) return; if (document.activeElement.isContentEditable || /TEXTAREA|INPUT/.test(document.activeElement.tagName)) return; if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (selectedElement.type === 'connector') { recordHistory(); connectors = connectors.filter(c => c.id !== selectedElement.id); drawAllConnectors(); saveState(); clearSelection(); return; } if (selectedElement.classList.contains('locked')) return; selectedElement.querySelector('.delete-btn')?.click(); } if (e.ctrlKey && e.key.toLowerCase() === 'd') { e.preventDefault(); if (selectedElement.classList.contains('locked') || selectedElement.type === 'connector') return; let originalData, createFn; const fileData = JSON.parse(localStorage.getItem(currentFileId)); if (selectedElement.classList.contains('note')) { originalData = fileData.notes.find(n => n.id === selectedElement.id); createFn = createNote; } else if (selectedElement.classList.contains('section')) { originalData = fileData.sections.find(s => s.id === selectedElement.id); createFn = createSection; } else if (selectedElement.classList.contains('text-box')) { originalData = fileData.textBoxes.find(t => t.id === selectedElement.id); createFn = createTextBox; } else if (selectedElement.classList.contains('shape')) { originalData = fileData.shapes.find(s => s.id === selectedElement.id); createFn = createShape; } if (createFn) { recordHistory(); const dataToClone = { ...originalData }; delete dataToClone.id; delete dataToClone.zIndex; dataToClone.x = `${parseFloat(dataToClone.x) + 20 / boardState.scale}px`; dataToClone.y = `${parseFloat(dataToClone.y) + 20 / boardState.scale}px`; createFn(dataToClone); } } });
-    window.addEventListener('wheel', e => { e.preventDefault(); if (mainApp.classList.contains('hidden')) return; recordHistory(); if (e.shiftKey) { boardState.panX -= e.deltaY; } else { const z = 1.1, o = boardState.scale; let n=e.deltaY<0?o*z:o/z; n=Math.max(0.2,Math.min(n,3.0)); boardState.scale=n; boardState.panX=e.clientX-((e.clientX-boardState.panX)/o*n); boardState.panY=e.clientY-((e.clientY-boardState.panY)/o*n); } applyTransform(); saveState(); }, { passive: false });
+    
+    // ★★★ 修正箇所 ★★★
+    // ズーム操作で履歴が作成されないように recordHistory() を削除
+    window.addEventListener('wheel', e => {
+        e.preventDefault();
+        if (mainApp.classList.contains('hidden')) return;
+        if (e.shiftKey) {
+            boardState.panX -= e.deltaY;
+        } else {
+            const z = 1.1, o = boardState.scale;
+            let n=e.deltaY<0?o*z:o/z;
+            n=Math.max(0.2,Math.min(n,3.0));
+            boardState.scale=n;
+            boardState.panX=e.clientX-((e.clientX-boardState.panX)/o*n);
+            boardState.panY=e.clientY-((e.clientY-boardState.panY)/o*n);
+        }
+        applyTransform();
+        saveState(); // 状態の保存は行う
+    }, { passive: false });
     
     function getCanvasCoordinates(e) {
         const coords = getEventCoordinates(e);
@@ -196,6 +462,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         e.stopPropagation();
         
+        // ★★★ 修正箇所 ★★★
+        // 描画を開始する「前」に履歴を記録
+        recordHistory();
+
         const startCoords = getCanvasCoordinates(e);
 
         const newPath = {
@@ -214,10 +484,15 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const onPointerUp = () => {
+            // ★★★ 修正箇所 ★★★
+            // 描画が完了したら状態を保存
             if (newPath.points.length > 1) {
-                commitChange();
+                saveState();
             } else {
+                // 描画されなかった場合（クリックのみ）、パスと履歴をキャンセル
                 paths.pop();
+                if(historyStack.length > 0) historyStack.pop();
+                updateUndoRedoButtons();
             }
             document.removeEventListener('mousemove', onPointerMove);
             document.removeEventListener('mouseup', onPointerUp);
@@ -239,7 +514,56 @@ document.addEventListener('DOMContentLoaded', () => {
     backToFilesBtn.addEventListener('click', showFileManager); createNewFileBtn.addEventListener('click', createNewFile);
     darkModeBtn.addEventListener('click', () => { document.body.classList.toggle('dark-mode'); localStorage.setItem('plottia-dark-mode', document.body.classList.contains('dark-mode') ? '1' : '0' ); });
     exportBtn.addEventListener('click', () => { saveState(); const d = localStorage.getItem(currentFileId); if (!d) { alert('エクスポートするデータがありません。'); return; } const b = new Blob([d],{type:'application/json'}); const a = document.createElement('a'); a.download=`${getFileMetadata().find(f=>f.id===currentFileId)?.name || 'board'}.plottia`; a.href=URL.createObjectURL(b); a.click(); URL.revokeObjectURL(a.href); });
-    importBtn.addEventListener('click', () => importFileInput.click()); importFileInput.addEventListener('change', e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{try{ JSON.parse(ev.target.result); if(confirm('現在のボードをインポートした内容で上書きします。よろしいですか？')){ recordHistory(); localStorage.setItem(currentFileId, ev.target.result); loadState();}}catch(err){alert('無効なファイルです。')}}; r.readAsText(f); e.target.value='';});
+function validateBoardData(data) {
+    if (typeof data !== 'object' || data === null) return false;
+
+    const requiredArrays = ['notes', 'sections', 'textBoxes', 'shapes', 'paths', 'connectors'];
+    for (const key of requiredArrays) {
+        if (!Array.isArray(data[key])) {
+            console.error(`検証エラー: '${key}' は配列である必要があります。`);
+            return false;
+        }
+    }
+    
+    if (typeof data.board !== 'object' || data.board === null) {
+        console.error(`検証エラー: 'board' はオブジェクトである必要があります。`);
+        return false;
+    }
+
+    // ここでさらに詳細なチェックも可能（例: notesの各要素がid, x, yを持つかなど）
+    // 今回は基本的な構造チェックのみとします。
+
+    return true;
+}
+    importBtn.addEventListener('click', () => importFileInput.click()); 
+    importFileInput.addEventListener('change', e => {
+        const f = e.target.files[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = async (ev) => {
+            try {
+                const importedState = JSON.parse(ev.target.result);
+
+                if (!validateBoardData(importedState)) {
+                    alert('ファイルの形式が無効です。Plottiaの正しいファイルを選択してください。');
+                    return;
+                }
+
+                if (confirm('現在のボードをインポートした内容で上書きします。よろしいですか？')) {
+                    recordHistory();
+                    await db.set(currentFileId, importedState); 
+                    await loadState();
+                }
+            } catch (err) {
+                // エラーオブジェクトのメッセージをアラートに含める
+                alert(`ファイルの読み込みに失敗しました。\n\n詳細: ${err.message}`);
+                console.error(err);
+            } finally {
+                e.target.value = '';
+            }
+        };
+        r.readAsText(f);
+    });
     cleanupBtn.addEventListener('click', () => { if (confirm('すべてのファイルとデータを消去して完全にリセットします。この操作は元に戻せません。よろしいですか？')) { localStorage.clear(); location.reload(); } });
     undoBtn.addEventListener('click', undo); redoBtn.addEventListener('click', redo);
     
@@ -322,4 +646,26 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (localStorage.getItem('plottia-dark-mode') === '1') { document.body.classList.add('dark-mode'); }
     showFileManager();
+});
+
+window.onerror = function(message, source, lineno, colno, error) {
+    let errorMessage = "予期せぬJavaScriptエラーが発生しました。\n\n";
+    errorMessage += "メッセージ: " + message + "\n";
+    errorMessage += "ファイル: " + (source || '不明') + "\n";
+    errorMessage += "行番号: " + (lineno || '不明') + "\n";
+    errorMessage += "列番号: " + (colno || '不明') + "\n";
+    if (error && error.stack) {
+        errorMessage += "\nスタックトレース:\n" + error.stack;
+    }
+    
+    // エラー内容をアラートで表示
+    alert(errorMessage);
+    
+    // デフォルトのエラー処理（コンソールへの出力など）を抑制する場合はtrueを返す
+    return true; 
+};
+
+// Promiseで捕捉されなかったエラーを捕捉
+window.addEventListener('unhandledrejection', function(event) {
+    alert('捕捉されなかったPromiseのエラーが発生しました:\n' + event.reason);
 });
