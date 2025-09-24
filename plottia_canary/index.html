@@ -1,1 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plottia - 多機能デジタルボード</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- (ファイルマネージャー部分は変更なし) -->
+    <div id="file-manager-overlay">
+        <div id="file-manager">
+            <h1>ファイルを選択</h1> <ul id="file-list"></ul>
+            <button id="create-new-file-btn"><i class="fas fa-plus"></i> 新しいファイルを作成</button>
+        </div>
+    </div>
 
+    <div id="main-app" class="hidden">
+        <div id="toolbar">
+            <button id="back-to-files-btn" title="ファイル一覧に戻る"><i class="fas fa-arrow-left"></i></button>
+            <span class="toolbar-divider"></span>
+            <!-- Collaboration UI Start -->
+            <div id="collaboration-status" title="コラボレーション情報">
+                <i class="fas fa-users"></i>
+                <span id="peer-count">1</span>
+                <button id="share-link-btn" title="招待リンクをコピー"><i class="fas fa-share-alt"></i></button>
+            </div>
+            <span class="toolbar-divider"></span>
+            <!-- Collaboration UI End -->
+            <button id="undo-btn" title="元に戻す (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+            <button id="redo-btn" title="やり直す (Ctrl+Y)"><i class="fas fa-redo"></i></button>
+            <span class="toolbar-divider"></span>
+            <button id="add-note-btn" title="付箋"><i class="fas fa-sticky-note"></i></button>
+            <button id="add-text-btn" title="テキスト"><i class="fas fa-font"></i></button>
+            <button id="add-section-btn" title="セクション"><i class="fas fa-vector-square"></i></button>
+            <span class="toolbar-divider"></span>
+            <button id="add-shape-square-btn" title="四角形"><i class="far fa-square"></i></button>
+            <button id="add-shape-circle-btn" title="円形"><i class="far fa-circle"></i></button>
+            <button id="add-shape-diamond-btn" title="ひし形"><i class="far fa-gem"></i></button>
+            <button id="add-connector-btn" title="コネクター"><i class="fas fa-share-alt"></i></button>
+            <span class="toolbar-divider"></span>
+            <button id="pen-tool-btn" title="ペンツール"><i class="fas fa-pencil-alt"></i></button>
+            <button id="eraser-tool-btn" title="消しゴム"><i class="fas fa-eraser"></i></button>
+            <div id="stroke-width-controls" title="線の太さ">
+                <i class="fas fa-paint-brush"></i>
+                <input type="range" id="stroke-width-slider" min="1" max="50" value="5">
+                <span id="stroke-width-display">5</span>
+            </div>
+            <span class="toolbar-divider"></span>
+            <button id="dark-mode-btn" title="ダークモード切替"><i class="fas fa-moon"></i></button>
+            <button id="export-btn" title="Plottia形式で保存 (.plottia)"><i class="fas fa-save"></i></button>
+            <button id="image-export-btn" title="画像として保存 (.png)"><i class="fas fa-image"></i></button>
+            <button id="import-btn" title="ファイルから復元"><i class="fas fa-upload"></i></button>
+            <button id="cleanup-btn" title="全データ消去"><i class="fas fa-trash"></i></button>
+            <input type="file" id="import-file-input" accept=".plottia" style="display: none;">
+        </div>
+
+        <div id="board">
+            <canvas id="drawing-layer"></canvas>
+            <div id="object-container">
+            </div>
+            <div id="guide-container"></div>
+            <svg id="connector-svg-layer"></svg>
+        </div>
+
+        <div id="zoom-controls">
+            <button id="zoom-reset-btn" title="ズームを100%に戻す"><i class="fas fa-search"></i> 100%</button>
+            <span id="zoom-display">100%</span>
+        </div>
+        
+        <div id="minimap"></div>
+    </div>
+    <!-- Conflict Resolution Modal -->
+    <div id="conflict-overlay" class="hidden">
+        <div id="conflict-dialog">
+            <h2>編集の競合</h2>
+            <p>
+                あなたがオフラインの間に、他のユーザーによってボードが更新されました。
+                どちらの変更を保持しますか？
+            </p>
+            <div class="conflict-actions">
+                <button id="conflict-resolve-remote">他の人の最新の変更を取り込む</button>
+                <button id="conflict-resolve-local">自分の変更で上書きする</button>
+                <button id="conflict-resolve-copy">自分の変更をコピーとして保存</button>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <!-- PeerJS Library -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peer.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

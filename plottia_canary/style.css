@@ -1,0 +1,82 @@
+/* --- 既存のCSSはすべてこの前に記述 --- */
+
+/* ★★★ 追加箇所 ★★★ */
+/* --- コラボレーションUI --- */
+#collaboration-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: #333;
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,.2);
+}
+#share-link-btn {
+    padding: 5px;
+    background: transparent;
+    font-size: 14px;
+}
+body.dark-mode #collaboration-status {
+    background-color: #555;
+}
+
+/* --- コンフリクト解決ダイアログ --- */
+#conflict-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10003;
+    backdrop-filter: blur(4px);
+}
+#conflict-dialog {
+    background: #fff;
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    width: 90%;
+    max-width: 500px;
+    text-align: center;
+}
+#conflict-dialog h2 {
+    margin-top: 0;
+    color: #d9534f;
+}
+#conflict-dialog p {
+    line-height: 1.6;
+    margin: 20px 0;
+}
+.conflict-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.conflict-actions button {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color .2s;
+}
+#conflict-resolve-remote { background-color: #007bff; color: white; }
+#conflict-resolve-remote:hover { background-color: #0056b3; }
+#conflict-resolve-local { background-color: #f0ad4e; color: white; }
+#conflict-resolve-local:hover { background-color: #ec971f; }
+#conflict-resolve-copy { background-color: #5cb85c; color: white; }
+#conflict-resolve-copy:hover { background-color: #449d44; }
+
+body.dark-mode #conflict-dialog {
+    background: #3a3a3a;
+    color: #f1f1f1;
+}
+body.dark-mode #conflict-dialog h2 {
+    color: #ff8a85;
+}
