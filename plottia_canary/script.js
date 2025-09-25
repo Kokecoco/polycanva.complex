@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const strokeWidthDisplay = document.getElementById('stroke-width-display');
     const drawingLayer = document.getElementById('drawing-layer');
     const objectContainer = document.getElementById('object-container');
+    const sectionContainer = document.getElementById('section-container');
     const ctx = drawingLayer.getContext('2d');
     drawingLayer.width = 5000;
     drawingLayer.height = 5000;
@@ -606,6 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
         boardData = state || createEmptyBoard();
         
         objectContainer.innerHTML = '';
+        sectionContainer.innerHTML = '';
         svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
         
         boardData.sections?.forEach(data => createSection(data, true));
@@ -691,7 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
         section.classList.toggle('locked', data.isLocked);
 
         section.innerHTML = `<div class="section-header"><div class="section-title">${data.content}</div><div class="section-controls"><div class="color-picker">${sectionColors.map(c=>`<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas ${data.isLocked ? 'fa-lock' : 'fa-unlock'}"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`;
-        objectContainer.appendChild(section);
+        sectionContainer.appendChild(section);
         addCommonEventListeners(section, data);
     }
 
@@ -793,14 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (element.classList.contains('locked') || e.target.closest('.resizer, [contenteditable="true"], .color-picker')) return;
             e.stopPropagation();
             
-            let startZIndex;
-            if (element.classList.contains('section')) {
-                // セクションの場合、低い階層のカウンターを使用
-                startZIndex = boardData.board.sectionZIndexCounter++;
-            } else {
-                // 付箋やその他のアイテムの場合、高い階層のカウンターを使用
-                startZIndex = boardData.board.noteZIndexCounter++;
-            }
+            const startZIndex = boardData.board.noteZIndexCounter++;
             let attachedElements = [];
 
             // --- FIXED: LOGIC FOR SECTION DRAGGING ---
