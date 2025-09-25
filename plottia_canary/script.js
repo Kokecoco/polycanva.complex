@@ -304,11 +304,19 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'CREATE_SECTION':
             case 'CREATE_TEXTBOX':
             case 'CREATE_SHAPE':
-                const collectionName = `${op.type.split('_')[1].toLowerCase()}s`;
-                if (!boardData[collectionName].some(item => item.id === op.payload.id)) {
+                // --- FIXED: Correct pluralization for textBoxes ---
+                let collectionName = `${op.type.split('_')[1].toLowerCase()}s`;
+                if (collectionName === 'textboxs') {
+                    collectionName = 'textBoxes';
+                }
+                // --- END FIX ---
+                if (boardData[collectionName] && !boardData[collectionName].some(item => item.id === op.payload.id)) {
                     boardData[collectionName].push(op.payload);
-                    const createFn = window[`create${op.type.split('_')[1].charAt(0)}${op.type.split('_')[1].slice(1).toLowerCase()}`];
-                    if (createFn) createFn(op.payload, true);
+                    const createFnName = `create${op.type.split('_')[1].charAt(0)}${op.type.split('_')[1].slice(1).toLowerCase()}`;
+                    const createFn = window[createFnName];
+                    if (createFn) {
+                        createFn(op.payload, true);
+                    }
                 }
                 break;
 
@@ -623,7 +631,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 id: `note-${myPeerId}-${Date.now()}`,
                 x: pos.x, y: pos.y, width: '220px', height: '220px',
                 zIndex: boardData.board.noteZIndexCounter++,
-                content: '新しい付箋', color: noteColors, isLocked: false,
+                content: '新しい付箋',
+                color: noteColors[0], // --- FIXED: Assign single color ---
+                isLocked: false,
             };
             generateOperation('CREATE_NOTE', payload, {
                 original: { type: 'CREATE_NOTE', payload },
@@ -658,7 +668,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 id: `section-${myPeerId}-${Date.now()}`,
                 x: pos.x, y: pos.y, width: '400px', height: '400px',
                 zIndex: boardData.board.sectionZIndexCounter++,
-                content: '新しいセクション', color: sectionColors, isLocked: false,
+                content: '新しいセクション',
+                color: sectionColors[0], // --- FIXED: Assign single color ---
+                isLocked: false,
             };
             generateOperation('CREATE_SECTION', payload);
             return;
@@ -708,7 +720,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...getNewElementPosition(),
                 width: '150px', height: '150px',
                 zIndex: boardData.board.noteZIndexCounter++,
-                content: '', color: shapeColors, isLocked: false,
+                content: '',
+                color: shapeColors[0], // --- FIXED: Assign single color ---
+                isLocked: false,
                 shapeType: data.type
             };
             generateOperation('CREATE_SHAPE', payload);
@@ -1045,7 +1059,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.lineWidth = path.strokeWidth;
             ctx.beginPath();
             if (path.points && path.points.length > 0) {
-                ctx.moveTo(path.points.x, path.points.y);
+                // --- FIXED: Correctly access first point's coordinates ---
+                ctx.moveTo(path.points[0].x, path.points[0].y);
+                // --- END FIX ---
                 path.points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
                 ctx.stroke();
             }
@@ -1139,7 +1155,7 @@ document.addEventListener('DOMContentLoaded', () => {
         viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`;
     }
 
-    function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches.clientX, y: e.touches.clientY }; } return { x: e.clientX, y: e.clientY }; }
+    function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
     function clearSelection() { /* ... */ }
     function isDarkMode() { return document.body.classList.contains('dark-mode'); }
 
