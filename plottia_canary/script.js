@@ -748,6 +748,43 @@ document.addEventListener('DOMContentLoaded', () => {
         objectContainer.appendChild(shape);
         addCommonEventListeners(shape, data);
     }
+
+    function initResize(e, element) {
+        if (element.classList.contains('locked')) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startWidth = element.offsetWidth;
+        const startHeight = element.offsetHeight;
+
+        const onPointerMove = (ev) => {
+            const newWidth = startWidth + (ev.clientX - startX) / boardData.board.scale;
+            const newHeight = startHeight + (ev.clientY - startY) / boardData.board.scale;
+        
+            element.style.width = `${Math.max(100, newWidth)}px`; // 最小幅を設定
+            element.style.height = `${Math.max(100, newHeight)}px`; // 最小高さを設定
+            drawAllConnectors();
+        };
+
+        const onPointerUp = () => {
+            document.body.classList.remove('is-resizing');
+            document.removeEventListener('mousemove', onPointerMove);
+            document.removeEventListener('mouseup', onPointerUp);
+
+            generateOperation('RESIZE_ELEMENT', {
+                id: element.id,
+                width: element.style.width,
+                height: element.style.height
+            });
+        };
+
+        document.body.classList.add('is-resizing');
+        document.addEventListener('mousemove', onPointerMove);
+        document.addEventListener('mouseup', onPointerUp);
+    }
+
     
     function addCommonEventListeners(element, data) {
         // Dragging
@@ -899,7 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
             inputTarget.addEventListener('keydown', e => { if (e.key === 'Enter' && inputTarget.tagName !== 'TEXTAREA') inputTarget.blur(); });
         }
         element.querySelector('.resizer').addEventListener('mousedown', (e) => {
-            initResize(e, note);
+            initResize(e, element);
         });
     }
     
