@@ -598,6 +598,7 @@ function getNewElementPosition() {
 }
 
 function createNote(data, fromOperation = false) {
+    alert("createNote");
     if (!fromOperation) {
         const payload = {
             id: `note-${myPeerId}-${Date.now()}`,
