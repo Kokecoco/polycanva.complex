@@ -824,6 +824,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 6. 手描き機能
     // =================================================================
 
+    function isDarkMode() { return document.body.classList.contains('dark-mode'); }
+
     const onDrawingLayerDown = e => {
         if (!isPenMode && !isEraserMode) return;
         e.preventDefault(); e.stopPropagation();
@@ -1082,7 +1084,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
     function clearSelection() { /* ... */ }
-    function isDarkMode() { return document.body.classList.contains('dark-mode'); }
 
     // =================================================================
     // 9. イベントリスナーと初期化
