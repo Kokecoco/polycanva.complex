@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const shapeColors = ['#ffffff', '#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
 
     // =================================================================
-    // 1. PeerJS & コラボレーション管理 (変更なし)
+    // 1. PeerJS & コラボレーション管理
     // =================================================================
 
     function initializePeer() {
@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // =================================================================
-    // 2. 状態管理 & 操作ベース同期 (大幅に拡張)
+    // 2. 状態管理 & 操作ベース同期
     // =================================================================
 
     function generateOperation(type, payload, addToUndo = false) {
@@ -262,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyOperation(operation);
         // ホストに送信（ホストならブロードキャスト）
         sendOperationToHost(operation);
-        if (addToUndo) {
+        if (addToUndo && operation.sender === myPeerId) {
             myUndoStack.push(addToUndo);
             myRedoStack = [];
             updateUndoRedoButtons();
@@ -272,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function findElementData(id) {
-        for (const key in boardData) {
+        for (const key of ['notes', 'sections', 'textBoxes', 'shapes', 'connectors']) {
             if (Array.isArray(boardData[key])) {
                 const item = boardData[key].find(i => i.id === id);
                 if (item) return { item, type: key };
@@ -281,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    // ApplyOperation: 全ての変更はこの関数を経由して状態(boardData)とUIの両方に適用される
     function applyOperation(op) {
         if (!op || !op.type) return;
         let itemData, element;
@@ -293,7 +292,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         switch(op.type) {
-            // --- CREATE系 ---
             case 'CREATE_NOTE':
                 if (!boardData.notes.some(n => n.id === op.payload.id)) {
                     boardData.notes.push(op.payload);
@@ -318,20 +316,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     createShape(op.payload, true);
                 }
                 break;
-
-            // --- UPDATE/MOVE/RESIZE系 ---
-            case 'MOVE_ELEMENT':
-                if (element && itemData) {
-                    itemData.x = op.payload.x;
-                    itemData.y = op.payload.y;
-                    element.style.left = op.payload.x;
-                    element.style.top = op.payload.y;
-                    if (op.payload.zIndex) {
-                        itemData.zIndex = op.payload.zIndex;
-                        element.style.zIndex = op.payload.zIndex;
+            case 'MOVE_ELEMENTS':
+                op.payload.elements.forEach(movedEl => {
+                    const el = document.getElementById(movedEl.id);
+                    const data = findElementData(movedEl.id);
+                    if (el && data) {
+                        data.item.x = movedEl.x;
+                        data.item.y = movedEl.y;
+                        el.style.left = movedEl.x;
+                        el.style.top = movedEl.y;
+                        if (movedEl.zIndex) {
+                            data.item.zIndex = movedEl.zIndex;
+                            el.style.zIndex = movedEl.zIndex;
+                        }
                     }
-                    drawAllConnectors();
-                }
+                });
+                drawAllConnectors();
                 break;
             case 'RESIZE_ELEMENT':
                  if (element && itemData) {
@@ -342,19 +342,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     drawAllConnectors();
                 }
                 break;
-             case 'UPDATE_CONTENT':
+            case 'UPDATE_CONTENT':
                 if (element && itemData) {
                     itemData.content = op.payload.content;
-                    // 各要素タイプに応じたUI更新
                     if(findResult.type === 'notes') {
-                        element.querySelector('.note-view').innerHTML = op.payload.content;
+                        element.querySelector('.note-view').innerHTML = parseMarkdown(op.payload.content);
                         element.querySelector('.note-content').value = op.payload.content;
                     } else if (findResult.type === 'textBoxes') {
-                        element.querySelector('.text-content').innerText = op.payload.content;
+                        element.querySelector('.text-content').innerHTML = op.payload.content;
                     } else if (findResult.type === 'shapes') {
-                        element.querySelector('.shape-label').innerText = op.payload.content;
+                        element.querySelector('.shape-label').innerHTML = op.payload.content;
                     } else if (findResult.type === 'sections') {
-                         element.querySelector('.section-title').innerText = op.payload.content;
+                         element.querySelector('.section-title').textContent = op.payload.content;
                     }
                 }
                 break;
@@ -362,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(element && itemData) {
                     itemData.color = op.payload.color;
                      if(findResult.type === 'notes') {
-                        element.style.backgroundColor = op.payload.color;
+                        updateNoteColor(element, op.payload.color);
                     } else if (findResult.type === 'sections') {
                         element.style.backgroundColor = op.payload.color;
                     } else if (findResult.type === 'shapes') {
@@ -370,42 +369,35 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 break;
-
-            // --- DELETE/RESTORE系 ---
-            case 'MARK_AS_DELETED':
-                op.payload.elementIds.forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.style.display = 'none';
-                    const find = findElementData(id);
-                    if (find) {
-                        find.item.isDeleted = true;
-                        find.item.deletedAt = op.payload.deletedAt;
+            case 'TOGGLE_LOCK':
+                if (element && itemData) {
+                    itemData.isLocked = op.payload.isLocked;
+                    element.classList.toggle('locked', op.payload.isLocked);
+                    element.querySelector('.lock-btn i').className = op.payload.isLocked ? 'fas fa-lock' : 'fas fa-unlock';
+                    if (findResult.type === 'textBoxes') {
+                        element.querySelector('.text-content').contentEditable = !op.payload.isLocked;
                     }
-                });
-                drawAllConnectors();
+                }
                 break;
-            case 'RESTORE_DELETED':
-                op.payload.elementIds.forEach(id => {
-                    const find = findElementData(id);
-                    if (find && find.item.isDeleted) {
-                        find.item.isDeleted = false;
-                        find.item.deletedAt = null;
-                        // 要素タイプに応じて再生成
-                        switch(find.type){
-                            case 'notes': createNote(find.item, true); break;
-                            case 'sections': createSection(find.item, true); break;
-                            case 'textBoxes': createTextBox(find.item, true); break;
-                            case 'shapes': createShape(find.item, true); break;
+            case 'DELETE_ELEMENTS':
+                op.payload.ids.forEach(id => {
+                    const elToRemove = document.getElementById(id);
+                    if (elToRemove) elToRemove.remove();
+                    
+                    for (const key of ['notes', 'sections', 'textBoxes', 'shapes']) {
+                        const index = boardData[key].findIndex(i => i.id === id);
+                        if (index > -1) {
+                            boardData[key].splice(index, 1);
+                            break;
                         }
                     }
+                    boardData.connectors = boardData.connectors.filter(c => c.startId !== id && c.endId !== id);
                 });
                 drawAllConnectors();
                 break;
-
-            // --- DRAW系 ---
             case 'START_DRAW':
                 if (!boardData.paths.some(p => p.id === op.payload.id)) {
-                    boardData.paths.push({ ...op.payload, points: [] });
+                    boardData.paths.push(op.payload);
                 }
                 break;
             case 'APPEND_POINTS':
@@ -415,14 +407,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     redrawCanvas();
                 }
                 break;
-            case 'END_DRAW': break;
+            case 'END_DRAW': 
+                const finalPath = boardData.paths.find(p => p.id === op.payload.pathId);
+                if (finalPath && finalPath.points.length < 2) {
+                     boardData.paths = boardData.paths.filter(p => p.id !== op.payload.pathId);
+                }
+                redrawCanvas();
+                break;
+            case 'UPDATE_BOARD_STATE':
+                boardData.board = { ...boardData.board, ...op.payload };
+                applyTransform();
+                break;
+            case 'CREATE_CONNECTOR':
+                if (!boardData.connectors.some(c => c.id === op.payload.id)) {
+                    boardData.connectors.push(op.payload);
+                    drawAllConnectors();
+                }
+                break;
+            case 'DELETE_CONNECTOR':
+                boardData.connectors = boardData.connectors.filter(c => c.id !== op.payload.id);
+                drawAllConnectors();
+                break;
         }
         updateMinimap();
     }
 
 
     // =================================================================
-    // 3. Undo/Redo (変更なし)
+    // 3. Undo/Redo
     // =================================================================
     
     function undo() {
@@ -453,7 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =================================================================
-    // 4. データ永続化 & オフライン競合解決 (変更なし)
+    // 4. データ永続化 & オフライン競合解決
     // =================================================================
     const db = {
         _db: null, _dbName: 'PlottiaDB', _storeName: 'boards',
@@ -524,22 +536,22 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleOfflineConflict(remoteState) {
         const localState = await db.get(currentFileId);
 
-        if (!localState && remoteState) {
-            console.log("No local state. Applying remote state.");
-            loadStateFromObject(remoteState);
-            await db.set(currentFileId, remoteState);
-            return;
+        if (!localState || (remoteState && localState.version < remoteState.version)) {
+             console.log("Applying remote state (no local or local is older).");
+             loadStateFromObject(remoteState);
+             await db.set(currentFileId, remoteState);
+             return;
         }
 
-        if (localState && remoteState && localState.version < remoteState.version) {
+        if (localState && remoteState && localState.version > remoteState.version) {
             console.log("Conflict detected. Local:", localState.version, "Remote:", remoteState.version);
             conflictOverlay.classList.remove('hidden');
             const handleResolution = (choice) => async () => {
                 conflictOverlay.classList.add('hidden');
-                if (choice === 'overwrite') {
+                if (choice === 'overwrite') { // オンライン版を使う
                     loadStateFromObject(remoteState);
                     await db.set(currentFileId, remoteState);
-                } else if (choice === 'fork') {
+                } else if (choice === 'fork') { // 別ファイルとして保存
                     const metadata = getFileMetadata();
                     const currentFile = metadata.find(f => f.id === currentFileId) || { name: "無題" };
                     const newName = `${currentFile.name} (オフラインコピー)`;
@@ -550,10 +562,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadStateFromObject(remoteState);
                     await db.set(currentFileId, remoteState);
                     alert(`「${newName}」としてオフラインの変更を保存しました。`);
-                } else if (choice === 'force') {
+                } else if (choice === 'force') { // 自分の変更で上書き
                     boardData = localState;
-                    await saveState();
-                    broadcast({ type: 'initial-state', payload: { boardData: getCurrentState(), users: connectedUsers, hostId: hostPeerId } });
+                    await saveState(); // This will update version and save
+                    if (isHost) {
+                        broadcast({ type: 'operation', payload: { type: 'FORCE_OVERWRITE', payload: getCurrentState() } });
+                    }
                     loadStateFromObject(localState);
                 }
             };
@@ -561,7 +575,8 @@ document.addEventListener('DOMContentLoaded', () => {
             conflictForkBtn.onclick = handleResolution('fork');
             conflictForceBtn.onclick = handleResolution('force');
         } else {
-            console.log("No conflict or local is newer.");
+            console.log("No conflict or local is up-to-date.");
+            loadStateFromObject(localState);
         }
     }
 
@@ -583,11 +598,10 @@ document.addEventListener('DOMContentLoaded', () => {
         objectContainer.innerHTML = '';
         svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
         
-        boardData.sections?.filter(s => !s.isDeleted).forEach(data => createSection(data, true));
-        boardData.notes?.filter(n => !n.isDeleted).forEach(data => createNote(data, true));
-        boardData.textBoxes?.filter(t => !t.isDeleted).forEach(data => createTextBox(data, true));
-        boardData.shapes?.filter(s => !s.isDeleted).forEach(data => createShape(data, true));
-
+        boardData.sections?.forEach(data => createSection(data, true));
+        boardData.notes?.forEach(data => createNote(data, true));
+        boardData.textBoxes?.forEach(data => createTextBox(data, true));
+        boardData.shapes?.forEach(data => createShape(data, true));
 
         myUndoStack = [];
         myRedoStack = [];
@@ -595,49 +609,20 @@ document.addEventListener('DOMContentLoaded', () => {
         redrawCanvas();
         applyTransform();
     }
-
+    
     // =================================================================
-    // 5. 各オブジェクトの操作 (全面的に実装・拡張)
+    // 5. 各オブジェクトの操作
     // =================================================================
     
     function getNewElementPosition() {
+        const boardState = boardData.board;
         return {
-            x: `${((window.innerWidth/2)-100-(boardData.board?.panX || 0))/(boardData.board?.scale || 1)}px`,
-            y: `${((window.innerHeight/2)-100-(boardData.board?.panY || 0))/(boardData.board?.scale || 1)}px`
+            x: `${((window.innerWidth/2)-110-boardState.panX)/boardState.scale}px`,
+            y: `${((window.innerHeight/2)-110-boardState.panY)/boardState.scale}px`
         }
     }
     
-    // 汎用的なドラッグ処理
-    function makeDraggable(element, onDragEnd) {
-        const header = element.querySelector('.note-header') || element.querySelector('.section-header') || element.querySelector('.shape-visual') || element;
-        header.addEventListener('mousedown', (e) => {
-            if (element.classList.contains('locked')) return;
-            e.stopPropagation();
-            let lastPos = getEventCoordinates(e);
-            
-            const onPointerMove = (ev) => {
-                ev.preventDefault();
-                const currentPos = getEventCoordinates(ev);
-                const dx = currentPos.x - lastPos.x;
-                const dy = currentPos.y - lastPos.y;
-                lastPos = currentPos;
-                element.style.left = `${parseFloat(element.style.left) + dx / boardData.board.scale}px`;
-                element.style.top = `${parseFloat(element.style.top) + dy / boardData.board.scale}px`;
-                drawAllConnectors();
-            };
-            
-            const onPointerUp = () => {
-                document.removeEventListener('mousemove', onPointerMove);
-                document.removeEventListener('mouseup', onPointerUp);
-                onDragEnd(element.style.left, element.style.top);
-            };
-            
-            document.addEventListener('mousemove', onPointerMove);
-            document.addEventListener('mouseup', onPointerUp);
-        });
-    }
-
-    function createNote(data = {}, fromRemote = false) {
+    function createNote(data, fromRemote = false) {
         if (!fromRemote) {
             const pos = getNewElementPosition();
             const payload = {
@@ -646,13 +631,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 width: '220px', height: '220px',
                 zIndex: boardData.board.noteZIndexCounter++,
                 content: '', color: noteColors[0],
-                isLocked: false, isDeleted: false, deletedAt: null
+                isLocked: false,
             };
-            generateOperation('CREATE_NOTE', payload);
+            generateOperation('CREATE_NOTE', payload, {
+                original: { type: 'CREATE_NOTE', payload },
+                inverse: { type: 'DELETE_ELEMENTS', payload: { ids: [payload.id] } }
+            });
             return;
         }
 
-        if (document.getElementById(data.id) || data.isDeleted) return;
+        if (document.getElementById(data.id)) return;
 
         const note = document.createElement('div');
         note.className = 'note';
@@ -662,195 +650,234 @@ document.addEventListener('DOMContentLoaded', () => {
         note.style.width = data.width;
         note.style.height = data.height;
         note.style.zIndex = data.zIndex;
-        note.style.backgroundColor = data.color;
         
-        note.innerHTML = `<div class="note-header"><div class="color-picker">${noteColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${data.content}</div><textarea class="note-content" style="display: none;">${data.content}</textarea></div><div class="resizer"></div>`;
+        const rawContent = data.content || '';
+        note.innerHTML = `<div class="note-header"><div class="color-picker">${noteColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${parseMarkdown(rawContent)}</div><textarea class="note-content" style="display: none;">${rawContent}</textarea></div><div class="resizer"></div>`;
+        updateNoteColor(note, data.color);
+        if (data.isLocked) { note.classList.add('locked'); note.querySelector('.lock-btn i').className = 'fas fa-lock'; }
         
-        // --- イベントリスナー設定 ---
-        note.querySelector('.delete-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            const payload = { elementIds: [note.id], deletedAt: Date.now() };
-            generateOperation('MARK_AS_DELETED', payload, {
-                original: { type: 'MARK_AS_DELETED', payload: payload },
-                inverse: { type: 'RESTORE_DELETED', payload: { elementIds: [note.id] } }
-            });
-        });
+        objectContainer.appendChild(note);
+        addDragAndResize(note);
 
-        makeDraggable(note, (newX, newY) => {
-             generateOperation('MOVE_ELEMENT', { id: note.id, x: newX, y: newY });
+        note.querySelector('.delete-btn').addEventListener('click', () => {
+             generateOperation('DELETE_ELEMENTS', { ids: [note.id] });
         });
-        
         const view = note.querySelector('.note-view');
-        const textarea = note.querySelector('.note-content');
-        view.addEventListener('dblclick', () => {
-            view.style.display = 'none';
-            textarea.style.display = 'block';
-            textarea.focus();
+        const content = note.querySelector('.note-content');
+        note.querySelector('.note-body').addEventListener('dblclick', () => {
+             if (note.classList.contains('locked')) return;
+             view.style.display = 'none';
+             content.style.display = 'block';
+             content.focus();
         });
-        textarea.addEventListener('blur', () => {
-            view.style.display = 'block';
-            textarea.style.display = 'none';
-            if(textarea.value !== data.content) {
-                generateOperation('UPDATE_CONTENT', { id: note.id, content: textarea.value });
-            }
+        content.addEventListener('blur', () => {
+             view.innerHTML = parseMarkdown(content.value);
+             view.style.display = 'block';
+             content.style.display = 'none';
+             const currentData = findElementData(note.id)?.item;
+             if (currentData && content.value !== currentData.content) {
+                 generateOperation('UPDATE_CONTENT', { id: note.id, content: content.value });
+             }
         });
-
         note.querySelectorAll('.color-dot').forEach(dot => {
             dot.addEventListener('click', () => {
-                const newColor = dot.dataset.color;
-                generateOperation('CHANGE_COLOR', { id: note.id, color: newColor });
+                if (note.classList.contains('locked')) return;
+                generateOperation('CHANGE_COLOR', { id: note.id, color: dot.dataset.color });
             });
         });
-
-        objectContainer.appendChild(note);
+        note.querySelector('.lock-btn').addEventListener('click', () => {
+            const isLocked = !note.classList.contains('locked');
+            generateOperation('TOGGLE_LOCK', { id: note.id, isLocked: isLocked });
+        });
     }
     
-    function createSection(data = {}, fromRemote = false) {
+    function createSection(data, fromRemote = false) {
         if (!fromRemote) {
             const pos = getNewElementPosition();
             const payload = {
                 id: `section-${myPeerId}-${Date.now()}`,
-                x: pos.x, y: pos.y,
-                width: '400px', height: '400px',
+                x: pos.x, y: pos.y, width: '400px', height: '400px',
                 zIndex: boardData.board.sectionZIndexCounter++,
-                content: 'セクション', color: sectionColors[0],
-                isLocked: false, isDeleted: false, deletedAt: null
+                content: '新しいセクション', color: sectionColors[0], isLocked: false,
             };
             generateOperation('CREATE_SECTION', payload);
             return;
         }
 
-        if (document.getElementById(data.id) || data.isDeleted) return;
-
+        if (document.getElementById(data.id)) return;
         const section = document.createElement('div');
         section.className = 'section';
         section.id = data.id;
-        section.style.left = data.x;
-        section.style.top = data.y;
-        section.style.width = data.width;
-        section.style.height = data.height;
-        section.style.zIndex = data.zIndex;
-        section.style.backgroundColor = data.color;
-        
-        section.innerHTML = `<div class="section-header"><div class="section-title">${data.content}</div><input class="section-title-input" value="${data.content}" style="display:none;"/><div class="section-controls"><div class="color-picker">${sectionColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn"><i class="fas fa-unlock"></i></div><div class="delete-btn"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`;
+        section.style.cssText = `left: ${data.x}; top: ${data.y}; width: ${data.width}; height: ${data.height}; z-index: ${data.zIndex}; background-color: ${data.color};`;
+        section.innerHTML = `<div class="section-header"><div class="section-title">${data.content}</div><div class="section-controls"><div class="color-picker">${sectionColors.map(c=>`<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`;
+        if (data.isLocked) { section.classList.add('locked'); section.querySelector('.lock-btn i').className = 'fas fa-lock'; }
 
-        // イベントリスナー設定
-        makeDraggable(section, (newX, newY) => {
-             generateOperation('MOVE_ELEMENT', { id: section.id, x: newX, y: newY });
-        });
-
-        section.querySelector('.delete-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            generateOperation('MARK_AS_DELETED', { elementIds: [section.id], deletedAt: Date.now() });
-        });
-        
         objectContainer.appendChild(section);
+        addDragAndResize(section, true);
+        
+        section.querySelector('.delete-btn').addEventListener('click', () => generateOperation('DELETE_ELEMENTS', { ids: [section.id] }));
     }
-    
-    function createTextBox(data = {}, fromRemote = false) {
-         if (!fromRemote) {
+
+    function createTextBox(data, fromRemote = false) {
+        if (!fromRemote) {
             const pos = getNewElementPosition();
             const payload = {
                 id: `text-${myPeerId}-${Date.now()}`,
-                x: pos.x, y: pos.y,
+                x: pos.x, y: pos.y, width: 'auto',
                 zIndex: boardData.board.noteZIndexCounter++,
-                content: 'テキスト',
-                isLocked: false, isDeleted: false, deletedAt: null
+                content: 'テキストを入力', isLocked: false,
             };
             generateOperation('CREATE_TEXTBOX', payload);
             return;
         }
 
-        if (document.getElementById(data.id) || data.isDeleted) return;
-
+        if (document.getElementById(data.id)) return;
         const textBox = document.createElement('div');
         textBox.className = 'text-box';
         textBox.id = data.id;
-        textBox.style.left = data.x;
-        textBox.style.top = data.y;
-        textBox.style.zIndex = data.zIndex;
-        
-        textBox.innerHTML = `<div class="text-content" contenteditable="true">${data.content}</div><div class="delete-btn"><i class="fas fa-times"></i></div><div class="lock-btn"><i class="fas fa-unlock"></i></div>`;
-        
-        const contentDiv = textBox.querySelector('.text-content');
-        contentDiv.addEventListener('blur', () => {
-            if(contentDiv.innerText !== data.content) {
-                generateOperation('UPDATE_CONTENT', { id: textBox.id, content: contentDiv.innerText });
-            }
-        });
-        
-        makeDraggable(textBox, (newX, newY) => {
-             generateOperation('MOVE_ELEMENT', { id: textBox.id, x: newX, y: newY });
-        });
-
-        textBox.querySelector('.delete-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            generateOperation('MARK_AS_DELETED', { elementIds: [textBox.id], deletedAt: Date.now() });
-        });
+        textBox.style.cssText = `left: ${data.x}; top: ${data.y}; width: ${data.width || 'auto'}; z-index: ${data.zIndex};`;
+        textBox.innerHTML = `<div class="text-content" contenteditable="true">${data.content}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`;
+        if (data.isLocked) { 
+            textBox.classList.add('locked'); 
+            textBox.querySelector('.lock-btn i').className = 'fas fa-lock';
+            textBox.querySelector('.text-content').contentEditable = 'false';
+        }
         
         objectContainer.appendChild(textBox);
+        addDragAndResize(textBox);
+
+        textBox.querySelector('.delete-btn').addEventListener('click', () => generateOperation('DELETE_ELEMENTS', { ids: [textBox.id] }));
+        const content = textBox.querySelector('.text-content');
+        content.addEventListener('blur', () => {
+             const currentData = findElementData(textBox.id)?.item;
+             if (currentData && content.innerHTML !== currentData.content) {
+                 generateOperation('UPDATE_CONTENT', { id: textBox.id, content: content.innerHTML });
+             }
+        });
     }
-    
-    function createShape({ type }, fromRemote = false, data = {}) {
+
+    function createShape(data, fromRemote = false) {
         if (!fromRemote) {
             const pos = getNewElementPosition();
             const payload = {
                 id: `shape-${myPeerId}-${Date.now()}`,
-                x: pos.x, y: pos.y,
-                width: '150px', height: '150px',
+                shapeType: data.type, x: pos.x, y: pos.y, width: '150px', height: '150px',
                 zIndex: boardData.board.noteZIndexCounter++,
-                content: '', color: shapeColors[0],
-                shapeType: type,
-                isLocked: false, isDeleted: false, deletedAt: null
+                content: '', color: shapeColors[0], isLocked: false,
             };
             generateOperation('CREATE_SHAPE', payload);
             return;
         }
 
-        if (document.getElementById(data.id) || data.isDeleted) return;
-
+        if (document.getElementById(data.id)) return;
         const shape = document.createElement('div');
         shape.className = `shape ${data.shapeType}`;
         shape.id = data.id;
-        shape.style.left = data.x;
-        shape.style.top = data.y;
-        shape.style.width = data.width;
-        shape.style.height = data.height;
-        shape.style.zIndex = data.zIndex;
-
-        shape.innerHTML = `<div class="shape-visual" style="background-color:${data.color};"></div><div class="shape-label" contenteditable="true">${data.content}</div><div class="delete-btn"><i class="fas fa-times"></i></div><div class="lock-btn"><i class="fas fa-unlock"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="resizer"></div>`;
-        
-        makeDraggable(shape, (newX, newY) => {
-             generateOperation('MOVE_ELEMENT', { id: shape.id, x: newX, y: newY });
-        });
-        
-        shape.querySelector('.delete-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            generateOperation('MARK_AS_DELETED', { elementIds: [shape.id], deletedAt: Date.now() });
-        });
-
-        const label = shape.querySelector('.shape-label');
-        label.addEventListener('blur', () => {
-            if (label.innerText !== data.content) {
-                generateOperation('UPDATE_CONTENT', { id: shape.id, content: label.innerText });
-            }
-        });
+        shape.style.cssText = `left: ${data.x}; top: ${data.y}; width: ${data.width}; height: ${data.height}; z-index: ${data.zIndex};`;
+        shape.innerHTML = `<div class="shape-visual"></div><div class="shape-label" contenteditable="true">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div>`;
+        shape.querySelector('.shape-visual').style.backgroundColor = data.color;
+        if (data.isLocked) { shape.classList.add('locked'); shape.querySelector('.lock-btn i').className = 'fas fa-lock'; }
         
         objectContainer.appendChild(shape);
+        addDragAndResize(shape);
+
+        shape.querySelector('.delete-btn').addEventListener('click', () => generateOperation('DELETE_ELEMENTS', { ids: [shape.id] }));
+    }
+
+    // =================================================================
+    // 6. ユーティリティ & UIイベント
+    // =================================================================
+    
+    function addDragAndResize(element, isSection = false) {
+        const header = element.querySelector('.note-header') || element.querySelector('.section-header') || element;
+        const onHeaderDown = e => {
+            if (element.classList.contains('locked')) return;
+            e.stopPropagation();
+            document.body.classList.add('is-dragging');
+
+            let lastPos = getEventCoordinates(e);
+            let attachedElements = [];
+            const startLeft = parseFloat(element.style.left);
+            const startTop = parseFloat(element.style.top);
+
+            if (isSection) {
+                 [...boardData.notes, ...boardData.shapes, ...boardData.textBoxes].forEach(item => {
+                    const elLeft = parseFloat(item.x), elTop = parseFloat(item.y);
+                    const elData = findElementData(item.id);
+                    if (!elData) return;
+                    const domEl = document.getElementById(item.id);
+                    if (!domEl) return;
+                    
+                    if (elLeft > startLeft && elLeft + domEl.offsetWidth < startLeft + element.offsetWidth &&
+                        elTop > startTop && elTop + domEl.offsetHeight < startTop + element.offsetHeight) {
+                        attachedElements.push({id: item.id, offsetX: elLeft - startLeft, offsetY: elTop - startTop});
+                    }
+                });
+            }
+
+            const onPointerMove = ev => {
+                ev.preventDefault();
+                const currentPos = getEventCoordinates(ev);
+                const dx = (currentPos.x - lastPos.x) / boardData.board.scale;
+                const dy = (currentPos.y - lastPos.y) / boardData.board.scale;
+                lastPos = currentPos;
+                
+                element.style.left = `${parseFloat(element.style.left) + dx}px`;
+                element.style.top = `${parseFloat(element.style.top) + dy}px`;
+
+                attachedElements.forEach(item => {
+                    const attachedEl = document.getElementById(item.id);
+                    if (attachedEl) {
+                        attachedEl.style.left = `${parseFloat(attachedEl.style.left) + dx}px`;
+                        attachedEl.style.top = `${parseFloat(attachedEl.style.top) + dy}px`;
+                    }
+                });
+                drawAllConnectors();
+            };
+            const onPointerUp = () => {
+                document.body.classList.remove('is-dragging');
+                document.removeEventListener('mousemove', onPointerMove);
+                document.removeEventListener('mouseup', onPointerUp);
+                
+                const elementsToMove = [{ id: element.id, x: element.style.left, y: element.style.top, zIndex: boardData.board.noteZIndexCounter++ }];
+                attachedElements.forEach(item => {
+                    elementsToMove.push({ id: item.id, x: `${startLeft + item.offsetX + (parseFloat(element.style.left) - startLeft)}px`, y: `${startTop + item.offsetY + (parseFloat(element.style.top) - startTop)}px`});
+                });
+                generateOperation('MOVE_ELEMENTS', { elements: elementsToMove });
+            };
+            document.addEventListener('mousemove', onPointerMove);
+            document.addEventListener('mouseup', onPointerUp);
+        };
+        header.addEventListener('mousedown', onHeaderDown);
+
+        const resizer = element.querySelector('.resizer');
+        if (resizer) {
+            resizer.addEventListener('mousedown', e => {
+                 if (element.classList.contains('locked')) return;
+                 e.stopPropagation();
+                 document.body.classList.add('is-dragging');
+                 const startW = element.offsetWidth, startH = element.offsetHeight;
+                 const startPos = getEventCoordinates(e);
+
+                 const onPointerMove = ev => {
+                     ev.preventDefault();
+                     const currentPos = getEventCoordinates(ev);
+                     element.style.width = `${startW + (currentPos.x - startPos.x) / boardData.board.scale}px`;
+                     element.style.height = `${startH + (currentPos.y - startPos.y) / boardData.board.scale}px`;
+                     drawAllConnectors();
+                 };
+                 const onPointerUp = () => {
+                     document.body.classList.remove('is-dragging');
+                     document.removeEventListener('mousemove', onPointerMove);
+                     document.removeEventListener('mouseup', onPointerUp);
+                     generateOperation('RESIZE_ELEMENT', { id: element.id, width: element.style.width, height: element.style.height });
+                 };
+                 document.addEventListener('mousemove', onPointerMove);
+                 document.addEventListener('mouseup', onPointerUp);
+            });
+        }
     }
     
-    // --- ボタンイベントリスナー設定 ---
-    addNoteBtn.addEventListener('click', () => createNote());
-    addSectionBtn.addEventListener('click', () => createSection());
-    addTextBtn.addEventListener('click', () => createTextBox());
-    addShapeSquareBtn.addEventListener('click', () => createShape({ type: 'square' }));
-    addShapeCircleBtn.addEventListener('click', () => createShape({ type: 'circle' }));
-    addShapeDiamondBtn.addEventListener('click', () => createShape({ type: 'diamond' }));
-
-    // =================================================================
-    // 6. 手描き機能 (変更なし)
-    // =================================================================
-
     const onDrawingLayerDown = e => {
         if (!isPenMode && !isEraserMode) return;
         e.preventDefault(); e.stopPropagation();
@@ -858,6 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const pathId = `path-${myPeerId}-${Date.now()}`;
         const newPathData = {
             id: pathId,
+            points: [],
             color: '#000000',
             strokeWidth: currentStrokeWidth,
             mode: isEraserMode ? 'eraser' : 'pen'
@@ -881,8 +909,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.removeEventListener('mousemove', onPointerMove);
             document.removeEventListener('mouseup', onPointerUp);
-            document.removeEventListener('touchmove', onPointerMove);
-            document.removeEventListener('touchend', onPointerUp);
         };
 
         drawingInterval = setInterval(() => {
@@ -894,14 +920,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         document.addEventListener('mousemove', onPointerMove);
         document.addEventListener('mouseup', onPointerUp);
-        document.addEventListener('touchmove', onPointerMove, { passive: false });
-        document.addEventListener('touchend', onPointerUp);
     };
     drawingLayer.addEventListener('mousedown', onDrawingLayerDown);
-    drawingLayer.addEventListener('touchstart', onDrawingLayerDown, { passive: false });
     
     // =================================================================
-    // 7. ファイル管理とアプリケーション初期化 (変更なし)
+    // 7. ファイル管理とアプリケーション初期化
     // =================================================================
 
     function getFileMetadata() { return JSON.parse(localStorage.getItem('plottia_files_metadata')) || []; }
@@ -985,7 +1008,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const urlHash = window.location.hash.substring(1);
         const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
 
-        if (hostIdInUrl) {
+        if (hostIdInUrl && fileIdFromUrl === fileId) {
             console.log("Joining as a guest. Waiting for host data.");
             loadStateFromObject(createEmptyBoard());
         } else {
@@ -997,18 +1020,30 @@ document.addEventListener('DOMContentLoaded', () => {
         initializePeer();
     }
     
+    function parseMarkdown(text) { let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/-(.*?)-/g, '<del>$1</del>'); html = html.split('\n').map(line => line.startsWith('* ') ? `<li>${line.substring(2)}</li>` : line).join('\n'); html = html.replace(/<li>(.*?)<\/li>/g, '<ul><li>$1</li></ul>').replace(/<\/ul>\n<ul>/g, ''); return html.replace(/\n/g, '<br>'); }
+    function updateNoteColor(note, color) { note.dataset.color = color; note.querySelector('.note-header').style.backgroundColor = color; note.querySelector('.note-body').style.backgroundColor = color; }
+
+    addNoteBtn.addEventListener('click', () => createNote({}));
+    addSectionBtn.addEventListener('click', () => createSection({}));
+    addTextBtn.addEventListener('click', () => createTextBox({}));
+    addShapeSquareBtn.addEventListener('click', () => createShape({ type: 'square' }));
+    addShapeCircleBtn.addEventListener('click', () => createShape({ type: 'circle' }));
+    addShapeDiamondBtn.addEventListener('click', () => createShape({ type: 'diamond' }));
+
     backToFilesBtn.addEventListener('click', showFileManager);
     createNewFileBtn.addEventListener('click', createNewFile);
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
     
+    penToolBtn.addEventListener('click', () => { isPenMode = !isPenMode; isEraserMode = false; penToolBtn.classList.toggle('active', isPenMode); eraserToolBtn.classList.remove('active'); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; });
+    eraserToolBtn.addEventListener('click', () => { isEraserMode = !isEraserMode; isPenMode = false; eraserToolBtn.classList.toggle('active', isEraserMode); penToolBtn.classList.remove('active'); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; });
+
     function redrawCanvas() {
         if (!boardData.paths) return;
         ctx.clearRect(0, 0, drawingLayer.width, drawingLayer.height);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         boardData.paths.forEach(path => {
-            if(path.isDeleted) return;
             ctx.globalCompositeOperation = path.mode === 'eraser' ? 'destination-out' : 'source-over';
             ctx.strokeStyle = path.color;
             ctx.lineWidth = path.strokeWidth;
@@ -1049,43 +1084,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
-    function drawAllConnectors() { /* 元のコードと同様の実装 */ }
-    function updateMinimap() { /* 元のコードと同様の実装 */ }
-
-    async function migrateLocalStorageToIndexedDB() {
-        if (localStorage.getItem('plottia_migrated_v1')) return;
-        console.log("Starting migration from localStorage to IndexedDB...");
-        const metadata = getFileMetadata();
-        let migrationCount = 0;
-        for (const file of metadata) {
-            const oldData = localStorage.getItem(file.id);
-            if (oldData) {
-                try {
-                    const parsedData = JSON.parse(oldData);
-                    if (!parsedData.version) {
-                        parsedData.version = file.lastModified || Date.now();
-                    }
-                    await db.set(file.id, parsedData);
-                    localStorage.removeItem(file.id);
-                    migrationCount++;
-                } catch (e) {
-                    console.error(`Failed to migrate file ${file.id}:`, e);
-                }
+    function drawAllConnectors() { 
+        if(!svgLayer) return; 
+        svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`; 
+        boardData.connectors.forEach(conn => { 
+            const startEl = document.getElementById(conn.startId);
+            const endEl = document.getElementById(conn.endId);
+            if(startEl && endEl) {
+                const startPoint = { x: parseFloat(startEl.style.left) + startEl.offsetWidth / 2, y: parseFloat(startEl.style.top) + startEl.offsetHeight / 2 };
+                const endPoint = { x: parseFloat(endEl.style.left) + endEl.offsetWidth / 2, y: parseFloat(endEl.style.top) + endEl.offsetHeight / 2 };
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line'); 
+                line.setAttribute('x1', startPoint.x); line.setAttribute('y1', startPoint.y); 
+                line.setAttribute('x2', endPoint.x); line.setAttribute('y2', endPoint.y); 
+                line.setAttribute('class', 'connector-line'); 
+                line.dataset.id = conn.id; 
+                svgLayer.appendChild(line);
             }
-        }
-        if (migrationCount > 0) console.log(`Migration complete. ${migrationCount} files migrated.`);
-        localStorage.setItem('plottia_migrated_v1', 'true');
+        }); 
+    }
+    function updateMinimap() {
+        minimap.innerHTML = '';
+        const boardWidth = 5000, boardHeight = 5000;
+        const minimapScale = minimap.offsetWidth / boardWidth;
+        [...boardData.notes, ...boardData.sections, ...boardData.textBoxes, ...boardData.shapes].forEach(item => {
+            const domEl = document.getElementById(item.id);
+            if (!domEl) return;
+            const elRect = {
+                left: parseFloat(item.x) * minimapScale,
+                top: parseFloat(item.y) * minimapScale,
+                width: domEl.offsetWidth * minimapScale,
+                height: domEl.offsetHeight * minimapScale,
+            };
+            const mapEl = document.createElement('div');
+            mapEl.className = 'minimap-element';
+            mapEl.style.cssText = `left:${elRect.left}px; top:${elRect.top}px; width:${elRect.width}px; height:${elRect.height}px;`;
+            minimap.appendChild(mapEl);
+        });
+        const viewport = document.createElement('div');
+        viewport.id = 'minimap-viewport';
+        minimap.appendChild(viewport);
+        const { panX, panY, scale } = boardData.board;
+        const viewRect = {
+            width: window.innerWidth / scale * minimapScale,
+            height: window.innerHeight / scale * minimapScale,
+            left: -panX / scale * minimapScale,
+            top: -panY / scale * minimapScale
+        };
+        viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`;
     }
 
     async function initializeApp() {
-        await migrateLocalStorageToIndexedDB();
         if (localStorage.getItem('plottia-dark-mode') === '1') { document.body.classList.add('dark-mode'); }
         
         const urlHash = window.location.hash.substring(1);
-        const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
+        const [fileIdFromUrl] = urlHash.split('/');
         
-        if (fileIdFromUrl && getFileMetadata().some(f => f.id === fileIdFromUrl)) {
-            openFile(fileIdFromUrl);
+        const metadata = getFileMetadata();
+        if (fileIdFromUrl && metadata.some(f => f.id === fileIdFromUrl)) {
+            await openFile(fileIdFromUrl);
         } else {
             showFileManager();
         }
@@ -1094,7 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
 
     // =================================================================
-    // グローバルエラーハンドリング (変更なし)
+    // グローバルエラーハンドリング
     // =================================================================
     function showErrorModal(errorMessage) {
         if (errorOverlay && errorDetails) {
