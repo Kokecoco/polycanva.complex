@@ -1314,3 +1314,4 @@ window.addEventListener('unhandledrejection', function(event) {
     }
     showErrorModal(formattedMessage);
 });
+});
