@@ -77,7 +77,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (peer && !peer.destroyed) {
             peer.destroy();
         }
-        peer = new Peer();
+        try {
+            peer = new Peer();
+        } catch (e) {
+            showErrorModal("PeerJSの初期化に失敗しました。アドブロッカーなどが原因である可能性があります。\n" + e.message);
+            return;
+        }
 
         peer.on('open', id => {
             myPeerId = id;
@@ -152,21 +157,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (peerId === hostPeerId) {
             alert('ホストとの接続が切れました。新しいホストを選出します。');
-            const remainingPeers = Object.keys(connectedUsers);
+            const remainingPeers = Object.keys(connectedUsers).filter(id => id !== myPeerId);
             if (remainingPeers.length > 0) {
                 remainingPeers.sort();
                 const newHostId = remainingPeers[0];
-                broadcast({ type: 'host-changed', payload: { newHostId: newHostId } });
-                if (myPeerId === newHostId) {
-                    isHost = true;
-                    hostPeerId = myPeerId;
-                    const newUrl = `#${currentFileId}/${myPeerId}`;
-                    window.history.replaceState(null, null, newUrl);
-                    console.log('I am the new host.');
-                    alert('あなたが新しいホストになりました。');
+                if (myPeerId < newHostId) { // 自分の方がID的に若い場合、自分がホストになる
+                     becomeHost();
+                } else { // 他の誰かが新しいホストになる
+                     changeHost(newHostId);
+                     broadcast({ type: 'host-changed', payload: { newHostId: newHostId } });
                 }
             } else {
-                isHost = true; hostPeerId = myPeerId;
+                becomeHost();
             }
         }
         
@@ -175,14 +177,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         updateUserListUI();
     }
+    
+    function becomeHost() {
+        isHost = true;
+        hostPeerId = myPeerId;
+        const newUrl = `#${currentFileId}/${myPeerId}`;
+        window.history.replaceState(null, null, newUrl);
+        console.log('I am the new host.');
+        alert('あなたが新しいホストになりました。');
+        updateUserListUI();
+    }
+    
+    function changeHost(newHostId) {
+        isHost = false;
+        hostPeerId = newHostId;
+        console.log('New host is', hostPeerId, 'Reconnecting...');
+        alert(`新しいホスト (${hostPeerId.substring(0,4)}) に再接続します。`);
+        setTimeout(() => {
+            if (peer.connections[hostPeerId]) {
+                console.log('Already connected to new host.');
+                return;
+            }
+            const conn = peer.connect(hostPeerId, { reliable: true });
+            setupConnection(conn);
+        }, 500);
+        updateUserListUI();
+    }
+
 
     function broadcast(data, excludePeerId = null) {
         if (!isHost) return;
-        for (const peerId in connections) {
-            if (peerId !== excludePeerId && connections[peerId] && connections[peerId].open) {
-                 connections[peerId].send(data);
+        Object.values(connections).forEach(conn => {
+            if (conn && conn.peer !== excludePeerId && conn.open) {
+                conn.send(data);
             }
-        }
+        });
     }
 
     function sendOperationToHost(operation) {
@@ -193,7 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (connections[hostPeerId] && connections[hostPeerId].open) {
             connections[hostPeerId].send(data);
         } else {
-            console.error("Host connection not available.");
+             console.error("Host connection not available. Operation queued.");
+             // TODO: Add offline queue logic if needed
         }
     }
     
@@ -201,7 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
         switch (data.type) {
             case 'initial-state':
                 hostPeerId = data.payload.hostId;
-                connectedUsers = data.payload.users;
+                isHost = false;
+                connectedUsers = data.payload.users || {};
                 connectedUsers[myPeerId] = { id: myPeerId };
                 updateUserListUI();
                 handleOfflineConflict(data.payload.boardData);
@@ -220,15 +251,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateUserListUI();
                 break;
             case 'host-changed':
-                if (myPeerId !== data.payload.newHostId) {
-                    isHost = false;
-                    hostPeerId = data.payload.newHostId;
-                    console.log('New host is', hostPeerId, 'Reconnecting...');
-                    alert(`新しいホスト (${hostPeerId.substring(0,4)}) に再接続します。`);
-                    setTimeout(() => {
-                        const conn = peer.connect(hostPeerId, { reliable: true });
-                        setupConnection(conn);
-                    }, 500);
+                if (myPeerId === data.payload.newHostId) {
+                    becomeHost();
+                } else {
+                    changeHost(data.payload.newHostId);
                 }
                 break;
         }
@@ -258,17 +284,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateOperation(type, payload, addToUndo = false) {
         const operation = { type, payload, sender: myPeerId, timestamp: Date.now() };
-        // ローカルで即時適用
-        applyOperation(operation);
-        // ホストに送信（ホストならブロードキャスト）
-        sendOperationToHost(operation);
-        if (addToUndo && operation.sender === myPeerId) {
+        if (addToUndo) {
             myUndoStack.push(addToUndo);
             myRedoStack = [];
             updateUndoRedoButtons();
         }
-        // 変更をDBに保存
-        saveState();
+        sendOperationToHost(operation);
+        // DBへの保存は、操作が頻繁に発生しないように少し遅延させるか、特定の操作後に限定する
+        // requestAnimationFrame(saveState);
     }
     
     function findElementData(id) {
@@ -284,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function applyOperation(op) {
         if (!op || !op.type) return;
         let itemData, element;
-
+        
         const findResult = op.payload.id ? findElementData(op.payload.id) : null;
         if(findResult) {
             itemData = findResult.item;
@@ -374,8 +397,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     itemData.isLocked = op.payload.isLocked;
                     element.classList.toggle('locked', op.payload.isLocked);
                     element.querySelector('.lock-btn i').className = op.payload.isLocked ? 'fas fa-lock' : 'fas fa-unlock';
-                    if (findResult.type === 'textBoxes') {
-                        element.querySelector('.text-content').contentEditable = !op.payload.isLocked;
+                    if (findResult.type === 'textBoxes' || findResult.type === 'shapes') {
+                        element.querySelector('[contenteditable]').contentEditable = !op.payload.isLocked;
                     }
                 }
                 break;
@@ -413,10 +436,12 @@ document.addEventListener('DOMContentLoaded', () => {
                      boardData.paths = boardData.paths.filter(p => p.id !== op.payload.pathId);
                 }
                 redrawCanvas();
+                saveState(); //描画の完了時に保存
                 break;
             case 'UPDATE_BOARD_STATE':
                 boardData.board = { ...boardData.board, ...op.payload };
                 applyTransform();
+                saveState(); //ボード操作の完了時に保存
                 break;
             case 'CREATE_CONNECTOR':
                 if (!boardData.connectors.some(c => c.id === op.payload.id)) {
@@ -427,6 +452,12 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'DELETE_CONNECTOR':
                 boardData.connectors = boardData.connectors.filter(c => c.id !== op.payload.id);
                 drawAllConnectors();
+                break;
+            case 'FORCE_OVERWRITE':
+                if (!isHost) {
+                    loadStateFromObject(op.payload);
+                    saveState();
+                }
                 break;
         }
         updateMinimap();
@@ -442,7 +473,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastAction = myUndoStack.pop();
         myRedoStack.push(lastAction);
         const inverseOp = { type: lastAction.inverse.type, payload: lastAction.inverse.payload };
-        applyOperation(inverseOp);
         sendOperationToHost(inverseOp);
         saveState();
         updateUndoRedoButtons();
@@ -453,7 +483,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastAction = myRedoStack.pop();
         myUndoStack.push(lastAction);
         const originalOp = { type: lastAction.original.type, payload: lastAction.original.payload };
-        applyOperation(originalOp);
         sendOperationToHost(originalOp);
         saveState();
         updateUndoRedoButtons();
@@ -485,7 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
         async set(key, value) {
             const db = await this._getDB();
             return new Promise(async (resolve, reject) => {
-                const compressed = pako.deflate(JSON.stringify(value));
+                const compressed = pako.deflate(JSON.stringify(value), { to: 'string' });
                 const transaction = db.transaction(this._storeName, 'readwrite');
                 transaction.objectStore(this._storeName).put(compressed, key);
                 transaction.oncomplete = () => resolve();
@@ -536,7 +565,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function handleOfflineConflict(remoteState) {
         const localState = await db.get(currentFileId);
 
-        if (!localState || (remoteState && localState.version < remoteState.version)) {
+        if (!localState || (remoteState && (!localState.version || localState.version < remoteState.version))) {
              console.log("Applying remote state (no local or local is older).");
              loadStateFromObject(remoteState);
              await db.set(currentFileId, remoteState);
@@ -576,7 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
             conflictForceBtn.onclick = handleResolution('force');
         } else {
             console.log("No conflict or local is up-to-date.");
-            loadStateFromObject(localState);
+            loadStateFromObject(localState || remoteState);
         }
     }
 
@@ -637,6 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 original: { type: 'CREATE_NOTE', payload },
                 inverse: { type: 'DELETE_ELEMENTS', payload: { ids: [payload.id] } }
             });
+            saveState();
             return;
         }
 
@@ -658,9 +688,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         objectContainer.appendChild(note);
         addDragAndResize(note);
+        
+        note.addEventListener('mousedown', (e) => { e.stopPropagation(); selectElement(note); });
 
         note.querySelector('.delete-btn').addEventListener('click', () => {
              generateOperation('DELETE_ELEMENTS', { ids: [note.id] });
+             saveState();
         });
         const view = note.querySelector('.note-view');
         const content = note.querySelector('.note-content');
@@ -677,17 +710,20 @@ document.addEventListener('DOMContentLoaded', () => {
              const currentData = findElementData(note.id)?.item;
              if (currentData && content.value !== currentData.content) {
                  generateOperation('UPDATE_CONTENT', { id: note.id, content: content.value });
+                 saveState();
              }
         });
         note.querySelectorAll('.color-dot').forEach(dot => {
             dot.addEventListener('click', () => {
                 if (note.classList.contains('locked')) return;
                 generateOperation('CHANGE_COLOR', { id: note.id, color: dot.dataset.color });
+                saveState();
             });
         });
         note.querySelector('.lock-btn').addEventListener('click', () => {
             const isLocked = !note.classList.contains('locked');
             generateOperation('TOGGLE_LOCK', { id: note.id, isLocked: isLocked });
+            saveState();
         });
     }
     
@@ -701,6 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 content: '新しいセクション', color: sectionColors[0], isLocked: false,
             };
             generateOperation('CREATE_SECTION', payload);
+            saveState();
             return;
         }
 
@@ -715,7 +752,30 @@ document.addEventListener('DOMContentLoaded', () => {
         objectContainer.appendChild(section);
         addDragAndResize(section, true);
         
-        section.querySelector('.delete-btn').addEventListener('click', () => generateOperation('DELETE_ELEMENTS', { ids: [section.id] }));
+        section.addEventListener('mousedown', (e) => { e.stopPropagation(); selectElement(section); });
+
+        section.querySelector('.delete-btn').addEventListener('click', (e) => { e.stopPropagation(); generateOperation('DELETE_ELEMENTS', { ids: [section.id] }); saveState(); });
+        section.querySelectorAll('.color-dot').forEach(dot => { dot.addEventListener('click', e => { e.stopPropagation(); if (section.classList.contains('locked')) return; generateOperation('CHANGE_COLOR', {id: section.id, color: dot.dataset.color}); saveState(); }); });
+        section.querySelector('.lock-btn').addEventListener('click', e => { e.stopPropagation(); const isLocked = !section.classList.contains('locked'); generateOperation('TOGGLE_LOCK', {id: section.id, isLocked: isLocked}); saveState(); });
+        
+        const titleEl = section.querySelector('.section-title');
+        titleEl.addEventListener('dblclick', e => {
+            if (section.classList.contains('locked')) return;
+            e.stopPropagation();
+            const i = document.createElement('input');
+            i.type = 'text'; i.value = titleEl.textContent; i.className = 'section-title-input';
+            titleEl.replaceWith(i); i.focus(); i.select();
+            const saveTitle = () => {
+                const newTitle = i.value || "無題";
+                i.replaceWith(titleEl);
+                if (titleEl.textContent !== newTitle) {
+                    generateOperation('UPDATE_CONTENT', {id: section.id, content: newTitle});
+                    saveState();
+                }
+            };
+            i.addEventListener('blur', saveTitle);
+            i.addEventListener('keydown', (ev) => { if(ev.key === 'Enter') i.blur(); });
+        });
     }
 
     function createTextBox(data, fromRemote = false) {
@@ -728,6 +788,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 content: 'テキストを入力', isLocked: false,
             };
             generateOperation('CREATE_TEXTBOX', payload);
+            saveState();
             return;
         }
 
@@ -737,23 +798,30 @@ document.addEventListener('DOMContentLoaded', () => {
         textBox.id = data.id;
         textBox.style.cssText = `left: ${data.x}; top: ${data.y}; width: ${data.width || 'auto'}; z-index: ${data.zIndex};`;
         textBox.innerHTML = `<div class="text-content" contenteditable="true">${data.content}</div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`;
-        if (data.isLocked) { 
-            textBox.classList.add('locked'); 
-            textBox.querySelector('.lock-btn i').className = 'fas fa-lock';
-            textBox.querySelector('.text-content').contentEditable = 'false';
-        }
         
         objectContainer.appendChild(textBox);
         addDragAndResize(textBox);
 
-        textBox.querySelector('.delete-btn').addEventListener('click', () => generateOperation('DELETE_ELEMENTS', { ids: [textBox.id] }));
+        textBox.addEventListener('mousedown', (e) => { e.stopPropagation(); selectElement(textBox); });
+        
         const content = textBox.querySelector('.text-content');
+        if (data.isLocked) { 
+            textBox.classList.add('locked'); 
+            textBox.querySelector('.lock-btn i').className = 'fas fa-lock';
+            content.contentEditable = 'false';
+        }
+        
+        textBox.querySelector('.delete-btn').addEventListener('click', () => { generateOperation('DELETE_ELEMENTS', { ids: [textBox.id] }); saveState(); });
+        textBox.querySelector('.lock-btn').addEventListener('click', () => { const isLocked = !textBox.classList.contains('locked'); generateOperation('TOGGLE_LOCK', {id: textBox.id, isLocked: isLocked}); saveState(); });
+        
         content.addEventListener('blur', () => {
              const currentData = findElementData(textBox.id)?.item;
              if (currentData && content.innerHTML !== currentData.content) {
                  generateOperation('UPDATE_CONTENT', { id: textBox.id, content: content.innerHTML });
+                 saveState();
              }
         });
+        content.addEventListener('mousedown', e => e.stopPropagation()); // テキスト編集中にドラッグが始まらないように
     }
 
     function createShape(data, fromRemote = false) {
@@ -766,6 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 content: '', color: shapeColors[0], isLocked: false,
             };
             generateOperation('CREATE_SHAPE', payload);
+            saveState();
             return;
         }
 
@@ -774,85 +843,126 @@ document.addEventListener('DOMContentLoaded', () => {
         shape.className = `shape ${data.shapeType}`;
         shape.id = data.id;
         shape.style.cssText = `left: ${data.x}; top: ${data.y}; width: ${data.width}; height: ${data.height}; z-index: ${data.zIndex};`;
-        shape.innerHTML = `<div class="shape-visual"></div><div class="shape-label" contenteditable="true">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div>`;
+        shape.innerHTML = `<div class="shape-visual"></div><div class="shape-label" contenteditable="true">${data.content || ''}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas fa-unlock"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div>`;
         shape.querySelector('.shape-visual').style.backgroundColor = data.color;
-        if (data.isLocked) { shape.classList.add('locked'); shape.querySelector('.lock-btn i').className = 'fas fa-lock'; }
         
         objectContainer.appendChild(shape);
         addDragAndResize(shape);
 
-        shape.querySelector('.delete-btn').addEventListener('click', () => generateOperation('DELETE_ELEMENTS', { ids: [shape.id] }));
+        shape.addEventListener('mousedown', e => { e.stopPropagation(); selectElement(shape); });
+        
+        const label = shape.querySelector('.shape-label');
+        if (data.isLocked) { 
+            shape.classList.add('locked'); 
+            shape.querySelector('.lock-btn i').className = 'fas fa-lock';
+            label.contentEditable = 'false';
+        }
+
+        shape.querySelector('.delete-btn').addEventListener('click', e => { e.stopPropagation(); generateOperation('DELETE_ELEMENTS', { ids: [shape.id] }); saveState(); });
+        shape.querySelectorAll('.color-dot').forEach(dot => { dot.addEventListener('click', e => { e.stopPropagation(); if (shape.classList.contains('locked')) return; generateOperation('CHANGE_COLOR', { id: shape.id, color: dot.dataset.color }); saveState(); }); });
+        shape.querySelector('.lock-btn').addEventListener('click', e => { e.stopPropagation(); const isLocked = !shape.classList.contains('locked'); generateOperation('TOGGLE_LOCK', { id: shape.id, isLocked: isLocked }); saveState(); });
+        
+        label.addEventListener('blur', () => {
+            const currentData = findElementData(shape.id)?.item;
+            if(currentData && label.innerHTML !== currentData.content) {
+                generateOperation('UPDATE_CONTENT', {id: shape.id, content: label.innerHTML});
+                saveState();
+            }
+        });
+        label.addEventListener('mousedown', e => e.stopPropagation());
     }
 
     // =================================================================
     // 6. ユーティリティ & UIイベント
     // =================================================================
+    function selectElement(element) {
+        clearSelection();
+        selectedElement = element;
+        if(element) {
+            element.classList.add('selected');
+        }
+    }
+    
+    function clearSelection() {
+        if(selectedElement) {
+            selectedElement.classList.remove('selected');
+        }
+        selectedElement = null;
+    }
     
     function addDragAndResize(element, isSection = false) {
-        const header = element.querySelector('.note-header') || element.querySelector('.section-header') || element;
+        const dragHandle = element.querySelector('.note-header') || element.querySelector('.section-header') || element;
         const onHeaderDown = e => {
             if (element.classList.contains('locked')) return;
+            // ドラッグ対象がテキスト入力エリアの場合は何もしない
+            if(e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
             e.stopPropagation();
+            selectElement(element);
             document.body.classList.add('is-dragging');
 
             let lastPos = getEventCoordinates(e);
-            let attachedElements = [];
-            const startLeft = parseFloat(element.style.left);
-            const startTop = parseFloat(element.style.top);
+            const startPositions = new Map();
+            const elementsToMove = new Set([element]);
 
             if (isSection) {
                  [...boardData.notes, ...boardData.shapes, ...boardData.textBoxes].forEach(item => {
-                    const elLeft = parseFloat(item.x), elTop = parseFloat(item.y);
-                    const elData = findElementData(item.id);
-                    if (!elData) return;
                     const domEl = document.getElementById(item.id);
                     if (!domEl) return;
-                    
-                    if (elLeft > startLeft && elLeft + domEl.offsetWidth < startLeft + element.offsetWidth &&
-                        elTop > startTop && elTop + domEl.offsetHeight < startTop + element.offsetHeight) {
-                        attachedElements.push({id: item.id, offsetX: elLeft - startLeft, offsetY: elTop - startTop});
+                    const elRect = domEl.getBoundingClientRect();
+                    const sectionRect = element.getBoundingClientRect();
+                    if (elRect.left >= sectionRect.left && elRect.right <= sectionRect.right &&
+                        elRect.top >= sectionRect.top && elRect.bottom <= sectionRect.bottom) {
+                        elementsToMove.add(domEl);
                     }
                 });
             }
+            
+            elementsToMove.forEach(el => startPositions.set(el, {x: parseFloat(el.style.left), y: parseFloat(el.style.top)}));
 
             const onPointerMove = ev => {
                 ev.preventDefault();
                 const currentPos = getEventCoordinates(ev);
                 const dx = (currentPos.x - lastPos.x) / boardData.board.scale;
                 const dy = (currentPos.y - lastPos.y) / boardData.board.scale;
-                lastPos = currentPos;
                 
-                element.style.left = `${parseFloat(element.style.left) + dx}px`;
-                element.style.top = `${parseFloat(element.style.top) + dy}px`;
-
-                attachedElements.forEach(item => {
-                    const attachedEl = document.getElementById(item.id);
-                    if (attachedEl) {
-                        attachedEl.style.left = `${parseFloat(attachedEl.style.left) + dx}px`;
-                        attachedEl.style.top = `${parseFloat(attachedEl.style.top) + dy}px`;
-                    }
+                elementsToMove.forEach(el => {
+                    const startPos = startPositions.get(el);
+                    el.style.left = `${startPos.x + dx}px`;
+                    el.style.top = `${startPos.y + dy}px`;
                 });
+                
                 drawAllConnectors();
             };
             const onPointerUp = () => {
                 document.body.classList.remove('is-dragging');
                 document.removeEventListener('mousemove', onPointerMove);
                 document.removeEventListener('mouseup', onPointerUp);
-                
-                const elementsToMove = [{ id: element.id, x: element.style.left, y: element.style.top, zIndex: boardData.board.noteZIndexCounter++ }];
-                attachedElements.forEach(item => {
-                    elementsToMove.push({ id: item.id, x: `${startLeft + item.offsetX + (parseFloat(element.style.left) - startLeft)}px`, y: `${startTop + item.offsetY + (parseFloat(element.style.top) - startTop)}px`});
+                document.removeEventListener('touchmove', onPointerMove);
+                document.removeEventListener('touchend', onPointerUp);
+
+                const movedElementsPayload = [];
+                elementsToMove.forEach(el => {
+                    movedElementsPayload.push({ id: el.id, x: el.style.left, y: el.style.top });
                 });
-                generateOperation('MOVE_ELEMENTS', { elements: elementsToMove });
+                // Z-indexも更新
+                const mainElPayload = movedElementsPayload.find(p => p.id === element.id);
+                if(mainElPayload) mainElPayload.zIndex = isSection ? boardData.board.sectionZIndexCounter++ : boardData.board.noteZIndexCounter++;
+                
+                generateOperation('MOVE_ELEMENTS', { elements: movedElementsPayload });
+                saveState();
             };
             document.addEventListener('mousemove', onPointerMove);
             document.addEventListener('mouseup', onPointerUp);
+            document.addEventListener('touchmove', onPointerMove, {passive: false});
+            document.addEventListener('touchend', onPointerUp);
         };
-        header.addEventListener('mousedown', onHeaderDown);
+        dragHandle.addEventListener('mousedown', onHeaderDown);
+        dragHandle.addEventListener('touchstart', onHeaderDown, {passive: false});
 
         const resizer = element.querySelector('.resizer');
         if (resizer) {
-            resizer.addEventListener('mousedown', e => {
+            const onResizeDown = e => {
                  if (element.classList.contains('locked')) return;
                  e.stopPropagation();
                  document.body.classList.add('is-dragging');
@@ -862,19 +972,26 @@ document.addEventListener('DOMContentLoaded', () => {
                  const onPointerMove = ev => {
                      ev.preventDefault();
                      const currentPos = getEventCoordinates(ev);
-                     element.style.width = `${startW + (currentPos.x - startPos.x) / boardData.board.scale}px`;
-                     element.style.height = `${startH + (currentPos.y - startPos.y) / boardData.board.scale}px`;
+                     element.style.width = `${Math.max(100, startW + (currentPos.x - startPos.x) / boardData.board.scale)}px`;
+                     element.style.height = `${Math.max(100, startH + (currentPos.y - startPos.y) / boardData.board.scale)}px`;
                      drawAllConnectors();
                  };
                  const onPointerUp = () => {
                      document.body.classList.remove('is-dragging');
                      document.removeEventListener('mousemove', onPointerMove);
                      document.removeEventListener('mouseup', onPointerUp);
+                     document.removeEventListener('touchmove', onPointerMove);
+                     document.removeEventListener('touchend', onPointerUp);
                      generateOperation('RESIZE_ELEMENT', { id: element.id, width: element.style.width, height: element.style.height });
+                     saveState();
                  };
                  document.addEventListener('mousemove', onPointerMove);
                  document.addEventListener('mouseup', onPointerUp);
-            });
+                 document.addEventListener('touchmove', onPointerMove, {passive: false});
+                 document.addEventListener('touchend', onPointerUp);
+            };
+            resizer.addEventListener('mousedown', onResizeDown);
+            resizer.addEventListener('touchstart', onResizeDown, {passive: false});
         }
     }
     
@@ -886,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newPathData = {
             id: pathId,
             points: [],
-            color: '#000000',
+            color: isDarkModeBtn.classList.contains('active') ? '#FFFFFF' : '#000000',
             strokeWidth: currentStrokeWidth,
             mode: isEraserMode ? 'eraser' : 'pen'
         };
@@ -909,6 +1026,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             document.removeEventListener('mousemove', onPointerMove);
             document.removeEventListener('mouseup', onPointerUp);
+            document.removeEventListener('touchmove', onPointerMove);
+            document.removeEventListener('touchend', onPointerUp);
         };
 
         drawingInterval = setInterval(() => {
@@ -920,9 +1039,49 @@ document.addEventListener('DOMContentLoaded', () => {
         
         document.addEventListener('mousemove', onPointerMove);
         document.addEventListener('mouseup', onPointerUp);
+        document.addEventListener('touchmove', onPointerMove, { passive: false });
+        document.addEventListener('touchend', onPointerUp);
     };
     drawingLayer.addEventListener('mousedown', onDrawingLayerDown);
+    drawingLayer.addEventListener('touchstart', onDrawingLayerDown, { passive: false });
     
+    const onBoardDown = e => {
+        if (e.target !== board && e.target !== objectContainer && e.target !== drawingLayer) return;
+        if(isPenMode || isEraserMode) return;
+
+        clearSelection();
+        document.body.classList.add('is-dragging');
+        board.classList.add('grabbing');
+        let lastPos = getEventCoordinates(e);
+
+        const onPointerMove = ev => {
+            ev.preventDefault();
+            const currentPos = getEventCoordinates(ev);
+            const panX = boardData.board.panX + (currentPos.x - lastPos.x);
+            const panY = boardData.board.panY + (currentPos.y - lastPos.y);
+            lastPos = currentPos;
+            boardData.board.panX = panX;
+            boardData.board.panY = panY;
+            applyTransform();
+        };
+
+        const onPointerUp = () => {
+            document.body.classList.remove('is-dragging');
+            board.classList.remove('grabbing');
+            document.removeEventListener('mousemove', onPointerMove);
+            document.removeEventListener('mouseup', onPointerUp);
+            document.removeEventListener('touchmove', onPointerMove);
+            document.removeEventListener('touchend', onPointerUp);
+            generateOperation('UPDATE_BOARD_STATE', {panX: boardData.board.panX, panY: boardData.board.panY});
+        };
+        document.addEventListener('mousemove', onPointerMove);
+        document.addEventListener('mouseup', onPointerUp);
+        document.addEventListener('touchmove', onPointerMove, {passive: false});
+        document.addEventListener('touchend', onPointerUp);
+    };
+    board.addEventListener('mousedown', onBoardDown);
+    board.addEventListener('touchstart', onBoardDown, {passive: false});
+
     // =================================================================
     // 7. ファイル管理とアプリケーション初期化
     // =================================================================
@@ -1035,8 +1194,8 @@ document.addEventListener('DOMContentLoaded', () => {
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
     
-    penToolBtn.addEventListener('click', () => { isPenMode = !isPenMode; isEraserMode = false; penToolBtn.classList.toggle('active', isPenMode); eraserToolBtn.classList.remove('active'); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; });
-    eraserToolBtn.addEventListener('click', () => { isEraserMode = !isEraserMode; isPenMode = false; eraserToolBtn.classList.toggle('active', isEraserMode); penToolBtn.classList.remove('active'); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; });
+    penToolBtn.addEventListener('click', () => { isPenMode = !isPenMode; isEraserMode = false; penToolBtn.classList.toggle('active', isPenMode); eraserToolBtn.classList.remove('active'); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; document.body.classList.toggle('pen-mode', isPenMode); });
+    eraserToolBtn.addEventListener('click', () => { isEraserMode = !isEraserMode; isPenMode = false; eraserToolBtn.classList.toggle('active', isEraserMode); penToolBtn.classList.remove('active'); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; document.body.classList.toggle('eraser-mode', isEraserMode); });
 
     function redrawCanvas() {
         if (!boardData.paths) return;
@@ -1085,7 +1244,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
     function drawAllConnectors() { 
-        if(!svgLayer) return; 
+        if(!svgLayer || !boardData.connectors) return; 
         svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`; 
         boardData.connectors.forEach(conn => { 
             const startEl = document.getElementById(conn.startId);
@@ -1106,7 +1265,9 @@ document.addEventListener('DOMContentLoaded', () => {
         minimap.innerHTML = '';
         const boardWidth = 5000, boardHeight = 5000;
         const minimapScale = minimap.offsetWidth / boardWidth;
-        [...boardData.notes, ...boardData.sections, ...boardData.textBoxes, ...boardData.shapes].forEach(item => {
+        const allElements = [...boardData.notes, ...boardData.sections, ...boardData.textBoxes, ...boardData.shapes];
+        
+        allElements.forEach(item => {
             const domEl = document.getElementById(item.id);
             if (!domEl) return;
             const elRect = {
@@ -1127,8 +1288,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const viewRect = {
             width: window.innerWidth / scale * minimapScale,
             height: window.innerHeight / scale * minimapScale,
-            left: -panX / scale * minimapScale,
-            top: -panY / scale * minimapScale
+            left: -panX * minimapScale,
+            top: -panY * minimapScale
         };
         viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`;
     }
