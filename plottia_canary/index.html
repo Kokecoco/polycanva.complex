@@ -8,10 +8,24 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <!-- (ファイルマネージャー部分は変更なし) -->
+    <!-- エラー表示用モーダル -->
+    <div id="error-overlay" class="hidden">
+        <div id="error-modal">
+            <h2><i class="fas fa-exclamation-triangle"></i> アプリケーションエラー</h2>
+            <p>予期せぬエラーが発生しました。開発者に報告するため、以下の詳細をコピーしてください。</p>
+            <textarea id="error-details" readonly></textarea>
+            <div class="error-actions">
+                <button id="copy-error-btn"><i class="fas fa-copy"></i> クリップボードにコピー</button>
+                <button id="close-error-btn">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ファイルマネージャー -->
     <div id="file-manager-overlay">
         <div id="file-manager">
-            <h1>ファイルを選択</h1> <ul id="file-list"></ul>
+            <h1>ファイルを選択</h1>
+            <ul id="file-list"></ul>
             <button id="create-new-file-btn"><i class="fas fa-plus"></i> 新しいファイルを作成</button>
         </div>
     </div>
@@ -30,9 +44,8 @@
         </div>
     </div>
 
-
+    <!-- メインアプリケーション -->
     <div id="main-app" class="hidden">
-        <!-- ツールバーの変更 -->
         <div id="toolbar">
             <button id="back-to-files-btn" title="ファイル一覧に戻る"><i class="fas fa-arrow-left"></i></button>
             <div id="collaboration-ui">
@@ -73,8 +86,7 @@
 
         <div id="board">
             <canvas id="drawing-layer"></canvas>
-            <div id="object-container">
-            </div>
+            <div id="object-container"></div>
             <div id="guide-container"></div>
             <svg id="connector-svg-layer"></svg>
         </div>
@@ -86,22 +98,11 @@
         
         <div id="minimap"></div>
     </div>
+    
     <!-- 必要なライブラリの読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-    <!-- PeerJSライブラリを追加 -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
-<div id="error-overlay" class="hidden">
-    <div id="error-modal">
-        <h2><i class="fas fa-exclamation-triangle"></i> アプリケーションエラー</h2>
-        <p>予期せぬエラーが発生しました。開発者に報告するため、以下の詳細をコピーしてください。</p>
-        <textarea id="error-details" readonly></textarea>
-        <div class="error-actions">
-            <button id="copy-error-btn"><i class="fas fa-copy"></i> クリップボードにコピー</button>
-            <button id="close-error-btn">閉じる</button>
-        </div>
-    </div>
-</div>
 </body>
 </html>
