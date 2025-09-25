@@ -292,6 +292,13 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
+    const creationFunctions = {
+        NOTE: createNote,
+        SECTION: createSection,
+        TEXTBOX: createTextBox,
+        SHAPE: createShape
+    };
+
     function applyOperation(op) {
         if (!op || !op.type || !op.payload) return;
 
@@ -312,8 +319,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // --- END FIX ---
                 if (boardData[collectionName] && !boardData[collectionName].some(item => item.id === op.payload.id)) {
                     boardData[collectionName].push(op.payload);
-                    const createFnName = `create${op.type.split('_')[1].charAt(0)}${op.type.split('_')[1].slice(1).toLowerCase()}`;
-                    const createFn = window[createFnName];
+                    const itemType = op.type.split('_')[1]; // "NOTE", "SECTION" などを取得
+                    const createFn = creationFunctions[itemType];                    
                     if (createFn) {
                         createFn(op.payload, true);
                     }
