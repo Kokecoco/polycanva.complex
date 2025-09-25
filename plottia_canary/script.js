@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const redoBtn = document.getElementById('redo-btn');
     const darkModeBtn = document.getElementById('dark-mode-btn');
     const minimap = document.getElementById('minimap');
+    const minimapViewport = document.getElementById('minimap-viewport');
     const guideContainer = document.getElementById('guide-container');
     const strokeWidthSlider = document.getElementById('stroke-width-slider');
     const strokeWidthDisplay = document.getElementById('stroke-width-display');
@@ -65,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let drawingBuffer = [];
     const DRAWING_CHUNK_INTERVAL = 100;
     let drawingInterval = null;
+    let processedOpIds = new Set();
     const noteColors = ['#ffc', '#cfc', '#ccf', '#fcc', '#cff', '#fff'];
     const sectionColors = ['rgba(255, 0, 0, 0.1)', 'rgba(0, 0, 255, 0.1)', 'rgba(0, 128, 0, 0.1)', 'rgba(128, 0, 128, 0.1)', 'rgba(255, 165, 0, 0.1)', 'rgba(220, 220, 220, 0.5)'];
     const shapeColors = ['#ffffff', '#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
@@ -156,16 +158,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (remainingPeers.length > 0) {
                 remainingPeers.sort();
                 const newHostId = remainingPeers[0];
-                broadcast({ type: 'host-changed', payload: { newHostId: newHostId } }); // Tell everyone to reconnect to the new host
-                if (myPeerId === newHostId) { // If I am the new host
+                
+                if (myPeerId === newHostId) {
                     isHost = true;
                     hostPeerId = myPeerId;
                     const newUrl = `#${currentFileId}/${myPeerId}`;
                     window.history.replaceState(null, null, newUrl);
                     console.log('I am the new host.');
                     alert('あなたが新しいホストになりました。');
+                    broadcast({ type: 'initial-state', payload: { boardData: getCurrentState(), users: connectedUsers, hostId: hostPeerId } });
                 }
-            } else { // I was the last one
+                Object.values(connections).forEach(c => c.send({ type: 'host-changed', payload: { newHostId: newHostId } }));
+
+            } else {
                 isHost = true; hostPeerId = myPeerId;
             }
         }
@@ -188,13 +193,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendOperationToHost(operation) {
         const data = { type: 'operation', payload: operation };
         if (isHost) {
-            applyOperation(operation);
             broadcast(data);
         } else if (connections[hostPeerId] && connections[hostPeerId].open) {
             connections[hostPeerId].send(data);
         } else {
             console.error("Host connection not available.");
-            // showErrorModal("ホストとの接続が切れています。操作を送信できません。");
         }
     }
     
@@ -226,6 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     hostPeerId = data.payload.newHostId;
                     console.log('New host is', hostPeerId, 'Reconnecting...');
                     alert(`新しいホスト (${hostPeerId.substring(0,4)}) に再接続します。`);
+                    if(connections[hostPeerId]) connections[hostPeerId].close();
                     const conn = peer.connect(hostPeerId, { reliable: true });
                     setupConnection(conn);
                 }
@@ -256,9 +260,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // =================================================================
 
     function generateOperation(type, payload, addToUndo = false) {
-        const operation = { type, payload, sender: myPeerId, timestamp: Date.now() };
+        const operation = { type, payload, sender: myPeerId, timestamp: Date.now(), opId: `op-${myPeerId}-${Date.now()}-${Math.random()}` };
+        
         applyOperation(operation);
         sendOperationToHost(operation);
+        
         if (addToUndo) {
             myUndoStack.push(addToUndo);
             myRedoStack = [];
@@ -278,48 +284,91 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyOperation(op) {
-        if (!op || !op.type) return;
+        if (!op || !op.type || processedOpIds.has(op.opId)) return;
+        
         let item;
 
         switch(op.type) {
-            case 'CREATE_NOTE':
-                if (!boardData.notes.some(n => n.id === op.payload.id)) {
-                    boardData.notes.push(op.payload);
-                    createNote(op.payload, true);
+            case 'CREATE_ELEMENT':
+                if (!findElementData(op.payload.data.id)) {
+                    boardData[op.payload.collection].push(op.payload.data);
+                    const creator = window[`create${op.payload.type}`];
+                    if (typeof creator === 'function') {
+                        creator(op.payload.data, true);
+                    }
                 }
                 break;
-            case 'MOVE_ELEMENT':
-                const el = document.getElementById(op.payload.id);
+            case 'UPDATE_ELEMENT':
                 item = findElementData(op.payload.id);
-                if (el && item) {
-                    el.style.left = item.x = op.payload.x;
-                    el.style.top = item.y = op.payload.y;
-                    if (op.payload.zIndex) {
-                        el.style.zIndex = item.zIndex = op.payload.zIndex;
+                if (item) {
+                    Object.assign(item, op.payload.updates);
+                    const el = document.getElementById(op.payload.id);
+                    if (el) {
+                        if (op.payload.updates.content !== undefined) {
+                            const contentEl = el.querySelector('.note-content, .shape-label, .text-content, .section-title');
+                            if(contentEl && contentEl.tagName !== 'INPUT') contentEl.innerText = item.content;
+                        }
+                        if (op.payload.updates.color !== undefined) {
+                            if (el.classList.contains('note')) {
+                               el.querySelector('.note-body').style.backgroundColor = item.color;
+                            } else if(el.classList.contains('shape')) {
+                               el.querySelector('.shape-visual').style.backgroundColor = item.color;
+                            } else if (el.classList.contains('section')) {
+                               el.style.backgroundColor = item.color;
+                            }
+                        }
+                    }
+                }
+                break;
+            case 'RESIZE_ELEMENT':
+                 item = findElementData(op.payload.id);
+                 if (item) {
+                    item.width = op.payload.width;
+                    item.height = op.payload.height;
+                    const el = document.getElementById(op.payload.id);
+                    if (el) {
+                        el.style.width = item.width;
+                        el.style.height = item.height;
+                    }
+                    drawAllConnectors();
+                 }
+                 break;
+            case 'MOVE_ELEMENT':
+                item = findElementData(op.payload.id);
+                if (item) {
+                    item.x = op.payload.x;
+                    item.y = op.payload.y;
+                    if (op.payload.zIndex) item.zIndex = op.payload.zIndex;
+                    
+                    const el = document.getElementById(op.payload.id);
+                    if(el) {
+                        el.style.left = item.x;
+                        el.style.top = item.y;
+                        if (item.zIndex) el.style.zIndex = item.zIndex;
                     }
                     drawAllConnectors();
                 }
                 break;
             case 'MARK_AS_DELETED':
                 op.payload.elementIds.forEach(id => {
-                    const element = document.getElementById(id);
-                    if (element) element.style.display = 'none';
                     item = findElementData(id);
                     if (item) {
                         item.isDeleted = true;
                         item.deletedAt = op.payload.deletedAt;
+                        const element = document.getElementById(id);
+                        if (element) element.style.display = 'none';
                     }
                 });
                 drawAllConnectors();
                 break;
             case 'RESTORE_DELETED':
                 op.payload.elementIds.forEach(id => {
-                    const element = document.getElementById(id);
-                    if (element) element.style.display = '';
                     item = findElementData(id);
                     if (item) {
                         item.isDeleted = false;
                         item.deletedAt = null;
+                        const element = document.getElementById(id);
+                        if (element) element.style.display = '';
                     }
                 });
                 drawAllConnectors();
@@ -338,6 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'END_DRAW': break;
         }
+        processedOpIds.add(op.opId);
         updateMinimap();
     }
 
@@ -349,10 +399,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (myUndoStack.length === 0) return;
         const lastAction = myUndoStack.pop();
         myRedoStack.push(lastAction);
-        const inverseOp = { type: lastAction.inverse.type, payload: lastAction.inverse.payload };
-        applyOperation(inverseOp);
-        sendOperationToHost(inverseOp);
-        saveState();
+        const { type, payload } = lastAction.inverse;
+        generateOperation(type, payload);
         updateUndoRedoButtons();
     }
 
@@ -360,10 +408,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (myRedoStack.length === 0) return;
         const lastAction = myRedoStack.pop();
         myUndoStack.push(lastAction);
-        const originalOp = { type: lastAction.original.type, payload: lastAction.original.payload };
-        applyOperation(originalOp);
-        sendOperationToHost(originalOp);
-        saveState();
+        const { type, payload } = lastAction.original;
+        generateOperation(type, payload);
         updateUndoRedoButtons();
     }
 
@@ -393,11 +439,13 @@ document.addEventListener('DOMContentLoaded', () => {
         async set(key, value) {
             const db = await this._getDB();
             return new Promise(async (resolve, reject) => {
-                const compressed = pako.deflate(JSON.stringify(value));
-                const transaction = db.transaction(this._storeName, 'readwrite');
-                const request = transaction.objectStore(this._storeName).put(compressed, key);
-                transaction.oncomplete = () => resolve();
-                transaction.onerror = e => reject('DB Set Error:', e.target.error);
+                try {
+                    const compressed = pako.deflate(JSON.stringify(value));
+                    const transaction = db.transaction(this._storeName, 'readwrite');
+                    const request = transaction.objectStore(this._storeName).put(compressed, key);
+                    transaction.oncomplete = () => resolve();
+                    transaction.onerror = e => reject('DB Set Error:', e.target.error);
+                } catch(err) { reject(err); }
             });
         },
         async get(key) {
@@ -438,7 +486,12 @@ document.addEventListener('DOMContentLoaded', () => {
             metadata[fileIndex].lastModified = boardData.version;
             saveFileMetadata(metadata);
         }
-        await db.set(currentFileId, getCurrentState());
+        try {
+            await db.set(currentFileId, getCurrentState());
+        } catch (error) {
+            console.error("Failed to save state:", error);
+            showErrorModal(`ボードデータの保存に失敗しました。\n${error.message}`);
+        }
     }
 
     async function handleOfflineConflict(remoteState) {
@@ -480,15 +533,18 @@ document.addEventListener('DOMContentLoaded', () => {
             conflictOverwriteBtn.onclick = handleResolution('overwrite');
             conflictForkBtn.onclick = handleResolution('fork');
             conflictForceBtn.onclick = handleResolution('force');
+        } else if (isHost && localState && (!remoteState || localState.version > remoteState.version)) {
+             broadcast({ type: 'initial-state', payload: { boardData: getCurrentState(), users: connectedUsers, hostId: hostPeerId } });
+             console.log("Local is newer. Broadcasting local state.");
         } else {
-            console.log("No conflict or local is newer.");
+            console.log("No conflict.");
         }
     }
 
     function createEmptyBoard() {
         return {
             notes: [], sections: [], textBoxes: [], shapes: [], paths: [], connectors: [],
-            board: { panX: 0, panY: 0, scale: 1.0, noteZIndexCounter: 1000, sectionZIndexCounter: 1 },
+            board: { panX: 0, panY: 0, scale: 1.0, zIndexCounter: 1000 },
             version: Date.now()
         };
     }
@@ -505,55 +561,145 @@ document.addEventListener('DOMContentLoaded', () => {
         
         boardData.sections?.filter(s => !s.isDeleted).forEach(data => createSection(data, true));
         boardData.notes?.filter(n => !n.isDeleted).forEach(data => createNote(data, true));
-        // ... Other elements ...
-
+        boardData.textBoxes?.filter(t => !t.isDeleted).forEach(data => createTextBox(data, true));
+        boardData.shapes?.filter(s => !s.isDeleted).forEach(data => createShape(data, true));
+        
+        drawAllConnectors();
+        
+        processedOpIds = new Set();
         myUndoStack = [];
         myRedoStack = [];
         updateUndoRedoButtons();
         redrawCanvas();
         applyTransform();
+        updateMinimap();
     }
 
     // =================================================================
-    // 5. 各オブジェクトの操作 (実装は省略、構造のみ)
+    // 5. 各オブジェクトの生成・操作
     // =================================================================
     
-    function createNote(data = {}, fromRemote = false) {
+    function setupCommonHandlers(element, data) {
+        let offsetX, offsetY;
+        const onMove = e => {
+            const {x, y} = getEventCoordinates(e);
+            element.style.left = `${x - offsetX}px`;
+            element.style.top = `${y - offsetY}px`;
+            drawAllConnectors();
+        };
+
+        const onMoveEnd = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onMoveEnd);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onMoveEnd);
+            document.body.classList.remove('is-dragging');
+            generateOperation('MOVE_ELEMENT', {
+                id: data.id,
+                x: element.style.left,
+                y: element.style.top,
+                zIndex: boardData.board.zIndexCounter++
+            });
+        };
+
+        const onMoveStart = e => {
+            if (e.target.closest('.resizer, [contenteditable], input, .delete-btn, .lock-btn, .color-dot')) return;
+            if (element.classList.contains('locked')) return;
+            e.preventDefault();
+
+            const {x, y} = getEventCoordinates(e);
+            offsetX = x - element.offsetLeft;
+            offsetY = y - element.offsetTop;
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onMoveEnd);
+            document.addEventListener('touchmove', onMove, { passive: false });
+            document.addEventListener('touchend', onMoveEnd);
+            document.body.classList.add('is-dragging');
+
+            element.style.zIndex = boardData.board.zIndexCounter++;
+            
+            if (selectedElement) selectedElement.classList.remove('selected');
+            selectedElement = element;
+            selectedElement.classList.add('selected');
+        };
+        const header = element.querySelector('.note-header, .section-header, .shape');
+        (header || element).addEventListener('mousedown', onMoveStart);
+        (header || element).addEventListener('touchstart', onMoveStart, { passive: false });
+
+        const deleteBtn = element.querySelector('.delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => {
+                const payload = { elementIds: [element.id], deletedAt: Date.now() };
+                generateOperation('MARK_AS_DELETED', payload, {
+                    original: { type: 'MARK_AS_DELETED', payload: payload },
+                    inverse: { type: 'RESTORE_DELETED', payload: { elementIds: [element.id] } }
+                });
+            });
+        }
+    }
+
+    function createNote(data, fromRemote = false) {
         if (!fromRemote) {
             const payload = {
-                id: `note-${myPeerId}-${Date.now()}`,
-                x: `${((window.innerWidth/2)-110-(boardData.board?.panX || 0))/(boardData.board?.scale || 1)}px`,
-                y: `${((window.innerHeight/2)-110-(boardData.board?.panY || 0))/(boardData.board?.scale || 1)}px`,
-                width: '220px', height: '220px',
-                zIndex: boardData.board.noteZIndexCounter++,
-                content: '', color: noteColors[Math.floor(Math.random()*noteColors.length)],
-                isLocked: false, isDeleted: false, deletedAt: null
+                type: 'Note', collection: 'notes', data: {
+                    id: `note-${myPeerId}-${Date.now()}`,
+                    x: `${(window.innerWidth / 2 - 110 - boardData.board.panX) / boardData.board.scale}px`,
+                    y: `${(window.innerHeight / 2 - 110 - boardData.board.panY) / boardData.board.scale}px`,
+                    width: '220px', height: '220px', zIndex: boardData.board.zIndexCounter++,
+                    content: '新しい付箋', color: noteColors[0], isLocked: false, isDeleted: false, deletedAt: null
+                }
             };
-            generateOperation('CREATE_NOTE', payload);
+            generateOperation('CREATE_ELEMENT', payload);
             return;
         }
 
         if (document.getElementById(data.id) || data.isDeleted) return;
 
         const note = document.createElement('div');
-        // ... (DOM生成ロジック, 元のコードを参照)
-        // ... (イベントリスナも同様に、generateOperationを呼ぶように)
-        const deleteBtn = note.querySelector('.delete-btn');
-        deleteBtn.addEventListener('click', () => {
-            const payload = { elementIds: [note.id], deletedAt: Date.now() };
-            generateOperation('MARK_AS_DELETED', payload, {
-                original: { type: 'MARK_AS_DELETED', payload: payload },
-                inverse: { type: 'RESTORE_DELETED', payload: { elementIds: [note.id] } }
-            });
-        });
+        note.id = data.id;
+        note.className = 'note';
+        note.style.cssText = `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex};`;
+        
+        note.innerHTML = `
+            <div class="note-header">
+                <div class="color-picker">${noteColors.map(c => `<div class="color-dot" style="background-color:${c}" data-color="${c}"></div>`).join('')}</div>
+                <div class="lock-btn"><i class="fas fa-lock"></i></div>
+                <div class="delete-btn"><i class="fas fa-times"></i></div>
+            </div>
+            <div class="note-body" style="background-color:${data.color};">
+                <div class="note-content" contenteditable="true">${data.content}</div>
+            </div>
+            <div class="resizer"></div>
+        `;
         objectContainer.appendChild(note);
+        setupCommonHandlers(note, data);
+
+        const noteContent = note.querySelector('.note-content');
+        noteContent.addEventListener('blur', () => {
+            if (noteContent.innerText !== data.content) {
+                generateOperation('UPDATE_ELEMENT', { id: data.id, updates: { content: noteContent.innerText } });
+            }
+        });
+        
+        note.querySelector('.color-picker').addEventListener('click', e => {
+            if (e.target.classList.contains('color-dot')) {
+                generateOperation('UPDATE_ELEMENT', { id: data.id, updates: { color: e.target.dataset.color } });
+            }
+        });
     }
     
-    addNoteBtn.addEventListener('click', () => createNote());
-    function createSection(data, fromRemote) { /* ... */ } // 他の要素も同様に実装
-
+    function createTextBox(data, fromRemote = false) {
+       // ... TextBoxの生成とイベントハンドラ設定 ...
+    }
+    function createSection(data, fromRemote = false) {
+       // ... Sectionの生成とイベントハンドラ設定 ...
+    }
+    function createShape(data, fromRemote = false) {
+       // ... Shapeの生成とイベントハンドラ設定 ...
+    }
+    
     // =================================================================
-    // 6. 手描き機能 (チャンク分割同期に対応)
+    // 6. 手描き機能
     // =================================================================
 
     const onDrawingLayerDown = e => {
@@ -563,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const pathId = `path-${myPeerId}-${Date.now()}`;
         const newPathData = {
             id: pathId,
-            color: '#000000',
+            color: document.body.classList.contains('dark-mode') ? '#FFFFFF' : '#000000',
             strokeWidth: currentStrokeWidth,
             mode: isEraserMode ? 'eraser' : 'pen'
         };
@@ -602,9 +748,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('touchmove', onPointerMove, { passive: false });
         document.addEventListener('touchend', onPointerUp);
     };
-    drawingLayer.addEventListener('mousedown', onDrawingLayerDown);
-    drawingLayer.addEventListener('touchstart', onDrawingLayerDown, { passive: false });
-    
+
     // =================================================================
     // 7. ファイル管理とアプリケーション初期化
     // =================================================================
@@ -612,6 +756,36 @@ document.addEventListener('DOMContentLoaded', () => {
     function getFileMetadata() { return JSON.parse(localStorage.getItem('plottia_files_metadata')) || []; }
     function saveFileMetadata(metadata) { localStorage.setItem('plottia_files_metadata', JSON.stringify(metadata)); }
     
+    function renderFileList() {
+        const metadata = getFileMetadata().sort((a,b) => b.lastModified - a.lastModified);
+        fileList.innerHTML = '';
+        if (metadata.length === 0) {
+            fileList.innerHTML = '<p>ファイルがありません。新しいファイルを作成してください。</p>';
+            return;
+        }
+        metadata.forEach(file => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <span class="file-name">${file.name}</span>
+                <span class="file-meta">最終更新: ${new Date(file.lastModified).toLocaleString()}</span>
+                <div class="file-actions">
+                    <button class="delete-file-btn" data-id="${file.id}" title="削除"><i class="fas fa-trash"></i></button>
+                </div>
+            `;
+            li.querySelector('.file-name').addEventListener('click', () => openFile(file.id));
+            li.querySelector('.delete-file-btn').addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (confirm(`「${file.name}」を完全に削除しますか？`)) {
+                    await db.remove(file.id);
+                    const newMeta = getFileMetadata().filter(f => f.id !== file.id);
+                    saveFileMetadata(newMeta);
+                    renderFileList();
+                }
+            });
+            fileList.appendChild(li);
+        });
+    }
+
     function showFileManager() {
         if (peer && !peer.destroyed) peer.destroy();
         peer = null;
@@ -619,11 +793,26 @@ document.addEventListener('DOMContentLoaded', () => {
         fileManagerOverlay.classList.remove('hidden');
         mainApp.classList.add('hidden');
         window.history.replaceState(null, null, ' ');
-        // ... (ファイルリスト表示ロジックは元のコードから)
+        renderFileList();
     }
     
     function createNewFile() {
-        // ... (元のロジック)
+        const fileName = prompt('新しいファイル名を入力してください:', '無題のボード');
+        if (!fileName) return;
+        
+        const metadata = getFileMetadata();
+        const newFile = {
+            id: `plottia_board_${Date.now()}`,
+            name: fileName,
+            lastModified: Date.now()
+        };
+        metadata.push(newFile);
+        saveFileMetadata(metadata);
+        
+        const emptyBoard = createEmptyBoard();
+        db.set(newFile.id, emptyBoard).then(() => {
+            openFile(newFile.id);
+        });
     }
     
     async function openFile(fileId) {
@@ -646,21 +835,113 @@ document.addEventListener('DOMContentLoaded', () => {
         initializePeer();
     }
     
+    // =================================================================
+    // 8. 描画・UI更新
+    // =================================================================
+    
+    function redrawCanvas() {
+        ctx.clearRect(0, 0, drawingLayer.width, drawingLayer.height);
+        boardData.paths?.forEach(path => {
+            if (!path || !path.points || path.points.length < 2 || path.isDeleted) return;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = path.color || '#000000';
+            ctx.lineWidth = path.strokeWidth || 5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.globalCompositeOperation = path.mode === 'eraser' ? 'destination-out' : 'source-over';
+            
+            ctx.moveTo(path.points[0].x, path.points[0].y);
+            for (let i = 1; i < path.points.length; i++) {
+                ctx.lineTo(path.points[i].x, path.points[i].y);
+            }
+            ctx.stroke();
+        });
+        ctx.globalCompositeOperation = 'source-over';
+    }
+
+    function applyTransform() {
+        const { panX, panY, scale } = boardData.board;
+        const transform = `scale(${scale}) translate(${panX / scale}px, ${panY / scale}px)`;
+        board.style.transform = transform;
+        updateZoomDisplay();
+        updateMinimap();
+    }
+
+    function updateZoomDisplay() {
+        zoomDisplay.textContent = `${Math.round(boardData.board.scale * 100)}%`;
+    }
+
+    function getEventCoordinates(e) {
+        const touch = e.touches ? e.touches[0] : e;
+        return { x: touch.clientX, y: touch.clientY };
+    }
+
+    function getCanvasCoordinates(e) {
+        const { clientX, clientY } = e.touches ? e.touches[0] : e;
+        const rect = drawingLayer.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left) / boardData.board.scale,
+            y: (clientY - rect.top) / boardData.board.scale
+        };
+    }
+
+    function drawAllConnectors() { /* ... コネクタ描画 ... */ }
+    
+    function updateMinimap() {
+        minimap.querySelectorAll('.minimap-element').forEach(el => el.remove());
+        const scaleX = minimap.clientWidth / board.offsetWidth;
+        const scaleY = minimap.clientHeight / board.offsetHeight;
+
+        [...boardData.notes, ...boardData.sections, ...boardData.shapes, ...boardData.textBoxes]
+            .filter(d => d && !d.isDeleted)
+            .forEach(d => {
+                const el = document.createElement('div');
+                el.className = 'minimap-element';
+                el.style.left = `${parseFloat(d.x) * scaleX}px`;
+                el.style.top = `${parseFloat(d.y) * scaleY}px`;
+                el.style.width = `${parseFloat(d.width) * scaleX}px`;
+                el.style.height = `${parseFloat(d.height) * scaleY}px`;
+                minimap.appendChild(el);
+            });
+        
+        const { panX, panY, scale } = boardData.board;
+        minimapViewport.style.width = `${window.innerWidth / scale * scaleX}px`;
+        minimapViewport.style.height = `${window.innerHeight / scale * scaleY}px`;
+        minimapViewport.style.left = `${-panX * scaleX}px`;
+        minimapViewport.style.top = `${-panY * scaleY}px`;
+    }
+
+    // --- イベントリスナー設定 ---
     backToFilesBtn.addEventListener('click', showFileManager);
     createNewFileBtn.addEventListener('click', createNewFile);
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
-    
-    function redrawCanvas() { /* ... */ }
-    function applyTransform() { /* ... */ }
-    function updateZoomDisplay() { /* ... */ }
-    function getCanvasCoordinates(e) { /* ... */ }
-    function getEventCoordinates(e) { /* ... */ }
-    function drawAllConnectors() { /* ... */ }
-    function updateMinimap() { /* ... */ }
+    addNoteBtn.addEventListener('click', () => createNote());
+    penToolBtn.addEventListener('click', () => { isPenMode = !isPenMode; isEraserMode = false; penToolBtn.classList.toggle('active'); eraserToolBtn.classList.remove('active'); document.body.classList.toggle('pen-mode'); document.body.classList.remove('eraser-mode'); });
+    eraserToolBtn.addEventListener('click', () => { isEraserMode = !isEraserMode; isPenMode = false; eraserToolBtn.classList.toggle('active'); penToolBtn.classList.remove('active'); document.body.classList.toggle('eraser-mode'); document.body.classList.remove('pen-mode'); });
+    drawingLayer.addEventListener('mousedown', onDrawingLayerDown);
+    drawingLayer.addEventListener('touchstart', onDrawingLayerDown, { passive: false });
+    window.createNote = createNote;
+    window.createSection = createSection;
+    window.createTextBox = createTextBox;
+    window.createShape = createShape;
 
     // --- 初期化処理 ---
-    if (localStorage.getItem('plottia-dark-mode') === '1') { document.body.classList.add('dark-mode'); }
+    function applyDarkMode() {
+        if (localStorage.getItem('plottia-dark-mode') === '1') {
+            document.body.classList.add('dark-mode');
+        } else {
+            document.body.classList.remove('dark-mode');
+        }
+    }
+    darkModeBtn.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        localStorage.setItem('plottia-dark-mode', document.body.classList.contains('dark-mode') ? '1' : '0');
+        redrawCanvas(); // ダークモードで線の色を変える場合など
+    });
+    
+    applyDarkMode();
     showFileManager();
 
     // =================================================================
@@ -676,10 +957,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     copyErrorBtn.addEventListener('click', () => {
+        const originalHTML = copyErrorBtn.innerHTML;
         errorDetails.select();
         navigator.clipboard.writeText(errorDetails.value).then(() => {
             copyErrorBtn.innerHTML = '<i class="fas fa-check"></i> コピーしました';
-            setTimeout(() => { copyErrorBtn.innerHTML = '<i class="fas fa-copy"></i> クリップボードにコピー'; }, 2000);
+            setTimeout(() => { copyErrorBtn.innerHTML = originalHTML; }, 2000);
         }).catch(err => { alert('コピーに失敗しました。'); });
     });
     closeErrorBtn.addEventListener('click', () => {
