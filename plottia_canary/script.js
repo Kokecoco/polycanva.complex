@@ -45,8 +45,9 @@ const errorOverlay = document.getElementById('error-overlay');
 const errorDetails = document.getElementById('error-details');
 const copyErrorBtn = document.getElementById('copy-error-btn');
 const closeErrorBtn = document.getElementById('close-error-btn');
-    // --- グローバル変数 ---
+// --- グローバル変数 ---
 let currentFileId = null;
+// boardData is the single source of truth for the board state.
 let boardData = createEmptyBoard();
 let selectedElement = null;
 let isConnectorMode = false, connectorStartId = null;
@@ -101,6 +102,7 @@ function initializePeer() {
 
     peer.on('error', err => {
         console.error('PeerJS error:', err);
+        // Don't show modal for common 'peer-unavailable' error.
         if (err.type !== 'peer-unavailable') {
             showErrorModal(`接続エラーが発生しました: ${err.type}。ページをリロードしてみてください。`);
         } else {
@@ -114,7 +116,8 @@ function joinRoom() {
     const urlHash = window.location.hash.substring(1);
     const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
 
-    if (currentFileId !== fileIdFromUrl && fileIdFromUrl) {
+    // Ensure we are on the correct file
+    if (currentFileId !== fileIdFromUrl) {
         console.warn("URL fileId does not match currentFileId. Re-opening file.");
         openFile(fileIdFromUrl);
         return;
@@ -194,9 +197,11 @@ function broadcast(data, excludePeerId = null) {
 function sendOperationToHost(operation) {
     const data = { type: 'operation', payload: operation };
     if (isHost) {
+        // Host applies locally and broadcasts to all clients
         applyOperation(operation);
         broadcast(data);
     } else if (connections[hostPeerId] && connections[hostPeerId].open) {
+        // Client sends to host
         connections[hostPeerId].send(data);
     } else {
         console.error("Host connection not available. Operation might be lost.");
@@ -215,9 +220,11 @@ function handleReceivedData(data, fromPeerId) {
             break;
         case 'operation':
             if (isHost) {
+                // Host received an operation from a client
                 applyOperation(data.payload);
-                broadcast(data, fromPeerId);
+                broadcast(data, fromPeerId); // Relay to other clients
             } else {
+                // Client received an operation from the host
                 applyOperation(data.payload);
             }
             break;
@@ -258,13 +265,17 @@ shareRoomBtn.addEventListener('click', () => {
 
 function generateOperation(type, payload, undoData = null) {
     const operation = { type, payload, sender: myPeerId, timestamp: Date.now() };
+    // Apply locally immediately for responsiveness
     applyOperation(operation);
+    // Send to host/clients for synchronization
     sendOperationToHost(operation);
+    
     if (undoData) {
         myUndoStack.push(undoData);
         myRedoStack = [];
         updateUndoRedoButtons();
     }
+    // Save the new state to the database
     saveState();
 }
 
@@ -292,27 +303,25 @@ function applyOperation(op) {
         case 'CREATE_TEXTBOX':
         case 'CREATE_SHAPE':
             const collectionName = `${op.type.split('_')[1].toLowerCase()}s`;
-            if (boardData[collectionName] && !boardData[collectionName].some(item => item.id === op.payload.id)) {
+            if (!boardData[collectionName].some(item => item.id === op.payload.id)) {
                 boardData[collectionName].push(op.payload);
-                const createFnName = `create${op.type.split('_')[1].charAt(0)}${op.type.split('_')[1].slice(1).toLowerCase()}`;
-                if (typeof window[createFnName] === 'function') {
-                    window[createFnName](op.payload, true);
-                }
+                const createFn = window[`create${op.type.split('_')[1].charAt(0)}${op.type.split('_')[1].slice(1).toLowerCase()}`];
+                if (createFn) createFn(op.payload, true);
             }
             break;
 
         case 'MOVE_ELEMENTS':
-            op.payload.elements.forEach(movedElData => {
-                const res = findElementData(movedElData.id);
-                const el = document.getElementById(movedElData.id);
+            op.payload.elements.forEach(movedEl => {
+                const res = findElementData(movedEl.id);
+                const el = document.getElementById(movedEl.id);
                 if (res && el) {
-                    res.item.x = movedElData.x;
-                    res.item.y = movedElData.y;
-                    el.style.left = movedElData.x;
-                    el.style.top = movedElData.y;
-                    if (movedElData.zIndex) {
-                        res.item.zIndex = movedElData.zIndex;
-                        el.style.zIndex = movedElData.zIndex;
+                    res.item.x = movedEl.x;
+                    res.item.y = movedEl.y;
+                    el.style.left = movedEl.x;
+                    el.style.top = movedEl.y;
+                    if (movedEl.zIndex) {
+                        res.item.zIndex = movedEl.zIndex;
+                        el.style.zIndex = movedEl.zIndex;
                     }
                 }
             });
@@ -333,7 +342,7 @@ function applyOperation(op) {
             if (itemData && element) {
                 itemData.content = op.payload.content;
                 if (findResult.collection === 'notes') {
-                    element.querySelector('.note-view').innerHTML = op.payload.content.replace(/\n/g, '<br>');
+                    element.querySelector('.note-view').innerHTML = op.payload.content.replace(/\n/g, '<br>'); // Simple markdown-like
                     element.querySelector('.note-content').value = op.payload.content;
                 } else if (findResult.collection === 'textBoxes') {
                     element.querySelector('.text-content').innerHTML = op.payload.content;
@@ -369,6 +378,7 @@ function applyOperation(op) {
                     boardData[res.collection] = boardData[res.collection].filter(item => item.id !== id);
                 }
             });
+            // Also remove related connectors
             boardData.connectors = boardData.connectors.filter(c => 
                 !op.payload.elementIds.includes(c.startId) && !op.payload.elementIds.includes(c.endId)
             );
@@ -388,6 +398,7 @@ function applyOperation(op) {
             }
             break;
         case 'END_DRAW':
+             // No specific action needed, the path is complete.
             break;
 
         case 'TOGGLE_LOCK':
@@ -421,6 +432,7 @@ function undo() {
     const lastAction = myUndoStack.pop();
     myRedoStack.push(lastAction);
     generateOperation(lastAction.inverse.type, lastAction.inverse.payload);
+    // Clear local undo stack for this action as it's now handled by the inverse op
     myUndoStack.pop();
 }
 
@@ -429,6 +441,7 @@ function redo() {
     const lastAction = myRedoStack.pop();
     myUndoStack.push(lastAction);
     generateOperation(lastAction.original.type, lastAction.original.payload);
+    // Clear local undo stack for this action
     myUndoStack.pop();
 }
 
@@ -512,12 +525,14 @@ async function saveState() {
 
 async function handleOfflineConflict(remoteState) {
     const localState = await db.get(currentFileId);
+    
     if (!localState || !localState.version) {
         console.log("No local state. Applying remote state.");
         loadStateFromObject(remoteState);
         await db.set(currentFileId, remoteState);
         return;
     }
+    
     if (localState && remoteState && localState.version < remoteState.version) {
         console.log("Conflict detected. Local:", localState.version, "Remote:", remoteState.version);
         conflictOverlay.classList.remove('hidden');
@@ -539,7 +554,7 @@ async function handleOfflineConflict(remoteState) {
                 alert(`「${newName}」としてオフラインの変更を保存しました。`);
             } else if (choice === 'force') {
                 boardData = localState;
-                await saveState();
+                await saveState(); // This updates version number
                 if (isHost) {
                      broadcast({ type: 'initial-state', payload: { boardData: getCurrentState(), users: connectedUsers, hostId: hostPeerId } });
                 }
@@ -551,7 +566,8 @@ async function handleOfflineConflict(remoteState) {
         conflictForceBtn.onclick = handleResolution('force');
     } else {
         console.log("No conflict or local is newer.");
-        if(isHost && localState) {
+        // If we are host and our version is newer, send it to the new comer
+        if(isHost) {
             loadStateFromObject(localState);
         }
     }
@@ -571,6 +587,7 @@ function getCurrentState() {
 
 function loadStateFromObject(state) {
     boardData = state || createEmptyBoard();
+    
     objectContainer.innerHTML = '';
     svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
     
@@ -598,23 +615,33 @@ function getNewElementPosition() {
 }
 
 function createNote(data, fromOperation = false) {
-    alert("createNote");
     if (!fromOperation) {
+        const pos = getNewElementPosition();
         const payload = {
             id: `note-${myPeerId}-${Date.now()}`,
-            ...getNewElementPosition(), width: '220px', height: '220px',
+            x: pos.x, y: pos.y, width: '220px', height: '220px',
             zIndex: boardData.board.noteZIndexCounter++,
             content: '新しい付箋', color: noteColors, isLocked: false,
         };
-        generateOperation('CREATE_NOTE', payload);
+        generateOperation('CREATE_NOTE', payload, {
+            original: { type: 'CREATE_NOTE', payload },
+            inverse: { type: 'DELETE_ELEMENTS', payload: { elementIds: [payload.id] } }
+        });
         return;
     }
+    
     if (document.getElementById(data.id)) return;
+
     const note = document.createElement('div');
     note.className = 'note';
     note.id = data.id;
-    note.style.cssText = `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex};`;
+    note.style.left = data.x;
+    note.style.top = data.y;
+    note.style.width = data.width;
+    note.style.height = data.height;
+    note.style.zIndex = data.zIndex;
     note.classList.toggle('locked', data.isLocked);
+    
     note.innerHTML = `<div class="note-header"><div class="color-picker">${noteColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas ${data.isLocked ? 'fa-lock' : 'fa-unlock'}"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${data.content}</div><textarea class="note-content" style="display: none;">${data.content}</textarea></div><div class="resizer"></div>`;
     note.querySelector('.note-header').style.backgroundColor = data.color;
     note.querySelector('.note-body').style.backgroundColor = data.color;
@@ -624,9 +651,10 @@ function createNote(data, fromOperation = false) {
 
 function createSection(data, fromOperation = false) {
     if (!fromOperation) {
+        const pos = getNewElementPosition();
         const payload = {
             id: `section-${myPeerId}-${Date.now()}`,
-            ...getNewElementPosition(), width: '400px', height: '400px',
+            x: pos.x, y: pos.y, width: '400px', height: '400px',
             zIndex: boardData.board.sectionZIndexCounter++,
             content: '新しいセクション', color: sectionColors, isLocked: false,
         };
@@ -634,97 +662,118 @@ function createSection(data, fromOperation = false) {
         return;
     }
     if (document.getElementById(data.id)) return;
+    
     const section = document.createElement('div');
     section.className = 'section';
     section.id = data.id;
     section.style.cssText = `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex}; background-color:${data.color};`;
     section.classList.toggle('locked', data.isLocked);
+
     section.innerHTML = `<div class="section-header"><div class="section-title">${data.content}</div><div class="section-controls"><div class="color-picker">${sectionColors.map(c=>`<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div><div class="lock-btn" title="ロック"><i class="fas ${data.isLocked ? 'fa-lock' : 'fa-unlock'}"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`;
     objectContainer.appendChild(section);
-    // *** FIX: Add specific drag handler for sections ***
+    addCommonEventListeners(section, data);
+    
+    // *** FIX: Add specific drag handler for sections to move attached items ***
     const startSectionDrag = (e) => {
         if (section.classList.contains('locked')) return;
         e.stopPropagation();
-        document.body.classList.add('is-dragging');
-        const startLeft = parseFloat(section.style.left);
-        const startTop = parseFloat(section.style.top);
-        let lastPos = getEventCoordinates(e);
 
-        // Find elements inside the section
-        const attachedElements = [];
-        const allItems = [...boardData.notes, ...boardData.shapes, ...boardData.textBoxes];
-        allItems.forEach(item => {
+        const startZIndex = boardData.board.sectionZIndexCounter++;
+        const allDraggable = [...boardData.notes, ...boardData.textBoxes, ...boardData.shapes];
+        const sectionRect = section.getBoundingClientRect();
+
+        let attachedElements = [];
+        allDraggable.forEach(item => {
             const el = document.getElementById(item.id);
-            if (!el) return;
-            const elLeft = parseFloat(item.x);
-            const elTop = parseFloat(item.y);
-            if (elLeft > startLeft && elLeft + el.offsetWidth < startLeft + section.offsetWidth &&
-                elTop > startTop && elTop + el.offsetHeight < startTop + section.offsetHeight) {
-                attachedElements.push({ id: item.id, element: el, offsetX: elLeft - startLeft, offsetY: elTop - startTop });
+            if (el) {
+                const elRect = el.getBoundingClientRect();
+                // Simple check if element center is inside section
+                if (elRect.left + elRect.width / 2 >= sectionRect.left &&
+                    elRect.right - elRect.width / 2 <= sectionRect.right &&
+                    elRect.top + elRect.height / 2 >= sectionRect.top &&
+                    elRect.bottom - elRect.height / 2 <= sectionRect.bottom) {
+                    attachedElements.push({
+                        id: item.id,
+                        el: el,
+                        offsetX: parseFloat(el.style.left) - parseFloat(section.style.left),
+                        offsetY: parseFloat(el.style.top) - parseFloat(section.style.top)
+                    });
+                }
             }
         });
 
+        let lastPos = getEventCoordinates(e);
         const onPointerMove = ev => {
             ev.preventDefault();
             const currentPos = getEventCoordinates(ev);
             const dx = (currentPos.x - lastPos.x) / boardData.board.scale;
             const dy = (currentPos.y - lastPos.y) / boardData.board.scale;
             lastPos = currentPos;
-            
+
             section.style.left = `${parseFloat(section.style.left) + dx}px`;
             section.style.top = `${parseFloat(section.style.top) + dy}px`;
+            section.style.zIndex = startZIndex;
 
-            attachedElements.forEach(item => {
-                item.element.style.left = `${parseFloat(item.element.style.left) + dx}px`;
-                item.element.style.top = `${parseFloat(item.element.style.top) + dy}px`;
+            attachedElements.forEach(att => {
+                att.el.style.left = `${parseFloat(section.style.left) + att.offsetX}px`;
+                att.el.style.top = `${parseFloat(section.style.top) + att.offsetY}px`;
             });
             drawAllConnectors();
         };
+
         const onPointerUp = () => {
             document.body.classList.remove('is-dragging');
             document.removeEventListener('mousemove', onPointerMove);
             document.removeEventListener('mouseup', onPointerUp);
-            
-            const movedElementsPayload = [{
+
+            const elementsPayload = [{
                 id: section.id,
                 x: section.style.left,
                 y: section.style.top,
-                zIndex: boardData.board.sectionZIndexCounter++
+                zIndex: startZIndex
             }];
-            attachedElements.forEach(item => {
-                movedElementsPayload.push({
-                    id: item.id,
-                    x: item.element.style.left,
-                    y: item.element.style.top
+
+            attachedElements.forEach(att => {
+                elementsPayload.push({
+                    id: att.id,
+                    x: att.el.style.left,
+                    y: att.el.style.top
                 });
             });
-            generateOperation('MOVE_ELEMENTS', { elements: movedElementsPayload });
+            
+            generateOperation('MOVE_ELEMENTS', { elements: elementsPayload });
         };
+        
+        document.body.classList.add('is-dragging');
         document.addEventListener('mousemove', onPointerMove);
         document.addEventListener('mouseup', onPointerUp);
     };
-    section.querySelector('.section-header').addEventListener('mousedown', startSectionDrag);
-    section.addEventListener('mousedown', e => { if(e.target === section) startSectionDrag(e); });
     
-    addCommonEventListeners(section, data, { skipDrag: true }); // Use specific handler above
+    section.querySelector('.section-header').addEventListener('mousedown', startSectionDrag);
+    section.addEventListener('mousedown', (e) => {
+        if(e.target === section) startSectionDrag(e);
+    });
 }
 
 function createTextBox(data, fromOperation = false) {
     if (!fromOperation) {
+        const pos = getNewElementPosition();
         const payload = {
             id: `text-${myPeerId}-${Date.now()}`,
-            ...getNewElementPosition(), zIndex: boardData.board.noteZIndexCounter++,
+            x: pos.x, y: pos.y, zIndex: boardData.board.noteZIndexCounter++,
             content: 'テキストを入力', isLocked: false, width: 'auto'
         };
         generateOperation('CREATE_TEXTBOX', payload);
         return;
     }
     if (document.getElementById(data.id)) return;
+
     const textBox = document.createElement('div');
     textBox.className = 'text-box';
     textBox.id = data.id;
     textBox.style.cssText = `left:${data.x}; top:${data.y}; z-index:${data.zIndex}; width:${data.width};`;
     textBox.classList.toggle('locked', data.isLocked);
+    
     textBox.innerHTML = `<div class="text-content" contenteditable="${!data.isLocked}">${data.content}</div><div class="lock-btn" title="ロック"><i class="fas ${data.isLocked ? 'fa-lock' : 'fa-unlock'}"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`;
     objectContainer.appendChild(textBox);
     addCommonEventListeners(textBox, data);
@@ -732,9 +781,11 @@ function createTextBox(data, fromOperation = false) {
 
 function createShape(data, fromOperation = false) {
     if (!fromOperation) {
+        // This is a special case since multiple buttons call it
         const payload = {
             id: `shape-${myPeerId}-${Date.now()}`,
-            ...getNewElementPosition(), width: '150px', height: '150px',
+            ...getNewElementPosition(),
+            width: '150px', height: '150px',
             zIndex: boardData.board.noteZIndexCounter++,
             content: '', color: shapeColors, isLocked: false,
             shapeType: data.type
@@ -743,23 +794,25 @@ function createShape(data, fromOperation = false) {
         return;
     }
     if (document.getElementById(data.id)) return;
+
     const shape = document.createElement('div');
     shape.className = `shape ${data.shapeType}`;
     shape.id = data.id;
     shape.style.cssText = `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex};`;
     shape.classList.toggle('locked', data.isLocked);
+
     shape.innerHTML = `<div class="shape-visual"></div><div class="shape-label" contenteditable="${!data.isLocked}">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas ${data.isLocked ? 'fa-lock' : 'fa-unlock'}"></i></div><div class="color-picker">${shapeColors.map(c => `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`).join('')}</div>`;
     shape.querySelector('.shape-visual').style.backgroundColor = data.color;
     objectContainer.appendChild(shape);
     addCommonEventListeners(shape, data);
 }
 
-function addCommonEventListeners(element, data, options = {}) {
-    // Dragging
-    if (!options.skipDrag) {
-        const header = element.querySelector('.note-header') || element;
-        header.addEventListener('mousedown', e => {
-            if (element.classList.contains('locked') || e.target.closest('.resizer, [contenteditable], .color-picker, .section-header')) return;
+function addCommonEventListeners(element, data) {
+    // Dragging for non-section elements
+    if (!element.classList.contains('section')) {
+        const dragHandle = element.querySelector('.note-header') || element;
+        dragHandle.addEventListener('mousedown', e => {
+            if (element.classList.contains('locked') || e.target.closest('.resizer, [contenteditable="true"], .color-picker, .note-body')) return;
             e.stopPropagation();
             
             const startZIndex = boardData.board.noteZIndexCounter++;
@@ -780,9 +833,13 @@ function addCommonEventListeners(element, data, options = {}) {
                 document.body.classList.remove('is-dragging');
                 document.removeEventListener('mousemove', onPointerMove);
                 document.removeEventListener('mouseup', onPointerUp);
-                generateOperation('MOVE_ELEMENTS', { elements: [{
-                    id: element.id, x: element.style.left, y: element.style.top, zIndex: startZIndex
-                }]});
+                const payload = { elements: [{
+                    id: element.id,
+                    x: element.style.left,
+                    y: element.style.top,
+                    zIndex: startZIndex
+                }]};
+                generateOperation('MOVE_ELEMENTS', payload);
             };
             document.body.classList.add('is-dragging');
             document.addEventListener('mousemove', onPointerMove);
@@ -790,20 +847,39 @@ function addCommonEventListeners(element, data, options = {}) {
         });
     }
 
-    // Deleting, Locking, Color, Content...
-    element.querySelector('.delete-btn')?.addEventListener('click', e => { if (!element.classList.contains('locked')) { e.stopPropagation(); generateOperation('DELETE_ELEMENTS', { elementIds: [element.id] }); }});
-    element.querySelector('.lock-btn')?.addEventListener('click', e => { e.stopPropagation(); generateOperation('TOGGLE_LOCK', { id: element.id, isLocked: !element.classList.contains('locked') }); });
-    element.querySelectorAll('.color-dot').forEach(dot => { dot.addEventListener('click', e => { if (!element.classList.contains('locked')) { e.stopPropagation(); generateOperation('CHANGE_COLOR', { id: element.id, color: dot.dataset.color }); }}); });
+    // Deleting
+    element.querySelector('.delete-btn')?.addEventListener('click', e => {
+        if (element.classList.contains('locked')) return;
+        e.stopPropagation();
+        generateOperation('DELETE_ELEMENTS', { elementIds: [element.id] });
+    });
 
+    // Locking
+    element.querySelector('.lock-btn')?.addEventListener('click', e => {
+        e.stopPropagation();
+        const isLocked = !element.classList.contains('locked');
+        generateOperation('TOGGLE_LOCK', { id: element.id, isLocked });
+    });
+    
+    // Color changing
+    element.querySelectorAll('.color-dot').forEach(dot => {
+        dot.addEventListener('click', e => {
+            if (element.classList.contains('locked')) return;
+            e.stopPropagation();
+            generateOperation('CHANGE_COLOR', { id: element.id, color: dot.dataset.color });
+        });
+    });
+
+    // Content Editing
     const contentEl = element.querySelector('.note-content, .section-title, .text-content, .shape-label');
     if (contentEl) {
         const isNote = element.classList.contains('note');
         const editTarget = isNote ? element.querySelector('.note-view') : contentEl;
         const inputTarget = isNote ? element.querySelector('.note-content') : contentEl;
-
+            
         const finishEditing = () => {
             const newValue = (inputTarget.isContentEditable ? inputTarget.innerHTML : inputTarget.value);
-            const originalValue = data.content;
+            const originalValue = data.content || '';
             if (newValue !== originalValue) {
                 generateOperation('UPDATE_CONTENT', { id: element.id, content: newValue });
             }
@@ -812,8 +888,10 @@ function addCommonEventListeners(element, data, options = {}) {
                 inputTarget.style.display = 'none';
             }
         };
-        editTarget.addEventListener('dblclick', () => {
-            if (element.classList.contains('locked')) return;
+
+        editTarget?.addEventListener('dblclick', (e) => {
+            if(element.classList.contains('locked')) return;
+            e.stopPropagation();
             if (isNote) {
                 editTarget.style.display = 'none';
                 inputTarget.style.display = 'block';
@@ -858,6 +936,7 @@ const onDrawingLayerDown = e => {
              drawingBuffer = [];
         }
         generateOperation('END_DRAW', { pathId: pathId });
+
         document.removeEventListener('mousemove', onPointerMove);
         document.removeEventListener('mouseup', onPointerUp);
         document.removeEventListener('touchmove', onPointerMove);
@@ -905,6 +984,7 @@ function showFileManager() {
         const lastModified = new Date(file.lastModified).toLocaleString();
         li.innerHTML = `<span class="file-name">${file.name}</span><span class="file-meta">最終更新: ${lastModified}</span><div class="file-actions"><button class="rename-btn" title="名前を変更"><i class="fas fa-pen"></i></button><button class="delete-btn" title="削除"><i class="fas fa-trash"></i></button></div>`;
         fileList.appendChild(li);
+
         li.querySelector('.file-name').addEventListener('click', () => openFile(file.id));
         li.querySelector('.rename-btn').addEventListener('click', () => renameFile(file.id, file.name));
         li.querySelector('.delete-btn').addEventListener('click', () => deleteFile(file.id, file.name));
@@ -914,11 +994,18 @@ function showFileManager() {
 async function createNewFile() {
     const name = prompt('新しいファイルの名前を入力してください:', '無題のボード');
     if (!name) return;
-    const newFile = { id: `plottia_board_${Date.now()}`, name: name, lastModified: Date.now() };
+
     const metadata = getFileMetadata();
+    const newFile = {
+        id: `plottia_board_${Date.now()}`,
+        name: name,
+        lastModified: Date.now()
+    };
     metadata.push(newFile);
     saveFileMetadata(metadata);
+
     await db.set(newFile.id, createEmptyBoard());
+    
     openFile(newFile.id);
 }
 
@@ -952,16 +1039,21 @@ async function openFile(fileId) {
     currentFileId = fileId;
     fileManagerOverlay.classList.add('hidden');
     mainApp.classList.remove('hidden');
+
     const urlHash = window.location.hash.substring(1);
     const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
+
+    // If we are joining a room from a link, we start with an empty board and wait for host data.
     if (hostIdInUrl) {
         console.log("Joining as a guest. Waiting for host data.");
         loadStateFromObject(createEmptyBoard());
     } else {
+        // Otherwise, we are the host or working solo. Load our local data.
         console.log("Opening as host/solo. Loading from local DB.");
         const localData = await db.get(currentFileId);
         loadStateFromObject(localData);
     }
+
     initializePeer();
 }
 
@@ -1016,16 +1108,27 @@ function getCanvasCoordinates(e) {
 function getElementCenter(elementId) { const el = document.getElementById(elementId); if (!el) return null; const x = parseFloat(el.style.left) + el.offsetWidth / 2; const y = parseFloat(el.style.top) + el.offsetHeight / 2; return { x, y }; }
 
 function drawAllConnectors() {
-    if(!svgLayer || !boardData.connectors) return;
+    if(!svgLayer) return;
     svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
-    boardData.connectors.forEach(conn => {
+    boardData.connectors?.forEach(conn => {
         const startPoint = getElementCenter(conn.startId);
         const endPoint = getElementCenter(conn.endId);
         if (startPoint && endPoint) {
             const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', startPoint.x); line.setAttribute('y1', startPoint.y); line.setAttribute('x2', endPoint.x); line.setAttribute('y2', endPoint.y);
-            line.setAttribute('class', 'connector-line'); line.dataset.id = conn.id;
+            line.setAttribute('x1', startPoint.x);
+            line.setAttribute('y1', startPoint.y);
+            line.setAttribute('x2', endPoint.x);
+            line.setAttribute('y2', endPoint.y);
+            line.setAttribute('class', 'connector-line');
+            line.dataset.id = conn.id;
             svgLayer.appendChild(line);
+            line.addEventListener('mousedown', e => {
+                e.stopPropagation();
+                clearSelection();
+                selectedElement = { type: 'connector', id: conn.id };
+                document.querySelectorAll('.connector-line').forEach(l => l.classList.remove('selected'));
+                line.classList.add('selected');
+            });
         }
     });
 }
@@ -1033,30 +1136,44 @@ function drawAllConnectors() {
 function updateMinimap() {
     minimap.innerHTML = '';
     const minimapScale = minimap.offsetWidth / board.offsetWidth;
-    const allItems = [...(boardData.notes || []), ...(boardData.sections || []), ...(boardData.textBoxes || []), ...(boardData.shapes || [])];
-    allItems.forEach(item => {
+    const allElements = [...(boardData.notes || []), ...(boardData.sections || []), ...(boardData.textBoxes || []), ...(boardData.shapes || [])];
+    
+    allElements.forEach(item => {
         const el = document.getElementById(item.id);
         if (!el) return;
-        const elRect = { left: parseFloat(item.x) * minimapScale, top: parseFloat(item.y) * minimapScale, width: el.offsetWidth * minimapScale, height: el.offsetHeight * minimapScale };
+        const elRect = {
+            left: parseFloat(item.x) * minimapScale,
+            top: parseFloat(item.y) * minimapScale,
+            width: el.offsetWidth * minimapScale,
+            height: el.offsetHeight * minimapScale
+        };
         const mapEl = document.createElement('div');
         mapEl.className = 'minimap-element';
         mapEl.style.cssText = `left:${elRect.left}px; top:${elRect.top}px; width:${elRect.width}px; height:${elRect.height}px;`;
         minimap.appendChild(mapEl);
     });
+    
     const viewport = document.createElement('div');
     viewport.id = 'minimap-viewport';
     minimap.appendChild(viewport);
-    const viewRect = { width: window.innerWidth / boardData.board.scale * minimapScale, height: window.innerHeight / boardData.board.scale * minimapScale, left: -boardData.board.panX * minimapScale, top: -boardData.board.panY * minimapScale };
+    const viewRect = {
+        width: window.innerWidth / boardData.board.scale * minimapScale,
+        height: window.innerHeight / boardData.board.scale * minimapScale,
+        left: -boardData.board.panX * minimapScale,
+        top: -boardData.board.panY * minimapScale
+    };
     viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`;
 }
 
 function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches.clientX, y: e.touches.clientY }; } return { x: e.clientX, y: e.clientY }; }
+function clearSelection() { /* ... */ }
 function isDarkMode() { return document.body.classList.contains('dark-mode'); }
 
 // =================================================================
 // 9. イベントリスナーと初期化
 // =================================================================
 
+// Tool toggles
 function togglePenMode(forceOff = false) { isPenMode = forceOff ? false : !isPenMode; penToolBtn.classList.toggle('active', isPenMode); document.body.classList.toggle('pen-mode', isPenMode); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; if(isPenMode) { toggleEraserMode(true); toggleConnectorMode(true); } }
 function toggleEraserMode(forceOff = false) { isEraserMode = forceOff ? false : !isEraserMode; eraserToolBtn.classList.toggle('active', isEraserMode); document.body.classList.toggle('eraser-mode', isEraserMode); drawingLayer.style.pointerEvents = (isPenMode || isEraserMode) ? 'auto' : 'none'; if(isEraserMode) { togglePenMode(true); toggleConnectorMode(true); } }
 function toggleConnectorMode(forceOff = false) { isConnectorMode = forceOff ? false : !isConnectorMode; addConnectorBtn.classList.toggle('active', isConnectorMode); document.body.classList.toggle('connector-mode', isConnectorMode); if(isConnectorMode) { togglePenMode(true); toggleEraserMode(true); } connectorStartId = null; }
@@ -1065,6 +1182,7 @@ penToolBtn.addEventListener('click', () => togglePenMode());
 eraserToolBtn.addEventListener('click', () => toggleEraserMode());
 addConnectorBtn.addEventListener('click', () => toggleConnectorMode());
 
+// Board panning
 board.addEventListener('mousedown', e => {
     if (e.target !== board || isPenMode || isEraserMode) return;
     board.classList.add('grabbing');
@@ -1081,12 +1199,13 @@ board.addEventListener('mousedown', e => {
         board.classList.remove('grabbing');
         document.removeEventListener('mousemove', onPointerMove);
         document.removeEventListener('mouseup', onPointerUp);
-        saveState();
+        saveState(); // Save pan/zoom state
     };
     document.addEventListener('mousemove', onPointerMove);
     document.addEventListener('mouseup', onPointerUp);
 });
 
+// Board zooming
 window.addEventListener('wheel', e => {
     if (mainApp.classList.contains('hidden')) return;
     e.preventDefault();
@@ -1099,6 +1218,7 @@ window.addEventListener('wheel', e => {
     applyTransform();
 }, { passive: false });
 
+// Button event listeners
 addNoteBtn.addEventListener('click', () => createNote());
 addSectionBtn.addEventListener('click', () => createSection());
 addTextBtn.addEventListener('click', () => createTextBox());
@@ -1112,10 +1232,10 @@ redoBtn.addEventListener('click', redo);
 darkModeBtn.addEventListener('click', () => {
     document.body.classList.toggle('dark-mode');
     localStorage.setItem('plottia-dark-mode', document.body.classList.contains('dark-mode') ? '1' : '0');
-    redrawCanvas();
+    redrawCanvas(); // Redraw with new pen color if needed
 });
 
-// *** FIX: Add stroke width slider event listener ***
+// *** FIX: Add event listener for stroke width slider ***
 strokeWidthSlider.addEventListener('input', e => {
     const newWidth = e.target.value;
     currentStrokeWidth = parseInt(newWidth, 10);
@@ -1126,7 +1246,7 @@ strokeWidthSlider.addEventListener('input', e => {
 async function initializeApp() {
     if (localStorage.getItem('plottia-dark-mode') === '1') { document.body.classList.add('dark-mode'); }
     
-    // *** FIX: Load saved stroke width ***
+    // *** FIX: Load saved stroke width on startup ***
     const savedWidth = localStorage.getItem('plottia_stroke_width');
     if (savedWidth) {
         currentStrokeWidth = parseInt(savedWidth, 10);
@@ -1135,7 +1255,7 @@ async function initializeApp() {
     }
 
     const urlHash = window.location.hash.substring(1);
-    const [fileIdFromUrl] = urlHash.split('/');
+    const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
     
     if (fileIdFromUrl && getFileMetadata().some(f => f.id === fileIdFromUrl)) {
         openFile(fileIdFromUrl);
@@ -1171,20 +1291,26 @@ closeErrorBtn.addEventListener('click', () => {
 
 window.onerror = function(message, source, lineno, colno, error) {
     let formattedMessage = "予期せぬJavaScriptエラーが発生しました。\n\n" +
-        "メッセージ: " + message + "\n" + "ファイル: " + (source || '不明') + "\n" +
-        "行番号: " + (lineno || '不明') + "\n" + "列番号: " + (colno || '不明') + "\n";
-    if (error && error.stack) { formattedMessage += "\nスタックトレース:\n" + error.stack; }
+        "メッセージ: " + message + "\n" +
+        "ファイル: " + (source || '不明') + "\n" +
+        "行番号: " + (lineno || '不明') + "\n" +
+        "列番号: " + (colno || '不明') + "\n";
+    if (error && error.stack) {
+        formattedMessage += "\nスタックトレース:\n" + error.stack;
+    }
     showErrorModal(formattedMessage);
     return true; 
 };
 window.addEventListener('unhandledrejection', function(event) {
     let formattedMessage = '捕捉されなかったPromiseのエラーが発生しました。\n\n';
     if (event.reason instanceof Error) {
-        formattedMessage += "エラー名: " + event.reason.name + "\n" + "メッセージ: " + event.reason.message + "\n";
-        if (event.reason.stack) { formattedMessage += "\nスタックトレース:\n" + event.reason.stack; }
+        formattedMessage += "エラー名: " + event.reason.name + "\n" +
+            "メッセージ: " + event.reason.message + "\n";
+        if (event.reason.stack) {
+            formattedMessage += "\nスタックトレース:\n" + event.reason.stack;
+        }
     } else {
         formattedMessage += "理由: " + String(event.reason);
     }
     showErrorModal(formattedMessage);
-});
 });
