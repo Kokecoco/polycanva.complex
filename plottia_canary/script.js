@@ -793,7 +793,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (element.classList.contains('locked') || e.target.closest('.resizer, [contenteditable="true"], .color-picker')) return;
             e.stopPropagation();
             
-            const startZIndex = boardData.board.noteZIndexCounter++;
+            let startZIndex;
+            if (element.classList.contains('section')) {
+                // セクションの場合、低い階層のカウンターを使用
+                startZIndex = boardData.board.sectionZIndexCounter++;
+            } else {
+                // 付箋やその他のアイテムの場合、高い階層のカウンターを使用
+                startZIndex = boardData.board.noteZIndexCounter++;
+            }
             let attachedElements = [];
 
             // --- FIXED: LOGIC FOR SECTION DRAGGING ---
