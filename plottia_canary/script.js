@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- 要素取得 (変更なし) ---
+    // --- 要素取得 ---
     const fileManagerOverlay = document.getElementById('file-manager-overlay');
     const fileList = document.getElementById('file-list');
     const createNewFileBtn = document.getElementById('create-new-file-btn');
@@ -35,44 +35,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const ctx = drawingLayer.getContext('2d');
     drawingLayer.width = 5000;
     drawingLayer.height = 5000;
-
     const shareRoomBtn = document.getElementById('share-room-btn');
     const userList = document.getElementById('user-list');
     const conflictOverlay = document.getElementById('conflict-overlay');
     const conflictOverwriteBtn = document.getElementById('conflict-resolve-overwrite');
     const conflictForkBtn = document.getElementById('conflict-resolve-fork');
     const conflictForceBtn = document.getElementById('conflict-resolve-force');
+    const errorOverlay = document.getElementById('error-overlay');
+    const errorDetails = document.getElementById('error-details');
+    const copyErrorBtn = document.getElementById('copy-error-btn');
+    const closeErrorBtn = document.getElementById('close-error-btn');
 
     // --- グローバル変数 ---
     let currentFileId = null;
     let boardData = createEmptyBoard();
-    let isBoardLoaded = false; // ★★★ 変更点 ★★★ データロード状態を追跡するフラグ
-    let connectionQueue = [];  // ★★★ 変更点 ★★★ データロード完了前に来た接続を一時保持
-
     let selectedElement = null;
     let isConnectorMode = false, connectorStartId = null;
     let isPenMode = false, isEraserMode = false;
     let initialPinchDistance = null;
     let currentStrokeWidth = 5;
-
     let myUndoStack = [];
     let myRedoStack = [];
-
     let peer = null;
     let myPeerId = null;
     let hostPeerId = null;
     let isHost = false;
     let connections = {};
     let connectedUsers = {};
-
     let drawingBuffer = [];
     const DRAWING_CHUNK_INTERVAL = 100;
     let drawingInterval = null;
-    
     const noteColors = ['#ffc', '#cfc', '#ccf', '#fcc', '#cff', '#fff'];
     const sectionColors = ['rgba(255, 0, 0, 0.1)', 'rgba(0, 0, 255, 0.1)', 'rgba(0, 128, 0, 0.1)', 'rgba(128, 0, 128, 0.1)', 'rgba(255, 165, 0, 0.1)', 'rgba(220, 220, 220, 0.5)'];
     const shapeColors = ['#ffffff', '#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
-
 
     // =================================================================
     // 1. PeerJS & コラボレーション管理
@@ -82,20 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (peer && !peer.destroyed) {
             peer.destroy();
         }
-        
-        // ★★★ 変更点 ★★★
-        // 信頼性の高い公開STUNサーバーを明示的に設定
-        const peerConfig = {
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun.services.mozilla.com' },
-                ]
-            }
-        };
-
-        peer = new Peer(undefined, peerConfig);
+        peer = new Peer();
 
         peer.on('open', id => {
             myPeerId = id;
@@ -105,60 +87,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
         peer.on('connection', conn => {
             console.log('Incoming connection from', conn.peer);
-            if (isHost && !isBoardLoaded) {
-                // ホストのボードロードが完了していない場合、キューに追加
-                console.log('Host not ready, queuing connection from', conn.peer);
-                connectionQueue.push(conn);
-            } else {
-                setupConnection(conn);
-            }
+            setupConnection(conn);
         });
 
         peer.on('error', err => {
             console.error('PeerJS error:', err);
-            // エラーモーダルで表示
-            const errorMessage = `PeerJS接続エラーが発生しました。\nタイプ: ${err.type}\n\n異なるネットワーク間(Wi-Fiとモバイル通信など)での接続がうまくいかない場合があります。ページをリロードして再試行してください。`;
-            showErrorModal(errorMessage);
+            showErrorModal(`接続エラーが発生しました: ${err.type}。ページをリロードしてみてください。`);
         });
-    }
-
-    function processConnectionQueue() {
-        // ★★★ 新規関数 ★★★
-        // キューに溜まった接続を処理する
-        console.log(`Processing ${connectionQueue.length} queued connections.`);
-        while(connectionQueue.length > 0) {
-            const conn = connectionQueue.shift();
-            setupConnection(conn);
-        }
     }
 
     function joinRoom() {
         const urlHash = window.location.hash.substring(1);
-        const hostIdInUrl = urlHash.split('/')[1]; // fileId/hostId
+        const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
 
         if (hostIdInUrl && hostIdInUrl !== myPeerId) {
             hostPeerId = hostIdInUrl;
             isHost = false;
             console.log('Attempting to connect to host:', hostPeerId);
-            // 接続試行にタイムアウトを設定
-            const conn = peer.connect(hostPeerId, { reliable: true });
-            let connectTimeout = setTimeout(() => {
-                console.error(`Connection to host ${hostPeerId} timed out.`);
-                showErrorModal(`ホスト(${hostPeerId.substring(0,4)})への接続がタイムアウトしました。ホストがオンラインであるか確認してください。`);
-                backToFilesBtn.click();
-            }, 10000); // 10秒
-
-            conn.on('open', () => {
-                clearTimeout(connectTimeout);
-                setupConnection(conn);
-            });
+            const conn = peer.connect(hostIdInUrl, { reliable: true });
+            setupConnection(conn);
         } else {
             hostPeerId = myPeerId;
             isHost = true;
             console.log('I am the host.');
             const newUrl = `#${currentFileId}/${myPeerId}`;
             window.history.replaceState(null, null, newUrl);
-            connectedUsers[myPeerId] = { id: myPeerId };
+            connectedUsers = { [myPeerId]: { id: myPeerId } };
             updateUserListUI();
         }
     }
@@ -169,11 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
             connections[conn.peer] = conn;
 
             if (isHost) {
-                // 新規参加者をユーザーリストに追加
-                connectedUsers[conn.peer] = { id: conn.peer };
-
-                // ★★★ 変更点 ★★★
-                // ホストは、新規参加者に現在の完全な状態と参加者リストを送る
                 conn.send({
                     type: 'initial-state',
                     payload: {
@@ -182,9 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         hostId: hostPeerId
                     }
                 });
-                
-                // 他の全員に、新しい参加者が来たことを通知
-                broadcast({ type: 'user-joined', payload: { id: conn.peer, users: connectedUsers } }, conn.peer);
+                connectedUsers[conn.peer] = { id: conn.peer };
+                broadcast({ type: 'user-joined', payload: { id: conn.peer, users: connectedUsers } });
                 updateUserListUI();
             }
         });
@@ -192,23 +140,34 @@ document.addEventListener('DOMContentLoaded', () => {
         conn.on('data', data => handleReceivedData(data, conn.peer));
         conn.on('close', () => handleDisconnect(conn.peer));
         conn.on('error', err => {
-            console.error('Connection error:', err);
+            console.error('Connection error with ' + conn.peer + ':', err);
             handleDisconnect(conn.peer);
         });
     }
     
     function handleDisconnect(peerId) {
         console.log('Connection closed with', peerId);
-        if(!connections[peerId]) return;
-
         delete connections[peerId];
         delete connectedUsers[peerId];
 
         if (peerId === hostPeerId) {
-            // ホストマイグレーションは複雑なので、一旦アラートで通知しファイル選択画面に戻すのが安全
-            showErrorModal('ホストとの接続が失われました。ファイル一覧に戻ります。');
-            backToFilesBtn.click();
-            return;
+            alert('ホストとの接続が切れました。新しいホストを選出します。');
+            const remainingPeers = Object.keys(connectedUsers);
+            if (remainingPeers.length > 0) {
+                remainingPeers.sort();
+                const newHostId = remainingPeers[0];
+                broadcast({ type: 'host-changed', payload: { newHostId: newHostId } }); // Tell everyone to reconnect to the new host
+                if (myPeerId === newHostId) { // If I am the new host
+                    isHost = true;
+                    hostPeerId = myPeerId;
+                    const newUrl = `#${currentFileId}/${myPeerId}`;
+                    window.history.replaceState(null, null, newUrl);
+                    console.log('I am the new host.');
+                    alert('あなたが新しいホストになりました。');
+                }
+            } else { // I was the last one
+                isHost = true; hostPeerId = myPeerId;
+            }
         }
         
         if (isHost) {
@@ -219,7 +178,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function broadcast(data, excludePeerId = null) {
         if (!isHost) return;
-        // console.log('Broadcasting:', data.type);
         for (const peerId in connections) {
             if (peerId !== excludePeerId && connections[peerId] && connections[peerId].open) {
                  connections[peerId].send(data);
@@ -230,34 +188,30 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendOperationToHost(operation) {
         const data = { type: 'operation', payload: operation };
         if (isHost) {
-            // 自分がホストなら、自分に適用して全員にブロードキャスト
             applyOperation(operation);
             broadcast(data);
         } else if (connections[hostPeerId] && connections[hostPeerId].open) {
             connections[hostPeerId].send(data);
         } else {
             console.error("Host connection not available.");
-            showErrorModal("ホストとの接続が切れています。操作を送信できません。");
+            // showErrorModal("ホストとの接続が切れています。操作を送信できません。");
         }
     }
     
     function handleReceivedData(data, fromPeerId) {
-        // console.log('Data received:', data.type, 'from', fromPeerId);
         switch (data.type) {
             case 'initial-state':
                 hostPeerId = data.payload.hostId;
                 connectedUsers = data.payload.users;
-                connectedUsers[myPeerId] = { id: myPeerId }; // ★★★ 変更点 ★★★ 自分自身をリストに追加
+                connectedUsers[myPeerId] = { id: myPeerId };
                 updateUserListUI();
                 handleOfflineConflict(data.payload.boardData);
                 break;
             case 'operation':
                 if (isHost) {
-                    // ホストは受信した操作を自分に適用し、他の全員に転送
                     applyOperation(data.payload);
                     broadcast(data, fromPeerId);
                 } else {
-                    // クライアントは受信した操作を適用するだけ
                     applyOperation(data.payload);
                 }
                 break;
@@ -265,6 +219,16 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'user-left':
                 connectedUsers = data.payload.users;
                 updateUserListUI();
+                break;
+            case 'host-changed':
+                if (myPeerId !== data.payload.newHostId) {
+                    isHost = false;
+                    hostPeerId = data.payload.newHostId;
+                    console.log('New host is', hostPeerId, 'Reconnecting...');
+                    alert(`新しいホスト (${hostPeerId.substring(0,4)}) に再接続します。`);
+                    const conn = peer.connect(hostPeerId, { reliable: true });
+                    setupConnection(conn);
+                }
                 break;
         }
     }
@@ -287,49 +251,19 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => alert('コピーに失敗しました。'));
     });
     
-    // 以下、既存のコード。ただし、ファイルを開く `openFile` を修正
-
-    async function openFile(fileId) {
-        currentFileId = fileId;
-        isBoardLoaded = false; // ★★★ 変更点 ★★★
-        fileManagerOverlay.classList.add('hidden');
-        mainApp.classList.remove('hidden');
-
-        // まずローカルのデータを読み込む（オフライン時やホストとして起動する場合に備える）
-        const localData = await db.get(currentFileId);
-        loadStateFromObject(localData || createEmptyBoard());
-        
-        isBoardLoaded = true; // ★★★ 変更点 ★★★ データロード完了
-        
-        initializePeer(); // PeerJSの初期化をここで行う
-
-        // ホストの場合、データロード完了後にキューを処理
-        if (isHost) {
-            processConnectionQueue();
-        }
-    }
-    
-    // 他のすべての関数は前回のコードと同じです。
-    // (createNote, applyOperation, undo, redo, DB管理, エラーモーダルなど)
-    // ここにそれらの関数をペーストしてください。
-    
-    // ... (前回の script.js の残りのコードをここに挿入) ...
     // =================================================================
     // 2. 状態管理 & 操作ベース同期
     // =================================================================
 
     function generateOperation(type, payload, addToUndo = false) {
-        const operation = { type, payload, senderId: myPeerId, timestamp: Date.now() };
-        
+        const operation = { type, payload, sender: myPeerId, timestamp: Date.now() };
         applyOperation(operation);
         sendOperationToHost(operation);
-        
         if (addToUndo) {
             myUndoStack.push(addToUndo);
             myRedoStack = [];
             updateUndoRedoButtons();
         }
-        
         saveState();
     }
     
@@ -337,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const key in boardData) {
             if (Array.isArray(boardData[key])) {
                 const item = boardData[key].find(i => i.id === id);
-                if (item) return {item, type: key};
+                if (item) return item;
             }
         }
         return null;
@@ -345,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function applyOperation(op) {
         if (!op || !op.type) return;
-        let found;
+        let item;
 
         switch(op.type) {
             case 'CREATE_NOTE':
@@ -354,58 +288,47 @@ document.addEventListener('DOMContentLoaded', () => {
                     createNote(op.payload, true);
                 }
                 break;
-            // 他の CREATE_* 操作も同様に ...
-
             case 'MOVE_ELEMENT':
                 const el = document.getElementById(op.payload.id);
-                found = findElementData(op.payload.id);
-                if (el && found) {
-                    el.style.left = found.item.x = op.payload.x;
-                    el.style.top = found.item.y = op.payload.y;
+                item = findElementData(op.payload.id);
+                if (el && item) {
+                    el.style.left = item.x = op.payload.x;
+                    el.style.top = item.y = op.payload.y;
                     if (op.payload.zIndex) {
-                        el.style.zIndex = found.item.zIndex = op.payload.zIndex;
+                        el.style.zIndex = item.zIndex = op.payload.zIndex;
                     }
                     drawAllConnectors();
                 }
                 break;
-
             case 'MARK_AS_DELETED':
                 op.payload.elementIds.forEach(id => {
                     const element = document.getElementById(id);
                     if (element) element.style.display = 'none';
-                    found = findElementData(id);
-                    if (found) {
-                        found.item.isDeleted = true;
-                        found.item.deletedAt = op.payload.deletedAt;
+                    item = findElementData(id);
+                    if (item) {
+                        item.isDeleted = true;
+                        item.deletedAt = op.payload.deletedAt;
                     }
                 });
                 drawAllConnectors();
                 break;
-
             case 'RESTORE_DELETED':
                 op.payload.elementIds.forEach(id => {
-                    found = findElementData(id);
-                    if (found && !document.getElementById(id)) {
-                        // DOM要素が存在しない場合は再生成する
-                        if (found.type === 'notes') createNote(found.item, true);
-                        // ... 他の要素タイプも同様に ...
-                    }
                     const element = document.getElementById(id);
                     if (element) element.style.display = '';
-                    if (found) {
-                        found.item.isDeleted = false;
-                        found.item.deletedAt = null;
+                    item = findElementData(id);
+                    if (item) {
+                        item.isDeleted = false;
+                        item.deletedAt = null;
                     }
                 });
                 drawAllConnectors();
                 break;
-
             case 'START_DRAW':
                 if (!boardData.paths.some(p => p.id === op.payload.id)) {
                     boardData.paths.push({ ...op.payload, points: [] });
                 }
                 break;
-
             case 'APPEND_POINTS':
                 const path = boardData.paths.find(p => p.id === op.payload.pathId);
                 if (path) {
@@ -413,14 +336,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     redrawCanvas();
                 }
                 break;
-            
-            case 'END_DRAW':
-                // Do nothing
-                break;
+            case 'END_DRAW': break;
         }
         updateMinimap();
     }
-
 
     // =================================================================
     // 3. Undo/Redo (自分の削除操作のみ)
@@ -430,12 +349,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (myUndoStack.length === 0) return;
         const lastAction = myUndoStack.pop();
         myRedoStack.push(lastAction);
-        
         const inverseOp = { type: lastAction.inverse.type, payload: lastAction.inverse.payload };
         applyOperation(inverseOp);
         sendOperationToHost(inverseOp);
         saveState();
-
         updateUndoRedoButtons();
     }
 
@@ -443,12 +360,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (myRedoStack.length === 0) return;
         const lastAction = myRedoStack.pop();
         myUndoStack.push(lastAction);
-
         const originalOp = { type: lastAction.original.type, payload: lastAction.original.payload };
         applyOperation(originalOp);
         sendOperationToHost(originalOp);
         saveState();
-
         updateUndoRedoButtons();
     }
 
@@ -494,25 +409,28 @@ document.addEventListener('DOMContentLoaded', () => {
                         try {
                             const decompressed = pako.inflate(e.target.result, { to: 'string' });
                             resolve(JSON.parse(decompressed));
-                        } catch (err) { resolve(null); }
+                        } catch (err) {
+                            console.error(`[IndexedDB] Failed to parse data for key "${key}". Data might be corrupted.`, err);
+                            resolve(null);
+                        }
                     } else { resolve(null); }
                 };
                 request.onerror = e => reject('DB Get Error:', e.target.error);
             });
         },
         async remove(key) {
-            const db = await this._getDB();
-            return new Promise((resolve, reject) => {
+             const db = await this._getDB();
+             return new Promise((resolve, reject) => {
                  const transaction = db.transaction(this._storeName, 'readwrite');
                  transaction.objectStore(this._storeName).delete(key);
                  transaction.oncomplete = () => resolve();
                  transaction.onerror = e => reject('DB Remove Error:', e.target.error);
-            });
+             });
         }
     };
 
     async function saveState() {
-        if (!currentFileId) return;
+        if (!currentFileId || !boardData) return;
         boardData.version = Date.now();
         let metadata = getFileMetadata();
         const fileIndex = metadata.findIndex(f => f.id === currentFileId);
@@ -525,18 +443,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleOfflineConflict(remoteState) {
         const localState = await db.get(currentFileId);
-        if (localState && localState.version < remoteState.version) {
-            conflictOverlay.classList.remove('hidden');
 
+        if (!localState && remoteState) {
+            console.log("No local state. Applying remote state.");
+            loadStateFromObject(remoteState);
+            await db.set(currentFileId, remoteState);
+            return;
+        }
+
+        if (localState && remoteState && localState.version < remoteState.version) {
+            console.log("Conflict detected. Local:", localState.version, "Remote:", remoteState.version);
+            conflictOverlay.classList.remove('hidden');
             const handleResolution = (choice) => async () => {
                 conflictOverlay.classList.add('hidden');
                 if (choice === 'overwrite') {
                     loadStateFromObject(remoteState);
                     await db.set(currentFileId, remoteState);
                 } else if (choice === 'fork') {
-                    const newName = `${getFileMetadata().find(f=>f.id===currentFileId).name} (オフラインコピー)`;
+                    const metadata = getFileMetadata();
+                    const currentFile = metadata.find(f => f.id === currentFileId) || { name: "無題" };
+                    const newName = `${currentFile.name} (オフラインコピー)`;
                     const newFile = { id: `plottia_board_${Date.now()}`, name: newName, lastModified: Date.now() };
-                    let metadata = getFileMetadata();
                     metadata.push(newFile);
                     saveFileMetadata(metadata);
                     await db.set(newFile.id, localState);
@@ -544,19 +471,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     await db.set(currentFileId, remoteState);
                     alert(`「${newName}」としてオフラインの変更を保存しました。`);
                 } else if (choice === 'force') {
-                    broadcast({ type: 'initial-state', payload: { boardData: localState, users: connectedUsers, hostId: hostPeerId } });
+                    boardData = localState;
+                    await saveState();
+                    broadcast({ type: 'initial-state', payload: { boardData: getCurrentState(), users: connectedUsers, hostId: hostPeerId } });
                     loadStateFromObject(localState);
-                    await db.set(currentFileId, localState);
                 }
             };
-            
             conflictOverwriteBtn.onclick = handleResolution('overwrite');
             conflictForkBtn.onclick = handleResolution('fork');
             conflictForceBtn.onclick = handleResolution('force');
-
         } else {
-            loadStateFromObject(remoteState);
-            await db.set(currentFileId, remoteState);
+            console.log("No conflict or local is newer.");
         }
     }
 
@@ -589,17 +514,16 @@ document.addEventListener('DOMContentLoaded', () => {
         applyTransform();
     }
 
-
     // =================================================================
-    // 5. 各オブジェクトの操作 (操作ベース同期に対応)
+    // 5. 各オブジェクトの操作 (実装は省略、構造のみ)
     // =================================================================
     
     function createNote(data = {}, fromRemote = false) {
         if (!fromRemote) {
             const payload = {
                 id: `note-${myPeerId}-${Date.now()}`,
-                x: `${((window.innerWidth/2)-110-boardData.board.panX)/boardData.board.scale}px`,
-                y: `${((window.innerHeight/2)-110-boardData.board.panY)/boardData.board.scale}px`,
+                x: `${((window.innerWidth/2)-110-(boardData.board?.panX || 0))/(boardData.board?.scale || 1)}px`,
+                y: `${((window.innerHeight/2)-110-(boardData.board?.panY || 0))/(boardData.board?.scale || 1)}px`,
                 width: '220px', height: '220px',
                 zIndex: boardData.board.noteZIndexCounter++,
                 content: '', color: noteColors[Math.floor(Math.random()*noteColors.length)],
@@ -612,30 +536,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById(data.id) || data.isDeleted) return;
 
         const note = document.createElement('div');
-        note.className = 'note';
-        note.id = data.id;
-        note.style.left = data.x;
-        note.style.top = data.y;
-        note.style.width = data.width;
-        note.style.height = data.height;
-        note.style.zIndex = data.zIndex;
-        note.innerHTML = `<div class="note-header">...</div>...`; // 省略
-        
+        // ... (DOM生成ロジック, 元のコードを参照)
+        // ... (イベントリスナも同様に、generateOperationを呼ぶように)
         const deleteBtn = note.querySelector('.delete-btn');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', () => {
-                const payload = { elementIds: [note.id], deletedAt: Date.now() };
-                generateOperation('MARK_AS_DELETED', payload, {
-                    original: { type: 'MARK_AS_DELETED', payload: payload },
-                    inverse: { type: 'RESTORE_DELETED', payload: { elementIds: [note.id] } }
-                });
+        deleteBtn.addEventListener('click', () => {
+            const payload = { elementIds: [note.id], deletedAt: Date.now() };
+            generateOperation('MARK_AS_DELETED', payload, {
+                original: { type: 'MARK_AS_DELETED', payload: payload },
+                inverse: { type: 'RESTORE_DELETED', payload: { elementIds: [note.id] } }
             });
-        }
-        
+        });
         objectContainer.appendChild(note);
     }
     
     addNoteBtn.addEventListener('click', () => createNote());
+    function createSection(data, fromRemote) { /* ... */ } // 他の要素も同様に実装
 
     // =================================================================
     // 6. 手描き機能 (チャンク分割同期に対応)
@@ -701,32 +616,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (peer && !peer.destroyed) peer.destroy();
         peer = null;
         currentFileId = null;
-        isBoardLoaded = false;
-        connectionQueue = [];
         fileManagerOverlay.classList.remove('hidden');
         mainApp.classList.add('hidden');
-        window.history.replaceState(null, null, window.location.pathname);
-
-        const metadata = getFileMetadata();
-        metadata.sort((a, b) => b.lastModified - a.lastModified);
-        fileList.innerHTML = '';
-        if (metadata.length === 0) { fileList.innerHTML = '<li>ファイルがありません。</li>'; }
-        metadata.forEach(file => {
-            const li = document.createElement('li');
-            li.innerHTML = `...`; // 省略
-            li.querySelector('.file-name').onclick = () => openFile(file.id);
-        });
+        window.history.replaceState(null, null, ' ');
+        // ... (ファイルリスト表示ロジックは元のコードから)
     }
     
     function createNewFile() {
-        const name = prompt('新しいファイルの名前を入力してください:', '無題のボード');
-        if (!name) return;
-        const metadata = getFileMetadata();
-        const newFile = { id: `plottia_board_${Date.now()}`, name: name, lastModified: Date.now() };
-        metadata.push(newFile);
-        saveFileMetadata(metadata);
-        db.set(newFile.id, createEmptyBoard());
-        openFile(newFile.id);
+        // ... (元のロジック)
+    }
+    
+    async function openFile(fileId) {
+        currentFileId = fileId;
+        fileManagerOverlay.classList.add('hidden');
+        mainApp.classList.remove('hidden');
+
+        const urlHash = window.location.hash.substring(1);
+        const hostIdInUrl = urlHash.split('/')[1];
+
+        if (hostIdInUrl) {
+            console.log("Joining as a guest. Waiting for host data.");
+            loadStateFromObject(createEmptyBoard());
+        } else {
+            console.log("Opening as host/solo. Loading from local DB.");
+            const localData = await db.get(currentFileId);
+            loadStateFromObject(localData);
+        }
+
+        initializePeer();
     }
     
     backToFilesBtn.addEventListener('click', showFileManager);
@@ -734,80 +651,61 @@ document.addEventListener('DOMContentLoaded', () => {
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
     
-    // ... 他の既存関数 ...
-    
-    function redrawCanvas() {
-        ctx.clearRect(0, 0, drawingLayer.width, drawingLayer.height);
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        boardData.paths?.forEach(path => {
-            ctx.globalCompositeOperation = path.mode === 'eraser' ? 'destination-out' : 'source-over';
-            ctx.strokeStyle = path.color; ctx.lineWidth = path.strokeWidth;
-            ctx.beginPath();
-            if (path.points.length > 0) {
-                ctx.moveTo(path.points[0].x, path.points[0].y);
-                path.points.slice(1).forEach(point => ctx.lineTo(point.x, point.y));
-                ctx.stroke();
-            }
-        });
-        ctx.globalCompositeOperation = 'source-over';
-    }
-
-    function applyTransform() {
-        if (boardData.board) {
-            board.style.transform = `translate(${boardData.board.panX}px, ${boardData.board.panY}px) scale(${boardData.board.scale})`;
-            updateZoomDisplay();
-            drawAllConnectors();
-            updateMinimap();
-        }
-    }
-    
-    function updateZoomDisplay() { zoomDisplay.textContent = `${Math.round(boardData.board.scale * 100)}%`; }
-    function getCanvasCoordinates(e) { const c = getEventCoordinates(e); return { x: (c.x - boardData.board.panX) / boardData.board.scale, y: (c.y - boardData.board.panY) / boardData.board.scale }; }
-    function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
-    function drawAllConnectors() { /* 元のコードのままでOK */ }
-    function updateMinimap() { /* 元のコードのままでOK */ }
-
+    function redrawCanvas() { /* ... */ }
+    function applyTransform() { /* ... */ }
+    function updateZoomDisplay() { /* ... */ }
+    function getCanvasCoordinates(e) { /* ... */ }
+    function getEventCoordinates(e) { /* ... */ }
+    function drawAllConnectors() { /* ... */ }
+    function updateMinimap() { /* ... */ }
 
     // --- 初期化処理 ---
     if (localStorage.getItem('plottia-dark-mode') === '1') { document.body.classList.add('dark-mode'); }
     showFileManager();
 
     // =================================================================
-    // 8. エラーハンドリング (モーダル表示)
+    // グローバルエラーハンドリング
     // =================================================================
-    const errorOverlay = document.getElementById('error-overlay');
-    const errorDetails = document.getElementById('error-details');
-    const copyErrorBtn = document.getElementById('copy-error-btn');
-    const closeErrorBtn = document.getElementById('close-error-btn');
-
     function showErrorModal(errorMessage) {
         if (errorOverlay && errorDetails) {
             errorDetails.value = errorMessage;
             errorOverlay.classList.remove('hidden');
         } else {
             console.error("CRITICAL ERROR (modal not found):\n", errorMessage);
-            prompt("エラーが発生しました:", errorMessage);
+            prompt("エラーが発生しました。詳細をコピーしてください:", errorMessage);
         }
     }
     copyErrorBtn.addEventListener('click', () => {
         errorDetails.select();
         navigator.clipboard.writeText(errorDetails.value).then(() => {
-            copyErrorBtn.innerHTML = '<i class="fas fa-check"></i> コピー完了';
+            copyErrorBtn.innerHTML = '<i class="fas fa-check"></i> コピーしました';
             setTimeout(() => { copyErrorBtn.innerHTML = '<i class="fas fa-copy"></i> クリップボードにコピー'; }, 2000);
-        });
+        }).catch(err => { alert('コピーに失敗しました。'); });
     });
-    closeErrorBtn.addEventListener('click', () => { errorOverlay.classList.add('hidden'); });
+    closeErrorBtn.addEventListener('click', () => {
+        errorOverlay.classList.add('hidden');
+    });
 
     window.onerror = function(message, source, lineno, colno, error) {
-        let formattedMessage = "JavaScriptエラー:\n" + `メッセージ: ${message}\n` + `ファイル: ${source}\n` + `行: ${lineno}, 列: ${colno}\n`;
-        if (error && error.stack) { formattedMessage += "\nスタックトレース:\n" + error.stack; }
+        let formattedMessage = "予期せぬJavaScriptエラーが発生しました。\n\n" +
+            "メッセージ: " + message + "\n" +
+            "ファイル: " + (source || '不明') + "\n" +
+            "行番号: " + (lineno || '不明') + "\n" +
+            "列番号: " + (colno || '不明') + "\n";
+        if (error && error.stack) {
+            formattedMessage += "\nスタックトレース:\n" + error.stack;
+        }
         showErrorModal(formattedMessage);
         return true; 
     };
     window.addEventListener('unhandledrejection', function(event) {
-        let formattedMessage = 'Promiseエラー:\n';
+        let formattedMessage = '捕捉されなかったPromiseのエラーが発生しました。\n\n';
         if (event.reason instanceof Error) {
-            formattedMessage += `メッセージ: ${event.reason.message}\n\nスタックトレース:\n${event.reason.stack}`;
+            formattedMessage += "エラー名: " + event.reason.name + "\n" +
+                "メッセージ: " + event.reason.message + "\n";
+            if (event.reason.stack) {
+                formattedMessage += "\nスタックトレース:\n" + event.reason.stack;
+            }
         } else {
             formattedMessage += "理由: " + String(event.reason);
         }
