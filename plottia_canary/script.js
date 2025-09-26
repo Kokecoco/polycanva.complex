@@ -96,6 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
             myPeerId = id;
             console.log('My Peer ID is:', myPeerId);
             joinRoom();
+
+            if (isHost) {
+                copyShareLink();
+            }
         });
 
         peer.on('connection', conn => {
@@ -113,6 +117,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 showFileManager();
             }
         });
+    }
+
+    function startOnlineMode() {
+        // すでにオンラインの場合は、再度リンクをコピーするだけ
+        if (peer && !peer.destroyed) {
+            if(isHost) {
+                copyShareLink();
+            } else {
+                alert('すでにゲストとして接続中です。');
+            }
+            return;
+        }
+
+        alert('オンライン共有モードを開始します...');
+        initializePeer();
+    }
+
+    function copyShareLink() {
+        if (!currentFileId || !hostPeerId) return;
+        const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
+        navigator.clipboard.writeText(url)
+            .then(() => alert('招待リンクをクリップボードにコピーしました。'))
+            .catch(() => alert('リンクのコピーに失敗しました。'));
     }
 
     function joinRoom() {
@@ -251,16 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    shareRoomBtn.addEventListener('click', () => {
-        if (!currentFileId || !myPeerId) {
-            alert("共有の準備ができていません。");
-            return;
-        }
-        const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId || myPeerId}`;
-        navigator.clipboard.writeText(url)
-            .then(() => alert('招待リンクをクリップボードにコピーしました。'))
-            .catch(() => alert('コピーに失敗しました。'));
-    });
+    shareRoomBtn.addEventListener('click', startOnlineMode);
     
     // =================================================================
     // 2. 状態管理 & 操作ベース同期
@@ -1090,8 +1108,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const localData = await db.get(currentFileId);
             loadStateFromObject(localData);
         }
-
-        initializePeer();
     }
     
     // =================================================================
