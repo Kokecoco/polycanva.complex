@@ -955,9 +955,12 @@ document.addEventListener('DOMContentLoaded', () => {
             inputTarget.addEventListener('blur', finishEditing);
             inputTarget.addEventListener('keydown', e => { if (e.key === 'Enter' && inputTarget.tagName !== 'TEXTAREA') inputTarget.blur(); });
         }
-        element.querySelector('.resizer').addEventListener('mousedown', (e) => {
-            initResize(e, element);
-        });
+        const resizer = element.querySelector('.resizer');
+        if (resizer) {
+            resizer.addEventListener('mousedown', (e) => {
+                initResize(e, element);
+            });
+        }
     }
     
     // =================================================================
