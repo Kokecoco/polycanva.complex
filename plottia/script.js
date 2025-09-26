@@ -1,6 +1,52 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- 要素取得 ---
     const fileManagerOverlay = document.getElementById('file-manager-overlay'); const fileList = document.getElementById('file-list'); const createNewFileBtn = document.getElementById('create-new-file-btn'); const mainApp = document.getElementById('main-app'); const backToFilesBtn = document.getElementById('back-to-files-btn'); const board = document.getElementById('board'); let svgLayer = document.getElementById('connector-svg-layer'); const addNoteBtn = document.getElementById('add-note-btn'); const addSectionBtn = document.getElementById('add-section-btn'); const addTextBtn = document.getElementById('add-text-btn'); const addShapeSquareBtn = document.getElementById('add-shape-square-btn'); const addShapeCircleBtn = document.getElementById('add-shape-circle-btn'); const addShapeDiamondBtn = document.getElementById('add-shape-diamond-btn'); const addConnectorBtn = document.getElementById('add-connector-btn'); const penToolBtn = document.getElementById('pen-tool-btn'); const eraserToolBtn = document.getElementById('eraser-tool-btn'); const exportBtn = document.getElementById('export-btn'); const imageExportBtn = document.getElementById('image-export-btn'); const importBtn = document.getElementById('import-btn'); const importFileInput = document.getElementById('import-file-input'); const cleanupBtn = document.getElementById('cleanup-btn'); const zoomDisplay = document.getElementById('zoom-display'); const zoomResetBtn = document.getElementById('zoom-reset-btn'); const undoBtn = document.getElementById('undo-btn'); const redoBtn = document.getElementById('redo-btn'); const darkModeBtn = document.getElementById('dark-mode-btn'); const minimap = document.getElementById('minimap'); const guideContainer = document.getElementById('guide-container');
+    // 共有ボタンをツールバーに追加
+    let shareBtn = document.getElementById('share-btn');
+    if (!shareBtn) {
+        shareBtn = document.createElement('button');
+        shareBtn.id = 'share-btn';
+        shareBtn.title = '共有モードを有効化(オンライン同期)';
+        shareBtn.innerHTML = '<i class="fas fa-share-alt"></i> 共有';
+        const toolbar = document.getElementById('toolbar');
+        if (toolbar) {
+            // ダークモードボタンの直前に挿入
+            const darkModeBtn = document.getElementById('dark-mode-btn');
+            if (darkModeBtn) {
+                toolbar.insertBefore(shareBtn, darkModeBtn);
+            } else {
+                toolbar.appendChild(shareBtn);
+            }
+        }
+    }
+
+    // オンライン共有モードの管理
+    let isOnlineMode = false;
+    let channel = null;
+    function enableOnlineMode() {
+        if (isOnlineMode) return;
+        isOnlineMode = true;
+        channel = new BroadcastChannel('plottia_sync_channel');
+        channel.onmessage = (event) => {
+            const { type, fileId, state } = event.data;
+            // もし他のタブで更新されたファイルが、このタブで開いているファイルと同じなら
+            if (type === 'update' && fileId === currentFileId) {
+                if (state) {
+                    loadStateFromObject(state);
+                }
+            }
+        };
+        // ボタンの見た目を変える
+        if (shareBtn) {
+            shareBtn.classList.add('active');
+            shareBtn.innerHTML = '<i class="fas fa-share-alt"></i> 共有中';
+            shareBtn.disabled = true;
+        }
+    }
+    // 共有ボタンでオンラインモード有効化
+    if (shareBtn) {
+        shareBtn.addEventListener('click', enableOnlineMode);
+    }
     const strokeWidthSlider = document.getElementById('stroke-width-slider'); const strokeWidthDisplay = document.getElementById('stroke-width-display');
     
     const drawingLayer = document.getElementById('drawing-layer');
@@ -91,18 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-const channel = new BroadcastChannel('plottia_sync_channel');
 
-channel.onmessage = (event) => {
-    const { type, fileId, state } = event.data;
-
-    // もし他のタブで更新されたファイルが、このタブで開いているファイルと同じなら
-    if (type === 'update' && fileId === currentFileId) {
-        console.log('別タブからの更新を検知しました。ボードを同期します。');
-        // 履歴スタックを操作せずに、直接ボードの状態を読み込む
-        loadStateFromObject(state);
-    }
-};
+// (BroadcastChannelはオンラインモード時のみ初期化)
 
     const noteColors = ['#ffc', '#cfc', '#ccf', '#fcc', '#cff', '#fff']; const sectionColors = ['rgba(255, 0, 0, 0.1)', 'rgba(0, 0, 255, 0.1)', 'rgba(0, 128, 0, 0.1)', 'rgba(128, 0, 128, 0.1)', 'rgba(255, 165, 0, 0.1)', 'rgba(220, 220, 220, 0.5)']; const shapeColors = ['#ffffff', '#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
 
@@ -206,11 +242,10 @@ channel.onmessage = (event) => {
                 metadata[fileIndex].lastModified = Date.now();
                 saveFileMetadata(metadata);
             }
-            
             const currentState = getCurrentState();
             await db.set(currentFileId, currentState);
-            
-            if (channel) {
+            // オンラインモード時のみ同期
+            if (isOnlineMode && channel) {
                 channel.postMessage({
                     type: 'update',
                     fileId: currentFileId,
