@@ -1479,6 +1479,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await saveState();
         alert('全データを消去しました。');
     });
+
     
     // Image file input handler
     imageFileInput.addEventListener('change', e => {
