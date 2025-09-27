@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const addShapeCircleBtn = document.getElementById('add-shape-circle-btn');
     const addShapeDiamondBtn = document.getElementById('add-shape-diamond-btn');
     const addConnectorBtn = document.getElementById('add-connector-btn');
+    const addImageBtn = document.getElementById('add-image-btn');
+    const imageFileInput = document.getElementById('image-file-input');
     const penToolBtn = document.getElementById('pen-tool-btn');
     const eraserToolBtn = document.getElementById('eraser-tool-btn');
     const exportBtn = document.getElementById('export-btn');
@@ -301,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function findElementData(id) {
-        const collections = ['notes', 'sections', 'textBoxes', 'shapes', 'paths', 'connectors'];
+        const collections = ['notes', 'sections', 'textBoxes', 'shapes', 'paths', 'connectors', 'images'];
         for (const key of collections) {
             if (boardData[key]) {
                 const item = boardData[key].find(i => i.id === id);
@@ -315,7 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
         NOTE: createNote,
         SECTION: createSection,
         TEXTBOX: createTextBox,
-        SHAPE: createShape
+        SHAPE: createShape,
+        IMAGE: createImage
     };
 
     function applyOperation(op) {
@@ -330,6 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'CREATE_SECTION':
             case 'CREATE_TEXTBOX':
             case 'CREATE_SHAPE':
+            case 'CREATE_IMAGE':
                 // --- FIXED: Correct pluralization for textBoxes ---
                 let collectionName = `${op.type.split('_')[1].toLowerCase()}s`;
                 if (collectionName === 'textboxs') {
@@ -611,7 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function createEmptyBoard() {
         return {
-            notes: [], sections: [], textBoxes: [], shapes: [], paths: [], connectors: [],
+            notes: [], sections: [], textBoxes: [], shapes: [], paths: [], connectors: [], images: [],
             board: { panX: 0, panY: 0, scale: 1.0, noteZIndexCounter: 1000, sectionZIndexCounter: 1 },
             version: Date.now()
         };
@@ -624,6 +628,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadStateFromObject(state) {
         boardData = state || createEmptyBoard();
         
+        // Ensure images array exists for backwards compatibility
+        if (!boardData.images) {
+            boardData.images = [];
+        }
+        
         objectContainer.innerHTML = '';
         sectionContainer.innerHTML = '';
         svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
@@ -632,6 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
         boardData.notes?.forEach(data => createNote(data, true));
         boardData.textBoxes?.forEach(data => createTextBox(data, true));
         boardData.shapes?.forEach(data => createShape(data, true));
+        boardData.images?.forEach(data => createImage(data, true));
 
         myUndoStack = [];
         myRedoStack = [];
@@ -769,6 +779,54 @@ document.addEventListener('DOMContentLoaded', () => {
         addCommonEventListeners(shape, data);
     }
 
+    function createImage(data, fromOperation = false) {
+        if (!fromOperation) {
+            // This should not be called directly without file input
+            return;
+        }
+        
+        if (document.getElementById(data.id)) return;
+
+        const imageWrapper = document.createElement('div');
+        imageWrapper.className = 'image-wrapper';
+        imageWrapper.id = data.id;
+        imageWrapper.style.cssText = `position: absolute; left: ${data.x}px; top: ${data.y}px; width: ${data.width}px; height: ${data.height}px; z-index: ${data.zIndex}; cursor: move;`;
+        imageWrapper.classList.toggle('locked', data.isLocked);
+
+        const img = document.createElement('img');
+        img.src = data.src;
+        img.style.cssText = 'width: 100%; height: 100%; object-fit: contain; display: block;';
+        img.draggable = false;
+
+        imageWrapper.innerHTML = `
+            <div class="delete-btn" title="削除" style="position: absolute; top: -30px; right: 0; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); display: none; padding: 5px; border-radius: 5px; align-items: center; justify-content: center; width: 20px; height: 20px; cursor: pointer; color: rgba(0,0,0,.5);">
+                <i class="fas fa-times"></i>
+            </div>
+            <div class="lock-btn" title="ロック" style="position: absolute; top: -30px; right: 35px; background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); display: none; padding: 5px; border-radius: 5px; align-items: center; justify-content: center; width: 20px; height: 20px; cursor: pointer; color: rgba(0,0,0,.5);">
+                <i class="fas ${data.isLocked ? 'fa-lock' : 'fa-unlock'}"></i>
+            </div>
+            <div class="resizer" style="position: absolute; width: 15px; height: 15px; right: 0; bottom: 0; cursor: se-resize; background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,.3) 50%);"></div>
+        `;
+        
+        imageWrapper.appendChild(img);
+        
+        // Show/hide controls on hover
+        imageWrapper.addEventListener('mouseenter', () => {
+            if (!imageWrapper.classList.contains('locked')) {
+                imageWrapper.querySelector('.delete-btn').style.display = 'flex';
+                imageWrapper.querySelector('.lock-btn').style.display = 'flex';
+            }
+        });
+        
+        imageWrapper.addEventListener('mouseleave', () => {
+            imageWrapper.querySelector('.delete-btn').style.display = 'none';
+            imageWrapper.querySelector('.lock-btn').style.display = 'none';
+        });
+
+        objectContainer.appendChild(imageWrapper);
+        addCommonEventListeners(imageWrapper, data);
+    }
+
     function initResize(e, element) {
         if (element.classList.contains('locked')) return;
         e.preventDefault();
@@ -826,7 +884,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const allDraggableItems = [
                     ...boardData.notes,
                     ...boardData.textBoxes,
-                    ...boardData.shapes
+                    ...boardData.shapes,
+                    ...boardData.images
                 ];
                 allDraggableItems.forEach(item => {
                     const itemEl = document.getElementById(item.id);
@@ -1194,7 +1253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateMinimap() {
         minimap.innerHTML = '';
         const minimapScale = minimap.offsetWidth / board.offsetWidth;
-        const allElements = [...(boardData.notes || []), ...(boardData.sections || []), ...(boardData.textBoxes || []), ...(boardData.shapes || [])];
+        const allElements = [...(boardData.notes || []), ...(boardData.sections || []), ...(boardData.textBoxes || []), ...(boardData.shapes || []), ...(boardData.images || [])];
         
         allElements.forEach(item => {
             const el = document.getElementById(item.id);
@@ -1283,6 +1342,41 @@ document.addEventListener('DOMContentLoaded', () => {
     addShapeSquareBtn.addEventListener('click', () => createShape({ type: 'square' }));
     addShapeCircleBtn.addEventListener('click', () => createShape({ type: 'circle' }));
     addShapeDiamondBtn.addEventListener('click', () => createShape({ type: 'diamond' }));
+    addImageBtn.addEventListener('click', () => imageFileInput.click());
+    
+    // Image file input handler
+    imageFileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    // Create image data
+                    const pos = getNewElementPosition();
+                    const payload = {
+                        id: `image-${myPeerId}-${Date.now()}`,
+                        x: parseFloat(pos.x.replace('px', '')),
+                        y: parseFloat(pos.y.replace('px', '')),
+                        width: Math.min(img.width, 300),
+                        height: Math.min(img.height, 300),
+                        zIndex: boardData.board.noteZIndexCounter++,
+                        src: event.target.result,
+                        isLocked: false
+                    };
+                    generateOperation('CREATE_IMAGE', payload, {
+                        original: { type: 'CREATE_IMAGE', payload },
+                        inverse: { type: 'DELETE_ELEMENTS', payload: { elementIds: [payload.id] } }
+                    });
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+        // Clear the input so the same file can be selected again
+        e.target.value = '';
+    });
+    
     backToFilesBtn.addEventListener('click', showFileManager);
     createNewFileBtn.addEventListener('click', createNewFile);
     undoBtn.addEventListener('click', undo);
