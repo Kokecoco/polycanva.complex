@@ -1319,6 +1319,45 @@ document.addEventListener('DOMContentLoaded', () => {
             top: -boardData.board.panY * minimapScale
         };
         viewport.style.cssText = `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`;
+
+        // --- ミニマップのビューポートをドラッグで移動 ---
+        viewport.onmousedown = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const startLeft = viewRect.left;
+            const startTop = viewRect.top;
+            function onMove(ev) {
+                const dx = ev.clientX - startX;
+                const dy = ev.clientY - startY;
+                // 新しいpanX, panYを計算
+                const newLeft = startLeft + dx;
+                const newTop = startTop + dy;
+                boardData.board.panX = -newLeft / minimapScale;
+                boardData.board.panY = -newTop / minimapScale;
+                applyTransform();
+            }
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                saveState();
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        };
+        // --- ミニマップクリックで移動 ---
+        minimap.onclick = function(e) {
+            if (e.target.id === 'minimap-viewport') return;
+            const rect = minimap.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            // 中心がクリック位置に来るようにpanを調整
+            boardData.board.panX = -(x / minimapScale - window.innerWidth / 2 / boardData.board.scale);
+            boardData.board.panY = -(y / minimapScale - window.innerHeight / 2 / boardData.board.scale);
+            applyTransform();
+            saveState();
+        };
     }
 
     function getEventCoordinates(e) { if (e.touches && e.touches.length > 0) { return { x: e.touches[0].clientX, y: e.touches[0].clientY }; } return { x: e.clientX, y: e.clientY }; }
@@ -1373,6 +1412,25 @@ document.addEventListener('DOMContentLoaded', () => {
         boardData.board.panY = e.clientY - ((e.clientY - boardData.board.panY) / oldScale * newScale);
         applyTransform();
     }, { passive: false });
+
+    // --- 拡大率リセットボタン（中心維持） ---
+    zoomResetBtn.addEventListener('click', () => {
+        // 現在の表示中心を維持したままズームを100%にリセット
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        const oldScale = boardData.board.scale;
+        const newScale = 1.0;
+        // 現在の中心がボード座標でどこか
+        const boardCenterX = (centerX - boardData.board.panX) / oldScale;
+        const boardCenterY = (centerY - boardData.board.panY) / oldScale;
+        // 新しいpanX, panYを計算
+        boardData.board.scale = newScale;
+        boardData.board.panX = centerX - boardCenterX * newScale;
+        boardData.board.panY = centerY - boardCenterY * newScale;
+        applyTransform();
+        updateZoomDisplay();
+        saveState();
+    });
 
     // Button event listeners
     addNoteBtn.addEventListener('click', () => createNote());
