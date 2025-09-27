@@ -132,6 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // ソロモードからオンラインモードに切り替える場合、ホストになる
+        const urlHash = window.location.hash.substring(1);
+        const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
+        
+        // URLにホストIDが含まれていない場合（ソロモード）は、ホストになる予定として設定
+        if (!hostIdInUrl) {
+            isHost = true;
+        }
+
         alert('オンライン共有モードを開始します...');
         initializePeer();
     }
