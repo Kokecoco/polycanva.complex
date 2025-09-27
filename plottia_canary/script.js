@@ -232,13 +232,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Host applies locally and broadcasts to all clients
             applyOperation(operation);
             broadcast(data);
-        } else if (connections[hostPeerId] && connections[hostPeerId].open) {
+        } else if (hostPeerId && peer && connections[hostPeerId] && connections[hostPeerId].open) {
             // Client sends to host
             connections[hostPeerId].send(data);
-        } else {
+        } else if (hostPeerId && peer) {
+            // オンラインモード中のみ警告
             console.error("Host connection not available. Operation might be lost.");
             alert("ホストとの接続が切断されました。操作を同期できません。");
         }
+        // ソロモード時（hostPeerId/peer未設定）は何もしない
     }
     
     function handleReceivedData(data, fromPeerId) {
@@ -787,11 +789,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (document.getElementById(data.id)) return;
 
-        const imageWrapper = document.createElement('div');
-        imageWrapper.className = 'image-wrapper';
-        imageWrapper.id = data.id;
-        imageWrapper.style.cssText = `position: absolute; left: ${data.x}px; top: ${data.y}px; width: ${data.width}px; height: ${data.height}px; z-index: ${data.zIndex}; cursor: move;`;
-        imageWrapper.classList.toggle('locked', data.isLocked);
+    const imageWrapper = document.createElement('div');
+    imageWrapper.className = 'image-wrapper';
+    imageWrapper.id = data.id;
+    // Ensure px units for position and size
+    const left = (typeof data.x === 'number') ? `${data.x}px` : (data.x || '0px');
+    const top = (typeof data.y === 'number') ? `${data.y}px` : (data.y || '0px');
+    const width = (typeof data.width === 'number') ? `${data.width}px` : (data.width || '150px');
+    const height = (typeof data.height === 'number') ? `${data.height}px` : (data.height || '150px');
+    imageWrapper.style.cssText = `position: absolute; left: ${left}; top: ${top}; width: ${width}; height: ${height}; z-index: ${data.zIndex}; cursor: move;`;
+    imageWrapper.classList.toggle('locked', data.isLocked);
 
         const img = document.createElement('img');
         img.src = data.src;
@@ -865,22 +872,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     
     function addCommonEventListeners(element, data) {
+    // --- Shape selection and persistent controls ---
+    if (element.classList.contains('shape')) {
+        element.addEventListener('mousedown', e => {
+            // 既にロック・リサイズ・色ピッカー・テキスト編集なら無視
+            if (element.classList.contains('locked') || e.target.closest('.resizer, [contenteditable="true"], .color-picker')) return;
+            e.stopPropagation();
+            // すべてのshapeの選択解除
+            document.querySelectorAll('.shape.selected').forEach(s => s.classList.remove('selected'));
+            // このshapeを選択
+            element.classList.add('selected');
+        });
+    }
+
         // Dragging
         const header = element.querySelector('.note-header') || element.querySelector('.section-header') || element;
         header.addEventListener('mousedown', e => {
             if (element.classList.contains('locked') || e.target.closest('.resizer, [contenteditable="true"], .color-picker')) return;
             e.stopPropagation();
-            
+            // shapeなら選択状態に
+            if (element.classList.contains('shape')) {
+                document.querySelectorAll('.shape.selected').forEach(s => s.classList.remove('selected'));
+                element.classList.add('selected');
+            }
             const startZIndex = boardData.board.noteZIndexCounter++;
             let attachedElements = [];
-
-            // --- FIXED: LOGIC FOR SECTION DRAGGING ---
             if (element.classList.contains('section')) {
                 const sectionX = parseFloat(element.style.left);
                 const sectionY = parseFloat(element.style.top);
                 const sectionW = element.offsetWidth;
                 const sectionH = element.offsetHeight;
-
                 const allDraggableItems = [
                     ...boardData.notes,
                     ...boardData.textBoxes,
@@ -894,7 +915,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const itemY = parseFloat(item.y);
                     const itemW = itemEl.offsetWidth;
                     const itemH = itemEl.offsetHeight;
-
                     if (itemX >= sectionX && (itemX + itemW) <= (sectionX + sectionW) &&
                         itemY >= sectionY && (itemY + itemH) <= (sectionY + sectionH)) {
                         attachedElements.push({
@@ -906,8 +926,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
             }
-            // --- END FIX ---
-
             let lastPos = getEventCoordinates(e);
             const onPointerMove = ev => {
                 ev.preventDefault();
@@ -915,35 +933,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 const dx = (currentPos.x - lastPos.x) / boardData.board.scale;
                 const dy = (currentPos.y - lastPos.y) / boardData.board.scale;
                 lastPos = currentPos;
-
                 element.style.left = `${parseFloat(element.style.left) + dx}px`;
                 element.style.top = `${parseFloat(element.style.top) + dy}px`;
                 element.style.zIndex = startZIndex;
-
-                // --- FIXED: MOVE ATTACHED ELEMENTS ---
                 const newSectionX = parseFloat(element.style.left);
                 const newSectionY = parseFloat(element.style.top);
                 attachedElements.forEach(att => {
                     att.element.style.left = `${newSectionX + att.offsetX}px`;
                     att.element.style.top = `${newSectionY + att.offsetY}px`;
                 });
-                // --- END FIX ---
-
                 drawAllConnectors();
             };
             const onPointerUp = () => {
                 document.body.classList.remove('is-dragging');
                 document.removeEventListener('mousemove', onPointerMove);
                 document.removeEventListener('mouseup', onPointerUp);
-
-                // --- FIXED: GENERATE PAYLOAD FOR ALL MOVED ELEMENTS ---
                 const elementsToMove = [{
                     id: element.id,
                     x: element.style.left,
                     y: element.style.top,
                     zIndex: startZIndex
                 }];
-
                 attachedElements.forEach(att => {
                     elementsToMove.push({
                         id: att.id,
@@ -952,14 +962,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         zIndex: att.element.style.zIndex
                     });
                 });
-
                 generateOperation('MOVE_ELEMENTS', { elements: elementsToMove });
-                // --- END FIX ---
             };
             document.body.classList.add('is-dragging');
             document.addEventListener('mousemove', onPointerMove);
             document.addEventListener('mouseup', onPointerUp);
         });
+    // --- Deselect all shapes when clicking outside any shape ---
+    if (!window._plottiaShapeDeselectorAdded) {
+        document.addEventListener('mousedown', function shapeDeselector(e) {
+            if (!e.target.closest('.shape')) {
+                document.querySelectorAll('.shape.selected').forEach(s => s.classList.remove('selected'));
+            }
+        });
+        window._plottiaShapeDeselectorAdded = true;
+    }
 
         // Deleting
         element.querySelector('.delete-btn')?.addEventListener('click', e => {
@@ -1040,33 +1057,55 @@ document.addEventListener('DOMContentLoaded', () => {
 
         generateOperation('START_DRAW', newPathData);
         drawingBuffer.push(getCanvasCoordinates(e));
-        
+
+        let drawing = true;
+        // 軽量化: 近い点は間引く
+        function maybeAddPoint(ev) {
+            const pt = getCanvasCoordinates(ev);
+            const last = drawingBuffer[drawingBuffer.length - 1];
+            if (!last || Math.abs(pt.x - last.x) > 1 || Math.abs(pt.y - last.y) > 1) {
+                drawingBuffer.push(pt);
+            }
+        }
+
         const onPointerMove = ev => {
             ev.preventDefault();
-            drawingBuffer.push(getCanvasCoordinates(ev));
+            maybeAddPoint(ev);
         };
         const onPointerUp = () => {
-            clearInterval(drawingInterval);
-            drawingInterval = null;
+            drawing = false;
             if (drawingBuffer.length > 0) {
-                 generateOperation('APPEND_POINTS', { pathId: pathId, points: [...drawingBuffer] });
-                 drawingBuffer = [];
+                generateOperation('APPEND_POINTS', { pathId: pathId, points: [...drawingBuffer] });
+                drawingBuffer = [];
             }
             generateOperation('END_DRAW', { pathId: pathId });
-
             document.removeEventListener('mousemove', onPointerMove);
             document.removeEventListener('mouseup', onPointerUp);
             document.removeEventListener('touchmove', onPointerMove);
             document.removeEventListener('touchend', onPointerUp);
         };
 
+        // requestAnimationFrameで描画
+        function drawLoop() {
+            if (!drawing) return;
+            redrawCanvas();
+            requestAnimationFrame(drawLoop);
+        }
+        requestAnimationFrame(drawLoop);
+
+        // バッファ送信は200msごと
         drawingInterval = setInterval(() => {
+            if (!drawing) {
+                clearInterval(drawingInterval);
+                drawingInterval = null;
+                return;
+            }
             if (drawingBuffer.length > 0) {
                 generateOperation('APPEND_POINTS', { pathId: pathId, points: [...drawingBuffer] });
                 drawingBuffer = [];
             }
-        }, DRAWING_CHUNK_INTERVAL);
-        
+        }, 200);
+
         document.addEventListener('mousemove', onPointerMove);
         document.addEventListener('mouseup', onPointerUp);
         document.addEventListener('touchmove', onPointerMove, { passive: false });
@@ -1343,6 +1382,104 @@ document.addEventListener('DOMContentLoaded', () => {
     addShapeCircleBtn.addEventListener('click', () => createShape({ type: 'circle' }));
     addShapeDiamondBtn.addEventListener('click', () => createShape({ type: 'diamond' }));
     addImageBtn.addEventListener('click', () => imageFileInput.click());
+    // --- 画像エクスポート（PNG保存） ---
+    imageExportBtn.addEventListener('click', () => {
+        // board全体をcanvasに描画し、画像として保存
+        html2canvas(board, {
+            backgroundColor: null,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            scale: 2 // 高解像度で保存
+        }).then(canvas => {
+            const link = document.createElement('a');
+            link.download = 'plottia_board.png';
+            link.href = canvas.toDataURL('image/png');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }).catch(e => {
+            alert('画像のエクスポートに失敗しました: ' + e.message);
+        });
+    });
+
+    // --- Plottia形式でエクスポート ---
+    exportBtn.addEventListener('click', async () => {
+        const state = getCurrentState();
+        // 画像データをbase64で埋め込む
+        if (state.images && state.images.length > 0) {
+            for (let img of state.images) {
+                if (img.src && img.src.startsWith('blob:')) {
+                    try {
+                        const response = await fetch(img.src);
+                        const blob = await response.blob();
+                        img.src = await new Promise(res => {
+                            const reader = new FileReader();
+                            reader.onload = () => res(reader.result);
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch (e) {
+                        img.src = '';
+                    }
+                }
+            }
+        }
+        const json = JSON.stringify(state);
+        const blob = new Blob([json], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.download = 'plottia_board.plottia';
+        link.href = URL.createObjectURL(blob);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    });
+
+    // --- Plottia形式でインポート ---
+    importBtn.addEventListener('click', () => {
+        importFileInput.value = '';
+        importFileInput.click();
+    });
+    importFileInput.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const state = JSON.parse(text);
+            // 画像srcがbase64の場合はそのまま、blob:の場合は無視
+            if (state.images && state.images.length > 0) {
+                for (let img of state.images) {
+                    if (img.src && img.src.startsWith('blob:')) {
+                        img.src = '';
+                    }
+                }
+            }
+            loadStateFromObject(state);
+            saveState();
+            alert('ファイルを復元しました。');
+        } catch (err) {
+            alert('ファイルの読み込みに失敗しました: ' + err.message);
+        }
+    });
+
+    // --- ゴミ箱ボタン（全データ消去） ---
+    cleanupBtn.addEventListener('click', async () => {
+        if (!confirm('本当に全てのデータを消去しますか？この操作は元に戻せません。')) return;
+        // boardDataを初期化
+        boardData = createEmptyBoard();
+        // 表示もリセット
+        objectContainer.innerHTML = '';
+        sectionContainer.innerHTML = '';
+        svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
+        redrawCanvas();
+        applyTransform();
+        myUndoStack = [];
+        myRedoStack = [];
+        updateUndoRedoButtons();
+        await saveState();
+        alert('全データを消去しました。');
+    });
+
     
     // Image file input handler
     imageFileInput.addEventListener('change', e => {
