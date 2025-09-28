@@ -116,8 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.drawImage(img, 0, 0, width, height);
                 
                 // Convert to compressed data URL
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-                
+                const isPng = file.type === 'image/png';
+                const outputType = isPng ? 'image/png' : 'image/jpeg';
+                const outputQuality = isPng ? 1 : quality;
+                const compressedDataUrl = canvas.toDataURL(outputType, outputQuality);
+
                 console.log(`Image compressed: ${file.size} bytes -> ${Math.round(compressedDataUrl.length * 0.75)} bytes`);
                 resolve(compressedDataUrl);
             };
