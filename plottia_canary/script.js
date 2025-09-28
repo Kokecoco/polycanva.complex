@@ -154,11 +154,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function joinRoom() {
+
         const urlHash = window.location.hash.substring(1);
         const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
 
-        // Ensure we are on the correct file
-        if (currentFileId !== fileIdFromUrl) {
+        // オンライン時のみfileIdをチェック。ソロモード（URLにIDなし）は何もしない。
+        if (fileIdFromUrl && currentFileId && currentFileId !== fileIdFromUrl) {
             console.warn("URL fileId does not match currentFileId. Re-opening file.");
             openFile(fileIdFromUrl);
             return;
