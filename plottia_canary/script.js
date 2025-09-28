@@ -113,10 +113,10 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('PeerJS error:', err);
             // Don't show modal for common 'peer-unavailable' error.
             if (err.type !== 'peer-unavailable') {
-                showErrorModal(`接続エラーが発生しました: ${err.type}。ページをリロードしてみてください。`);
+                showGuestConnectionStatus(`接続エラーが発生しました: ${err.type}。ページをリロードしてみてください。`, 'error');
             } else {
-                alert("ホストに接続できませんでした。URLが正しいか確認してください。");
-                showFileManager();
+                showGuestConnectionStatus("ホストに接続できませんでした。URLが正しいか確認してください。", 'error');
+                setTimeout(() => showFileManager(), 3000);
             }
         });
     }
@@ -199,6 +199,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 connectedUsers[conn.peer] = { id: conn.peer };
                 broadcast({ type: 'user-joined', payload: { id: conn.peer, users: connectedUsers } });
                 updateUserListUI();
+                
+                // Show success message to host
+                showGuestConnectionStatus(`ゲスト ${conn.peer.substring(0, 8)}... が参加しました`, 'success');
+            } else {
+                // Show success message to guest
+                showGuestConnectionStatus('ホストに接続しました！', 'success');
             }
         });
         
@@ -206,6 +212,14 @@ document.addEventListener('DOMContentLoaded', () => {
         conn.on('close', () => handleDisconnect(conn.peer));
         conn.on('error', err => {
             console.error('Connection error with ' + conn.peer + ':', err);
+            
+            // Show error message
+            if (isHost) {
+                showGuestConnectionStatus(`ゲストとの接続でエラーが発生しました: ${err.type}`, 'error');
+            } else {
+                showGuestConnectionStatus(`ホストとの接続でエラーが発生しました: ${err.type}`, 'error');
+            }
+            
             handleDisconnect(conn.peer);
         });
     }
@@ -216,13 +230,14 @@ document.addEventListener('DOMContentLoaded', () => {
         delete connectedUsers[peerId];
 
         if (peerId === hostPeerId) {
-            alert('ホストとの接続が切れました。ファイルマネージャーに戻ります。');
-            showFileManager();
+            showGuestConnectionStatus('ホストとの接続が切れました。ファイルマネージャーに戻ります。', 'error');
+            setTimeout(() => showFileManager(), 2000);
             return;
         }
         
         if (isHost) {
-             broadcast({ type: 'user-left', payload: { id: peerId, users: connectedUsers } });
+            broadcast({ type: 'user-left', payload: { id: peerId, users: connectedUsers } });
+            showGuestConnectionStatus(`ゲスト ${peerId.substring(0, 8)}... が退出しました`, 'info');
         }
         updateUserListUI();
     }
@@ -261,6 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 connectedUsers[myPeerId] = { id: myPeerId };
                 updateUserListUI();
                 handleOfflineConflict(data.payload.boardData);
+                
+                // Show success message for guest when receiving initial state
+                if (!isHost) {
+                    showGuestConnectionStatus('ホストから初期データを受信しました', 'success');
+                }
                 break;
             case 'operation':
                 if (isHost) {
@@ -1213,6 +1233,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (hostIdInUrl) {
             console.log("Joining as a guest. Waiting for host data.");
             loadStateFromObject(createEmptyBoard());
+            
+            // Initialize peer connection for guest
+            if (!peer || peer.destroyed) {
+                console.log("Initializing PeerJS for guest connection");
+                initializePeer();
+            }
         } else {
             // Otherwise, we are the host or working solo. Load our local data.
             console.log("Opening as host/solo. Loading from local DB.");
@@ -1616,14 +1642,90 @@ document.addEventListener('DOMContentLoaded', () => {
         const urlHash = window.location.hash.substring(1);
         const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
         
-        if (fileIdFromUrl && getFileMetadata().some(f => f.id === fileIdFromUrl)) {
+        // Check if this is a guest invitation URL (has both fileId and hostId)
+        if (fileIdFromUrl && hostIdInUrl) {
+            console.log('Detected invitation URL - connecting as guest');
+            showGuestConnectionStatus('ホストに接続中...', 'connecting');
+            
+            // Open file for guest mode (will initialize peer connection)
             openFile(fileIdFromUrl);
-        } else {
-            showFileManager();
+        } 
+        // Check if file exists locally
+        else if (fileIdFromUrl && getFileMetadata().some(f => f.id === fileIdFromUrl)) {
+            openFile(fileIdFromUrl);
+        } 
+        // No valid file, show file manager
+        else {
+            // If there was a fileId but it doesn't exist locally and no hostId, show error
+            if (fileIdFromUrl && !hostIdInUrl) {
+                showGuestConnectionStatus('指定されたファイルが見つかりません。', 'error');
+                setTimeout(() => showFileManager(), 3000);
+            } else {
+                showFileManager();
+            }
         }
     }
     
     initializeApp();
+
+    // =================================================================
+    // ゲスト接続状態表示
+    // =================================================================
+    function showGuestConnectionStatus(message, type = 'info') {
+        // Remove existing status messages
+        const existingStatus = document.getElementById('guest-connection-status');
+        if (existingStatus) {
+            existingStatus.remove();
+        }
+
+        // Create status element
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'guest-connection-status';
+        statusDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            z-index: 10000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            max-width: 400px;
+            text-align: center;
+        `;
+
+        // Set background color based on type
+        switch (type) {
+            case 'connecting':
+                statusDiv.style.backgroundColor = '#007bff';
+                statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + message;
+                break;
+            case 'success':
+                statusDiv.style.backgroundColor = '#28a745';
+                statusDiv.innerHTML = '<i class="fas fa-check"></i> ' + message;
+                break;
+            case 'error':
+                statusDiv.style.backgroundColor = '#dc3545';
+                statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + message;
+                break;
+            default:
+                statusDiv.style.backgroundColor = '#6c757d';
+                statusDiv.innerHTML = '<i class="fas fa-info-circle"></i> ' + message;
+        }
+
+        document.body.appendChild(statusDiv);
+
+        // Auto-remove success messages after 3 seconds
+        if (type === 'success') {
+            setTimeout(() => {
+                if (statusDiv.parentNode) {
+                    statusDiv.remove();
+                }
+            }, 3000);
+        }
+    }
 
     // =================================================================
     // グローバルエラーハンドリング
