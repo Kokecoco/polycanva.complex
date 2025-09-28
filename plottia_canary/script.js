@@ -87,7 +87,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // =================================================================
     // 画像圧縮ユーティリティ
-    // =================================================================
+    /**
+     * Create a scaled, compressed data URL from an image File, preserving aspect ratio.
+     *
+     * Scales the image to fit within maxWidth × maxHeight while preserving aspect ratio,
+     * and encodes it as a data URL. PNG files are preserved as PNG (lossless); other
+     * image types are encoded as JPEG using the provided quality.
+     *
+     * @param {File} file - Image file to compress.
+     * @param {number} [maxWidth=800] - Maximum output width in pixels.
+     * @param {number} [maxHeight=600] - Maximum output height in pixels.
+     * @param {number} [quality=0.8] - JPEG quality between 0 and 1 (ignored for PNG).
+     * @returns {Promise<string>} A promise that resolves to the compressed image as a data URL.
+     */
     function compressImage(file, maxWidth = 800, maxHeight = 600, quality = 0.8) {
         return new Promise((resolve) => {
             const canvas = document.createElement('canvas');
@@ -131,6 +143,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * Reduce point density in drawing paths by removing near-collinear intermediate points.
+     *
+     * Filters each path's `points` array, preserving the first and last points and removing intermediate points whose perpendicular deviation from the line between their neighbors is 2 pixels or less.
+     * @param {Array<{points: Array<{x: number, y: number}>, [key: string]: any}>} paths - Array of path objects; each must include a `points` array of `{x, y}` points.
+     * @returns {Array<{points: Array<{x: number, y: number}>, [key: string]: any}>} The same array shape with each path's `points` reduced by removing redundant points.
+     */
     function compressDrawingData(paths) {
         // Remove redundant points in drawing paths to reduce data size
         return paths.map(path => ({
@@ -216,6 +235,11 @@ document.addEventListener('DOMContentLoaded', () => {
         initializePeer();
     }
 
+    /**
+     * Copies the current board's invite URL (file ID + host peer ID) to the clipboard and notifies the user.
+     *
+     * If both `currentFileId` and `hostPeerId` are available, builds a URL using the current origin and pathname with a hash of the form `#<fileId>/<hostPeerId>`, writes it to the clipboard, and shows an alert on success or failure. Does nothing if either identifier is missing.
+     */
     function copyShareLink() {
         if (!currentFileId || !hostPeerId) return;
         const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
@@ -224,6 +248,13 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => alert('リンクのコピーに失敗しました。'));
     }
 
+    /**
+     * Generate and display a QR code for the current file's share URL.
+     *
+     * Constructs an invite URL from `currentFileId` and `hostPeerId`, renders a QR code into `qrCodeCanvas`,
+     * and reveals `qrCodeOverlay`. If `currentFileId` or `hostPeerId` are not available the function is a no-op.
+     * On QR generation failure an alert is shown.
+     */
     function showQRCode() {
         if (!currentFileId || !hostPeerId) return;
         const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
@@ -246,6 +277,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    /**
+     * Download the current QR code canvas as a PNG file named with the active file id.
+     *
+     * Triggers a download of qrCodeCanvas content saved as "plottia-invitation-<currentFileId>.png".
+     */
     function downloadQRCode() {
         const link = document.createElement('a');
         link.download = `plottia-invitation-${currentFileId}.png`;
@@ -253,7 +289,16 @@ document.addEventListener('DOMContentLoaded', () => {
         link.click();
     }
 
-    function joinRoom() {
+    /**
+ * Initialize participation in a collaboration room from the current URL hash, acting as host or guest.
+ *
+ * Parses the URL hash for a file ID and optional host peer ID. If the hash refers to a different file than
+ * the currently open file, re-opens the referenced file. If a host ID is present and differs from this
+ * client's peer ID, switches to guest mode and attempts to connect to the host (shows an error if the
+ * connection cannot be established within ~15 seconds). If no external host ID is present, assumes the
+ * host role for the current file, sets the room URL, and initializes host state and the connected-user list.
+ */
+function joinRoom() {
 
         const urlHash = window.location.hash.substring(1);
         const [fileIdFromUrl, hostIdInUrl] = urlHash.split('/');
