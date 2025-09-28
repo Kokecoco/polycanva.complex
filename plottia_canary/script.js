@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
     drawingLayer.width = 5000;
     drawingLayer.height = 5000;
     const shareRoomBtn = document.getElementById('share-room-btn');
+    const qrCodeBtn = document.getElementById('qr-code-btn');
     const userList = document.getElementById('user-list');
     const conflictOverlay = document.getElementById('conflict-overlay');
     const conflictOverwriteBtn = document.getElementById('conflict-resolve-overwrite');
@@ -48,6 +49,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorDetails = document.getElementById('error-details');
     const copyErrorBtn = document.getElementById('copy-error-btn');
     const closeErrorBtn = document.getElementById('close-error-btn');
+    // QR Code modal elements
+    const qrCodeOverlay = document.getElementById('qr-code-overlay');
+    const qrCodeCanvas = document.getElementById('qr-code-canvas');
+    const copyQrLinkBtn = document.getElementById('copy-qr-link-btn');
+    const downloadQrBtn = document.getElementById('download-qr-btn');
+    const closeQrBtn = document.getElementById('close-qr-btn');
 
 
     // --- グローバル変数 ---
@@ -77,6 +84,67 @@ document.addEventListener('DOMContentLoaded', () => {
     const noteColors = ['#ffc', '#cfc', '#ccf', '#fcc', '#cff', '#fff'];
     const sectionColors = ['rgba(255, 0, 0, 0.1)', 'rgba(0, 0, 255, 0.1)', 'rgba(0, 128, 0, 0.1)', 'rgba(128, 0, 128, 0.1)', 'rgba(255, 165, 0, 0.1)', 'rgba(220, 220, 220, 0.5)'];
     const shapeColors = ['#ffffff', '#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff'];
+
+    // =================================================================
+    // 画像圧縮ユーティリティ
+    // =================================================================
+    function compressImage(file, maxWidth = 800, maxHeight = 600, quality = 0.8) {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            
+            img.onload = function() {
+                // Calculate new dimensions while maintaining aspect ratio
+                let { width, height } = img;
+                
+                if (width > maxWidth || height > maxHeight) {
+                    const aspectRatio = width / height;
+                    if (width > height) {
+                        width = maxWidth;
+                        height = maxWidth / aspectRatio;
+                    } else {
+                        height = maxHeight;
+                        width = maxHeight * aspectRatio;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Draw compressed image
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Convert to compressed data URL
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+                
+                console.log(`Image compressed: ${file.size} bytes -> ${Math.round(compressedDataUrl.length * 0.75)} bytes`);
+                resolve(compressedDataUrl);
+            };
+            
+            const reader = new FileReader();
+            reader.onload = (e) => img.src = e.target.result;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function compressDrawingData(paths) {
+        // Remove redundant points in drawing paths to reduce data size
+        return paths.map(path => ({
+            ...path,
+            points: path.points.filter((point, index) => {
+                if (index === 0 || index === path.points.length - 1) return true;
+                const prev = path.points[index - 1];
+                const next = path.points[index + 1];
+                
+                // Remove points that are very close to the line between prev and next
+                const distance = Math.abs((next.y - prev.y) * point.x - (next.x - prev.x) * point.y + next.x * prev.y - next.y * prev.x) /
+                    Math.sqrt((next.y - prev.y) ** 2 + (next.x - prev.x) ** 2);
+                
+                return distance > 2; // Keep points that deviate more than 2 pixels
+            })
+        }));
+    }
 
     // =================================================================
     // 1. PeerJS & コラボレーション管理
@@ -153,6 +221,35 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => alert('リンクのコピーに失敗しました。'));
     }
 
+    function showQRCode() {
+        if (!currentFileId || !hostPeerId) return;
+        const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
+        
+        // Generate QR code
+        QRCode.toCanvas(qrCodeCanvas, url, {
+            width: 256,
+            margin: 2,
+            color: {
+                dark: '#000000',
+                light: '#FFFFFF'
+            }
+        }, function (error) {
+            if (error) {
+                console.error('QR Code generation failed:', error);
+                alert('QRコードの生成に失敗しました。');
+                return;
+            }
+            qrCodeOverlay.classList.remove('hidden');
+        });
+    }
+
+    function downloadQRCode() {
+        const link = document.createElement('a');
+        link.download = `plottia-invitation-${currentFileId}.png`;
+        link.href = qrCodeCanvas.toDataURL();
+        link.click();
+    }
+
     function joinRoom() {
 
         const urlHash = window.location.hash.substring(1);
@@ -195,6 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
             window.history.replaceState(null, null, newUrl);
             connectedUsers = { [myPeerId]: { id: myPeerId } };
             updateUserListUI();
+            
+            // Show QR code button for hosts
+            qrCodeBtn.classList.remove('hidden');
         }
     }
 
@@ -329,6 +429,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     shareRoomBtn.addEventListener('click', startOnlineMode);
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Q for QR code (when hosting)
+        if ((e.ctrlKey || e.metaKey) && e.key === 'q' && isHost && !qrCodeBtn.classList.contains('hidden')) {
+            e.preventDefault();
+            showQRCode();
+        }
+        
+        // Ctrl/Cmd + Shift + C for copy share link (when hosting)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C' && isHost && hostPeerId) {
+            e.preventDefault();
+            copyShareLink();
+        }
+    });
     
     // =================================================================
     // 2. 状態管理 & 操作ベース同期
@@ -1121,7 +1236,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const onPointerUp = () => {
             drawing = false;
             if (drawingBuffer.length > 0) {
-                generateOperation('APPEND_POINTS', { pathId: pathId, points: [...drawingBuffer] });
+                // Compress drawing data before sending
+                const compressedPoints = drawingBuffer.filter((point, index) => {
+                    if (index === 0 || index === drawingBuffer.length - 1) return true;
+                    const prev = drawingBuffer[index - 1];
+                    const next = drawingBuffer[index + 1];
+                    if (!prev || !next) return true;
+                    
+                    // Keep points that deviate significantly from the line
+                    const distance = Math.abs((next.y - prev.y) * point.x - (next.x - prev.x) * point.y + next.x * prev.y - next.y * prev.x) /
+                        Math.sqrt((next.y - prev.y) ** 2 + (next.x - prev.x) ** 2);
+                    
+                    return distance > 1.5; // More aggressive compression for network
+                });
+                
+                generateOperation('APPEND_POINTS', { pathId: pathId, points: compressedPoints });
                 drawingBuffer = [];
             }
             generateOperation('END_DRAW', { pathId: pathId });
@@ -1147,7 +1276,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (drawingBuffer.length > 0) {
-                generateOperation('APPEND_POINTS', { pathId: pathId, points: [...drawingBuffer] });
+                // Apply light compression for real-time drawing
+                const compressedPoints = drawingBuffer.filter((point, index) => {
+                    if (index === 0 || index === drawingBuffer.length - 1) return true;
+                    if (index % 2 === 0) return true; // Keep every other point for real-time
+                    return false;
+                });
+                
+                generateOperation('APPEND_POINTS', { pathId: pathId, points: compressedPoints });
                 drawingBuffer = [];
             }
         }, 200);
@@ -1598,11 +1734,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     
     // Image file input handler
-    imageFileInput.addEventListener('change', e => {
+    imageFileInput.addEventListener('change', async e => {
         const file = e.target.files[0];
         if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = function(event) {
+            try {
+                // Show loading message for large images
+                if (file.size > 500000) { // 500KB
+                    showGuestConnectionStatus('画像を圧縮しています...', 'info');
+                }
+                
+                // Compress image for better performance
+                const compressedDataUrl = await compressImage(file);
+                
                 const img = new Image();
                 img.onload = function() {
                     // Create image data
@@ -1614,17 +1757,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         width: Math.min(img.width, 300),
                         height: Math.min(img.height, 300),
                         zIndex: boardData.board.noteZIndexCounter++,
-                        src: event.target.result,
+                        src: compressedDataUrl,
                         isLocked: false
                     };
                     generateOperation('CREATE_IMAGE', payload, {
                         original: { type: 'CREATE_IMAGE', payload },
                         inverse: { type: 'DELETE_ELEMENTS', payload: { elementIds: [payload.id] } }
                     });
+                    
+                    // Hide loading message
+                    const statusDiv = document.getElementById('guest-connection-status');
+                    if (statusDiv) statusDiv.remove();
                 };
-                img.src = event.target.result;
-            };
-            reader.readAsDataURL(file);
+                img.src = compressedDataUrl;
+            } catch (error) {
+                console.error('Image compression failed:', error);
+                alert('画像の処理中にエラーが発生しました。');
+            }
         }
         // Clear the input so the same file can be selected again
         e.target.value = '';
@@ -1705,14 +1854,14 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDiv.id = 'guest-connection-status';
         statusDiv.style.cssText = `
             position: fixed;
-            top: 20px;
+            top: 80px;
             left: 50%;
             transform: translateX(-50%);
             padding: 12px 24px;
             border-radius: 8px;
             color: white;
             font-weight: bold;
-            z-index: 10000;
+            z-index: 50000;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             max-width: 400px;
             text-align: center;
@@ -1770,6 +1919,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     closeErrorBtn.addEventListener('click', () => {
         errorOverlay.classList.add('hidden');
+    });
+
+    // QR Code event listeners
+    qrCodeBtn.addEventListener('click', showQRCode);
+    copyQrLinkBtn.addEventListener('click', () => {
+        if (!currentFileId || !hostPeerId) return;
+        const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
+        navigator.clipboard.writeText(url)
+            .then(() => {
+                copyQrLinkBtn.innerHTML = '<i class="fas fa-check"></i> コピーしました';
+                setTimeout(() => { copyQrLinkBtn.innerHTML = '<i class="fas fa-copy"></i> リンクをコピー'; }, 2000);
+            })
+            .catch(() => alert('リンクのコピーに失敗しました。'));
+    });
+    downloadQrBtn.addEventListener('click', downloadQRCode);
+    closeQrBtn.addEventListener('click', () => {
+        qrCodeOverlay.classList.add('hidden');
     });
 
     window.onerror = function(message, source, lineno, colno, error) {

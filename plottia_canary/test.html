@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plottia Test - UI Improvements</title>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; background: #f0f0f0; }
+        .toolbar { position: fixed; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 10px; align-items: center; }
+        .toolbar button { padding: 10px 15px; background: #333; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .toolbar button:hover { background: #555; }
+        .hidden { display: none !important; }
+        
+        /* Guest connection status */
+        #guest-connection-status {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            z-index: 50000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            max-width: 400px;
+            text-align: center;
+        }
+        
+        /* QR Code Modal */
+        #qr-code-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 25000;
+        }
+        
+        #qr-code-modal {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            max-width: 400px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+        
+        #qr-code-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .qr-actions {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .qr-actions button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        #copy-qr-link-btn { background: #007bff; color: white; }
+        #download-qr-btn { background: #28a745; color: white; }
+        #close-qr-btn { background: #6c757d; color: white; }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button id="share-btn">🔗 共有</button>
+        <button id="qr-btn" class="hidden">📱 QR</button>
+        <button id="test-guest-msg">Test Guest Message</button>
+        <button id="test-compression">Test Compression</button>
+    </div>
+    
+    <!-- QR Code Modal -->
+    <div id="qr-code-overlay" class="hidden">
+        <div id="qr-code-modal">
+            <h2>📱 招待リンクのQRコード</h2>
+            <div id="qr-code-container">
+                <canvas id="qr-code-canvas" width="200" height="200"></canvas>
+            </div>
+            <p>このQRコードをスキャンして招待リンクにアクセスできます</p>
+            <div class="qr-actions">
+                <button id="copy-qr-link-btn">📋 リンクをコピー</button>
+                <button id="download-qr-btn">💾 QRコードを保存</button>
+                <button id="close-qr-btn">閉じる</button>
+            </div>
+        </div>
+    </div>
+    
+    <div style="margin-top: 100px; padding: 20px;">
+        <h1>Plottia UI Improvements Test</h1>
+        <p>This page demonstrates the new UI improvements:</p>
+        <ul>
+            <li>QR Code modal with higher z-index</li>
+            <li>Guest connection messages with proper positioning (z-index: 50000)</li>
+            <li>Image compression functionality</li>
+            <li>Better user experience</li>
+        </ul>
+        
+        <h2>Test Actions:</h2>
+        <p>1. Click "Test Guest Message" to see the connection status positioning</p>
+        <p>2. Click "🔗 共有" to simulate starting sharing</p>
+        <p>3. Click "📱 QR" to show the QR code modal</p>
+        <p>4. Click "Test Compression" to test image compression</p>
+    </div>
+
+    <script>
+        // Simple QR code generation without external library
+        function generateSimpleQR(text) {
+            const canvas = document.getElementById('qr-code-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 200, 200);
+            
+            // Draw a simple pattern representing QR code
+            ctx.fillStyle = 'black';
+            for (let i = 0; i < 20; i++) {
+                for (let j = 0; j < 20; j++) {
+                    if ((i + j + text.length) % 3 === 0) {
+                        ctx.fillRect(i * 10, j * 10, 8, 8);
+                    }
+                }
+            }
+            
+            // Add text in center
+            ctx.fillStyle = 'white';
+            ctx.fillRect(50, 90, 100, 20);
+            ctx.fillStyle = 'black';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('QR Code', 100, 103);
+        }
+        
+        function showGuestConnectionStatus(message, type = 'info') {
+            // Remove existing status messages
+            const existingStatus = document.getElementById('guest-connection-status');
+            if (existingStatus) {
+                existingStatus.remove();
+            }
+
+            // Create status element
+            const statusDiv = document.createElement('div');
+            statusDiv.id = 'guest-connection-status';
+            
+            // Set background color based on type
+            switch (type) {
+                case 'connecting':
+                    statusDiv.style.backgroundColor = '#007bff';
+                    statusDiv.innerHTML = '🔄 ' + message;
+                    break;
+                case 'success':
+                    statusDiv.style.backgroundColor = '#28a745';
+                    statusDiv.innerHTML = '✅ ' + message;
+                    break;
+                case 'error':
+                    statusDiv.style.backgroundColor = '#dc3545';
+                    statusDiv.innerHTML = '⚠️ ' + message;
+                    break;
+                default:
+                    statusDiv.style.backgroundColor = '#6c757d';
+                    statusDiv.innerHTML = 'ℹ️ ' + message;
+            }
+
+            document.body.appendChild(statusDiv);
+
+            // Auto-remove success messages after 3 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    if (statusDiv.parentNode) {
+                        statusDiv.remove();
+                    }
+                }, 3000);
+            }
+        }
+        
+        function compressImage(file, maxWidth = 800, maxHeight = 600, quality = 0.8) {
+            return new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                
+                img.onload = function() {
+                    // Calculate new dimensions while maintaining aspect ratio
+                    let { width, height } = img;
+                    
+                    if (width > maxWidth || height > maxHeight) {
+                        const aspectRatio = width / height;
+                        if (width > height) {
+                            width = maxWidth;
+                            height = maxWidth / aspectRatio;
+                        } else {
+                            height = maxHeight;
+                            width = maxHeight * aspectRatio;
+                        }
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    // Draw compressed image
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Convert to compressed data URL
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+                    
+                    console.log(`Image compressed: ${file.size} bytes -> ${Math.round(compressedDataUrl.length * 0.75)} bytes`);
+                    resolve(compressedDataUrl);
+                };
+                
+                const reader = new FileReader();
+                reader.onload = (e) => img.src = e.target.result;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        // Event listeners
+        document.getElementById('share-btn').addEventListener('click', () => {
+            showGuestConnectionStatus('オンライン共有モードを開始しました', 'success');
+            document.getElementById('qr-btn').classList.remove('hidden');
+        });
+        
+        document.getElementById('qr-btn').addEventListener('click', () => {
+            const testUrl = 'http://localhost:8000#test-file/test-host';
+            generateSimpleQR(testUrl);
+            document.getElementById('qr-code-overlay').classList.remove('hidden');
+        });
+        
+        document.getElementById('test-guest-msg').addEventListener('click', () => {
+            const messages = [
+                { text: 'ホストに接続中...', type: 'connecting' },
+                { text: 'ホストに接続しました！', type: 'success' },
+                { text: 'ホストが見つかりません', type: 'error' },
+                { text: 'ゲストが参加しました', type: 'info' }
+            ];
+            const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+            showGuestConnectionStatus(randomMsg.text, randomMsg.type);
+        });
+        
+        document.getElementById('test-compression').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    showGuestConnectionStatus('画像を圧縮しています...', 'info');
+                    const compressed = await compressImage(file);
+                    showGuestConnectionStatus('画像が圧縮されました！', 'success');
+                    console.log('Compressed image data:', compressed.substring(0, 100) + '...');
+                }
+            };
+            input.click();
+        });
+        
+        document.getElementById('copy-qr-link-btn').addEventListener('click', () => {
+            const testUrl = 'http://localhost:8000#test-file/test-host';
+            navigator.clipboard.writeText(testUrl).then(() => {
+                alert('リンクをクリップボードにコピーしました！');
+            });
+        });
+        
+        document.getElementById('download-qr-btn').addEventListener('click', () => {
+            const canvas = document.getElementById('qr-code-canvas');
+            const link = document.createElement('a');
+            link.download = 'plottia-invitation-qr.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+        
+        document.getElementById('close-qr-btn').addEventListener('click', () => {
+            document.getElementById('qr-code-overlay').classList.add('hidden');
+        });
+        
+        // Show initial message
+        setTimeout(() => {
+            showGuestConnectionStatus('UI改善のテストページにようこそ！', 'info');
+        }, 1000);
+    </script>
+</body>
+</html>
