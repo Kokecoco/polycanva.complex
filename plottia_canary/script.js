@@ -296,9 +296,19 @@ document.addEventListener('DOMContentLoaded', () => {
             connectedUsers = { [myPeerId]: { id: myPeerId } };
             updateUserListUI();
             
-            // Show QR code button for hosts
-            qrCodeBtn.classList.remove('hidden');
-        }
+function showFileManager() {
+    if (peer && !peer.destroyed) peer.destroy();
+    peer = null;
+
+    // Reset host state and hide QR UI when returning to file manager
+    hostPeerId = null;
+    isHost = false;
+    qrCodeBtn.classList.add('hidden');
+    qrCodeOverlay.classList.add('hidden');
+
+    currentFileId = null;
+    // …rest of showFileManager…
+}
     }
 
     function setupConnection(conn) {
