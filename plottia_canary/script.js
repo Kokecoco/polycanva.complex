@@ -171,6 +171,22 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Attempting to connect to host:', hostPeerId);
             const conn = peer.connect(hostIdInUrl, { reliable: true });
             setupConnection(conn);
+            
+            // Set a timeout for connection attempts
+            const connectionTimeout = setTimeout(() => {
+                if (!connections[hostIdInUrl] || !connections[hostIdInUrl].open) {
+                    console.log('Connection timeout - host may be offline');
+                    showGuestConnectionStatus('ホストが見つかりません。ホストがオンラインか確認してください。', 'error');
+                    setTimeout(() => showFileManager(), 5000);
+                }
+            }, 15000); // 15 second timeout
+            
+            // Clear timeout if connection succeeds
+            if (conn) {
+                conn.on('open', () => {
+                    clearTimeout(connectionTimeout);
+                });
+            }
         } else {
             hostPeerId = myPeerId;
             isHost = true;
@@ -1158,6 +1174,12 @@ document.addEventListener('DOMContentLoaded', () => {
         fileManagerOverlay.classList.remove('hidden');
         mainApp.classList.add('hidden');
         window.history.replaceState(null, null, window.location.pathname);
+        
+        // Clear any existing status messages when returning to file manager
+        const existingStatus = document.getElementById('guest-connection-status');
+        if (existingStatus) {
+            existingStatus.remove();
+        }
         
         const metadata = getFileMetadata();
         metadata.sort((a, b) => b.lastModified - a.lastModified);
