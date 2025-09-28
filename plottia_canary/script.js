@@ -233,6 +233,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (peer && !peer.destroyed) {
       if (isHost) {
         copyShareLink();
+        qrCodeBtn.classList.remove("hidden");
       } else {
         alert("すでにゲストとして接続中です。");
       }
@@ -248,8 +249,10 @@ document.addEventListener("DOMContentLoaded", () => {
       isHost = true;
     }
 
-    alert("オンライン共有モードを開始します...");
-    initializePeer();
+  alert("オンライン共有モードを開始します...");
+  initializePeer();
+  // ホスト時はQRコードボタンを表示
+  qrCodeBtn.classList.remove("hidden");
   }
 
   function copyShareLink() {
@@ -264,30 +267,54 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function showQRCode() {
     if (!currentFileId || !hostPeerId) return;
-    const url =
-      `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
+    const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
 
-    // Generate QR code
-    QRCode.toCanvas(
-      qrCodeCanvas,
-      url,
-      {
+    // qrcodejs（window.QRCode）を使って一時的なdivに生成し、canvasへ転写
+    // 既存のcanvasをクリア
+    const ctx = qrCodeCanvas.getContext("2d");
+    ctx.clearRect(0, 0, qrCodeCanvas.width, qrCodeCanvas.height);
+
+    const tempDiv = document.createElement("div");
+    tempDiv.style.display = "none";
+    document.body.appendChild(tempDiv);
+    try {
+      const qr = new window.QRCode(tempDiv, {
+        text: url,
         width: 256,
-        margin: 2,
-        color: {
-          dark: "#000000",
-          light: "#FFFFFF",
-        },
-      },
-      function (error) {
-        if (error) {
-          console.error("QR Code generation failed:", error);
-          alert("QRコードの生成に失敗しました。");
-          return;
+        height: 256,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: window.QRCode.CorrectLevel.H
+      });
+      // 画像が生成されるまで待つ
+      setTimeout(() => {
+        const img = tempDiv.querySelector("img") || tempDiv.querySelector("canvas");
+        if (img) {
+          // img要素の場合はcanvasに描画
+          if (img.tagName === "IMG") {
+            const image = new window.Image();
+            image.onload = function () {
+              qrCodeCanvas.width = 256;
+              qrCodeCanvas.height = 256;
+              ctx.clearRect(0, 0, 256, 256);
+              ctx.drawImage(image, 0, 0, 256, 256);
+            };
+            image.src = img.src;
+          } else if (img.tagName === "CANVAS") {
+            qrCodeCanvas.width = 256;
+            qrCodeCanvas.height = 256;
+            ctx.clearRect(0, 0, 256, 256);
+            ctx.drawImage(img, 0, 0, 256, 256);
+          }
         }
-        qrCodeOverlay.classList.remove("hidden");
-      },
-    );
+        document.body.removeChild(tempDiv);
+      }, 100);
+    } catch (e) {
+      document.body.removeChild(tempDiv);
+      alert("QRコードの生成に失敗しました");
+    }
+    // モーダルを開く
+    qrCodeOverlay.classList.remove("hidden");
   }
 
   function downloadQRCode() {
@@ -510,6 +537,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateUserListUI() {
+    document.getElementById("user-list-label").textContent = "接続中:";
     userList.innerHTML = "";
     Object.keys(connectedUsers)
       .sort()
