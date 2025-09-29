@@ -301,7 +301,26 @@ document.addEventListener('DOMContentLoaded', () => {
     function drawAllConnectors() { if(!svgLayer) return; svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`; connectors.forEach(conn => { const startPoint = getElementCenter(conn.startId); const endPoint = getElementCenter(conn.endId); if (startPoint && endPoint) { const line = document.createElementNS('http://www.w3.org/2000/svg', 'line'); line.setAttribute('x1', startPoint.x); line.setAttribute('y1', startPoint.y); line.setAttribute('x2', endPoint.x); line.setAttribute('y2', endPoint.y); line.setAttribute('class', 'connector-line'); line.dataset.id = conn.id; svgLayer.appendChild(line); line.addEventListener('mousedown', e => { e.stopPropagation(); clearSelection(); selectedElement = { type: 'connector', id: conn.id }; document.querySelectorAll('.connector-line').forEach(l=>l.classList.remove('selected')); line.classList.add('selected'); }); } }); }
     function applyTransform() { board.style.transform = `translate(${boardState.panX}px, ${boardState.panY}px) scale(${boardState.scale})`; updateZoomDisplay(); drawAllConnectors(); updateMinimap(); }
     function updateZoomDisplay() { zoomDisplay.textContent = `${Math.round(boardState.scale * 100)}%`; }
-    function parseMarkdown(text) { let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/-(.*?)-/g, '<del>$1</del>'); html = html.split('\n').map(line => line.startsWith('* ') ? `<li>${line.substring(2)}</li>` : line).join('\n'); html = html.replace(/<li>(.*?)<\/li>/g, '<ul><li>$1</li></ul>').replace(/<\/ul>\n<ul>/g, ''); return html.replace(/\n/g, '<br>'); }
+    function parseLinks(text) {
+        // Convert URLs to clickable links
+        return text.replace(/(https?:\/\/[^\s<]+|www\.[^\s<]+)/g, (match) => {
+            const url = match.startsWith('www.') ? `http://${match}` : match;
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+        });
+    }
+
+    function parseMarkdown(text) { 
+        let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                      .replace(/-(.*?)-/g, '<del>$1</del>'); 
+        
+        // Apply link parsing
+        html = parseLinks(html);
+        
+        html = html.split('\n').map(line => line.startsWith('* ') ? `<li>${line.substring(2)}</li>` : line).join('\n'); 
+        html = html.replace(/<li>(.*?)<\/li>/g, '<ul><li>$1</li></ul>').replace(/<\/ul>\n<ul>/g, ''); 
+        return html.replace(/\n/g, '<br>'); 
+    }
     
     function handleConnectorClick(elementId) { if (!connectorStartId) { connectorStartId = elementId; selectElement(document.getElementById(elementId)); } else { if (connectorStartId !== elementId) { recordHistory(); const newConnector = { id: `conn-${Date.now()}`, startId: connectorStartId, endId: elementId }; connectors.push(newConnector); drawAllConnectors(); saveState(); } toggleConnectorMode(true); } }
     
@@ -388,6 +407,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         content.addEventListener('blur', () => {
             if (textBox.classList.contains('locked')) return;
+            
+            // Apply link parsing to text box content
+            const parsedContent = parseLinks(content.innerHTML);
+            if (parsedContent !== content.innerHTML) {
+                content.innerHTML = parsedContent;
+            }
+            
             if (originalContentOnFocus !== content.innerHTML) {
                 saveState();
             } else {
