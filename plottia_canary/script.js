@@ -581,6 +581,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Keyboard shortcuts
   document.addEventListener("keydown", (e) => {
+    // コネクタ選択時にDeleteキーで削除
+    if (
+      selectedElement &&
+      selectedElement.type === "connector" &&
+      (e.key === "Delete" || e.key === "Backspace")
+    ) {
+      e.preventDefault();
+      generateOperation("DELETE_CONNECTOR", { id: selectedElement.id });
+      selectedElement = null;
+      document.querySelectorAll(".connector-line").forEach((l) => l.classList.remove("selected"));
+      return;
+    }
+  
     // Ctrl/Cmd + Q for QR code (when hosting)
     if (
       (e.ctrlKey || e.metaKey) &&
@@ -2560,14 +2573,25 @@ document.addEventListener("DOMContentLoaded", () => {
       line.dataset.id = conn.id;
       svgLayer.appendChild(line);
       line.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-        clearSelection();
-        selectedElement = { type: "connector", id: conn.id };
-        document
-          .querySelectorAll(".connector-line")
-          .forEach((l) => l.classList.remove("selected"));
-        line.classList.add("selected");
+          e.stopPropagation();
+          // すでに選択中なら選択解除
+          if (selectedElement && selectedElement.type === "connector" && selectedElement.id === conn.id) {
+            selectedElement = null;
+            line.classList.remove("selected");
+          } else {
+            clearSelection();
+            selectedElement = { type: "connector", id: conn.id };
+            document.querySelectorAll(".connector-line").forEach((l) => l.classList.remove("selected"));
+            line.classList.add("selected");
+          }
       });
+        // 右クリックで削除
+        line.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          generateOperation("DELETE_CONNECTOR", { id: conn.id });
+          selectedElement = null;
+          document.querySelectorAll(".connector-line").forEach((l) => l.classList.remove("selected"));
+        });
     });
   }
 
@@ -2663,7 +2687,10 @@ document.addEventListener("DOMContentLoaded", () => {
     return { x: e.clientX, y: e.clientY };
   }
   function clearSelection() {
-    /* ... */
+    // 図形・テキスト・ノート・セクション・コネクタの選択解除
+    document.querySelectorAll(".shape.selected, .note.selected, .section.selected, .text-box.selected, .drawing.selected, .connector-line.selected")
+      .forEach((el) => el.classList.remove("selected"));
+    selectedElement = null;
   }
   function isDarkMode() {
     return document.body.classList.contains("dark-mode");
