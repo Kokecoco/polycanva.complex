@@ -106,6 +106,17 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
 
   // =================================================================
+  // Hyperlink parsing utility
+  // =================================================================
+  function parseLinks(text) {
+    // Convert URLs to clickable links
+    return text.replace(/(https?:\/\/[^\s<]+|www\.[^\s<]+)/g, (match) => {
+      const url = match.startsWith('www.') ? `http://${match}` : match;
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+    });
+  }
+
+  // =================================================================
   // 画像圧縮ユーティリティ
   // =================================================================
   function compressImage(file, maxWidth = 800, maxHeight = 600, quality = 0.8) {
@@ -695,12 +706,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (itemData && element) {
           itemData.content = op.payload.content;
           if (findResult.collection === "notes") {
-            element.querySelector(".note-view").innerHTML = op.payload.content
-              .replace(/\n/g, "<br>"); // Simple markdown-like
+            const processedContent = parseLinks(op.payload.content.replace(/\n/g, "<br>"));
+            element.querySelector(".note-view").innerHTML = processedContent;
             element.querySelector(".note-content").value = op.payload.content;
           } else if (findResult.collection === "textBoxes") {
-            element.querySelector(".text-content").innerHTML =
-              op.payload.content;
+            const processedContent = parseLinks(op.payload.content);
+            element.querySelector(".text-content").innerHTML = processedContent;
           } else if (findResult.collection === "shapes") {
             element.querySelector(".shape-label").innerHTML =
               op.payload.content;
@@ -1085,7 +1096,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ).join("")
     }</div><div class="lock-btn" title="ロック"><i class="fas ${
       data.isLocked ? "fa-lock" : "fa-unlock"
-    }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${data.content}</div><textarea class="note-content" style="display: none;">${data.content}</textarea></div><div class="resizer"></div>`;
+    }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${parseLinks(data.content)}</div><textarea class="note-content" style="display: none;">${data.content}</textarea></div><div class="resizer"></div>`;
     note.querySelector(".note-header").style.backgroundColor = data.color;
     note.querySelector(".note-body").style.backgroundColor = data.color;
     objectContainer.appendChild(note);
@@ -1155,7 +1166,7 @@ document.addEventListener("DOMContentLoaded", () => {
     textBox.classList.toggle("locked", data.isLocked);
 
     textBox.innerHTML = `<div class="text-content" contenteditable="${!data
-      .isLocked}">${data.content}</div><div class="lock-btn" title="ロック"><i class="fas ${
+      .isLocked}">${parseLinks(data.content)}</div><div class="lock-btn" title="ロック"><i class="fas ${
       data.isLocked ? "fa-lock" : "fa-unlock"
     }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`;
     objectContainer.appendChild(textBox);
