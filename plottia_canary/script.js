@@ -3,6 +3,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const fileManagerOverlay = document.getElementById("file-manager-overlay");
   const fileList = document.getElementById("file-list");
   const createNewFileBtn = document.getElementById("create-new-file-btn");
+  const createFromTemplateBtn = document.getElementById(
+    "create-from-template-btn",
+  );
+  const templateOverlay = document.getElementById("template-overlay");
+  const templateModal = document.getElementById("template-modal");
+  const builtinTemplatesTab = document.getElementById("builtin-templates-tab");
+  const customTemplatesTab = document.getElementById("custom-templates-tab");
+  const builtinTemplatesGrid = document.getElementById("builtin-templates");
+  const customTemplatesGrid = document.getElementById("custom-templates");
+  const closeTemplateBtn = document.getElementById("close-template-btn");
+  const saveTemplateBtn = document.getElementById("save-template-btn");
   const mainApp = document.getElementById("main-app");
   const backToFilesBtn = document.getElementById("back-to-files-btn");
   const board = document.getElementById("board");
@@ -111,7 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function parseLinks(text) {
     // Convert URLs to clickable links
     return text.replace(/(https?:\/\/[^\s<]+|www\.[^\s<]+)/g, (match) => {
-      const url = match.startsWith('www.') ? `http://${match}` : match;
+      const url = match.startsWith("www.") ? `http://${match}` : match;
       return `<a href="${url}" target="_blank" rel="noopener noreferrer">${match}</a>`;
     });
   }
@@ -154,7 +165,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         console.log(
           `Image compressed: ${file.size} bytes -> ${
-            Math.round(compressedDataUrl.length * 0.75)
+            Math.round(
+              compressedDataUrl.length * 0.75,
+            )
           } bytes`,
         );
         resolve(compressedDataUrl);
@@ -260,10 +273,10 @@ document.addEventListener("DOMContentLoaded", () => {
       isHost = true;
     }
 
-  alert("オンライン共有モードを開始します...");
-  initializePeer();
-  // ホスト時はQRコードボタンを表示
-  qrCodeBtn.classList.remove("hidden");
+    alert("オンライン共有モードを開始します...");
+    initializePeer();
+    // ホスト時はQRコードボタンを表示
+    qrCodeBtn.classList.remove("hidden");
   }
 
   function copyShareLink() {
@@ -278,7 +291,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function showQRCode() {
     if (!currentFileId || !hostPeerId) return;
-    const url = `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
+    const url =
+      `${window.location.origin}${window.location.pathname}#${currentFileId}/${hostPeerId}`;
 
     // qrcodejs（window.QRCode）を使って一時的なdivに生成し、canvasへ転写
     // 既存のcanvasをクリア
@@ -295,11 +309,12 @@ document.addEventListener("DOMContentLoaded", () => {
         height: 256,
         colorDark: "#000000",
         colorLight: "#ffffff",
-        correctLevel: window.QRCode.CorrectLevel.H
+        correctLevel: window.QRCode.CorrectLevel.H,
       });
       // 画像が生成されるまで待つ
       setTimeout(() => {
-        const img = tempDiv.querySelector("img") || tempDiv.querySelector("canvas");
+        const img = tempDiv.querySelector("img") ||
+          tempDiv.querySelector("canvas");
         if (img) {
           // img要素の場合はcanvasに描画
           if (img.tagName === "IMG") {
@@ -706,7 +721,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (itemData && element) {
           itemData.content = op.payload.content;
           if (findResult.collection === "notes") {
-            const processedContent = parseLinks(op.payload.content.replace(/\n/g, "<br>"));
+            const processedContent = parseLinks(
+              op.payload.content.replace(/\n/g, "<br>"),
+            );
             element.querySelector(".note-view").innerHTML = processedContent;
             element.querySelector(".note-content").value = op.payload.content;
           } else if (findResult.collection === "textBoxes") {
@@ -858,9 +875,15 @@ document.addEventListener("DOMContentLoaded", () => {
       const db = await this._getDB();
       return new Promise(async (resolve, reject) => {
         try {
-          const compressed = pako.deflate(JSON.stringify(value));
+          // Use compression if pako is available, otherwise store as JSON string
+          let dataToStore;
+          if (typeof pako !== "undefined") {
+            dataToStore = pako.deflate(JSON.stringify(value));
+          } else {
+            dataToStore = JSON.stringify(value);
+          }
           const transaction = db.transaction(this._storeName, "readwrite");
-          transaction.objectStore(this._storeName).put(compressed, key);
+          transaction.objectStore(this._storeName).put(dataToStore, key);
           transaction.oncomplete = () => resolve();
           transaction.onerror = (e) => reject("DB Set Error:", e.target.error);
         } catch (err) {
@@ -878,10 +901,17 @@ document.addEventListener("DOMContentLoaded", () => {
         request.onsuccess = (e) => {
           if (e.target.result) {
             try {
-              const decompressed = pako.inflate(e.target.result, {
-                to: "string",
-              });
-              resolve(JSON.parse(decompressed));
+              // Try to decompress if pako is available and data looks compressed
+              let jsonString;
+              if (
+                typeof pako !== "undefined" &&
+                e.target.result instanceof Uint8Array
+              ) {
+                jsonString = pako.inflate(e.target.result, { to: "string" });
+              } else {
+                jsonString = e.target.result;
+              }
+              resolve(JSON.parse(jsonString));
             } catch (err) {
               console.error(
                 `[IndexedDB] Failed to parse data for key "${key}". Data might be corrupted.`,
@@ -1007,6 +1037,430 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  // Built-in templates
+  function getBuiltInTemplates() {
+    return {
+      mindmap: {
+        name: "マインドマップ",
+        description: "アイデアを分類して整理できます",
+        icon: "fas fa-project-diagram",
+        data: {
+          notes: [
+            {
+              id: "central-topic",
+              x: "400px",
+              y: "300px",
+              width: "250px",
+              height: "150px",
+              content: "中心となる内容",
+              color: "#ffc",
+              zIndex: 1001,
+            },
+            {
+              id: "idea-1",
+              x: "150px",
+              y: "150px",
+              width: "180px",
+              height: "120px",
+              content: "アイデア1",
+              color: "#cfc",
+              zIndex: 1002,
+            },
+            {
+              id: "idea-2",
+              x: "700px",
+              y: "150px",
+              width: "180px",
+              height: "120px",
+              content: "アイデア2",
+              color: "#ccf",
+              zIndex: 1003,
+            },
+            {
+              id: "idea-3",
+              x: "150px",
+              y: "450px",
+              width: "180px",
+              height: "120px",
+              content: "アイデア3",
+              color: "#fcc",
+              zIndex: 1004,
+            },
+            {
+              id: "idea-4",
+              x: "700px",
+              y: "450px",
+              width: "180px",
+              height: "120px",
+              content: "アイデア4",
+              color: "#cff",
+              zIndex: 1005,
+            },
+          ],
+          sections: [],
+          textBoxes: [],
+          shapes: [],
+          paths: [],
+          connectors: [
+            { id: "conn-1", startId: "central-topic", endId: "idea-1" },
+            { id: "conn-2", startId: "central-topic", endId: "idea-2" },
+            { id: "conn-3", startId: "central-topic", endId: "idea-3" },
+            { id: "conn-4", startId: "central-topic", endId: "idea-4" },
+          ],
+          images: [],
+          board: {
+            panX: 0,
+            panY: 0,
+            scale: 1.0,
+            noteZIndexCounter: 1010,
+            sectionZIndexCounter: 1,
+          },
+          version: Date.now(),
+        },
+      },
+      kanban: {
+        name: "カンバンボード",
+        description: "タスクの進捗を整理できます",
+        icon: "fas fa-columns",
+        data: {
+          notes: [
+            {
+              id: "task-1",
+              x: "60px",
+              y: "120px",
+              width: "200px",
+              height: "100px",
+              content: "タスク1",
+              color: "#ffc",
+              zIndex: 1001,
+            },
+            {
+              id: "task-2",
+              x: "60px",
+              y: "280px",
+              width: "200px",
+              height: "100px",
+              content: "タスク2",
+              color: "#ffc",
+              zIndex: 1002,
+            },
+            {
+              id: "task-3",
+              x: "340px",
+              y: "121px",
+              width: "200px",
+              height: "100px",
+              content: "実行中のタスク",
+              color: "#cff",
+              zIndex: 1003,
+            },
+            {
+              id: "task-4",
+              x: "620px",
+              y: "120px",
+              width: "200px",
+              height: "100px",
+              content: "完了したタスク",
+              color: "#cfc",
+              zIndex: 1004,
+            },
+          ],
+          sections: [
+            {
+              id: "todo-section",
+              x: "40px",
+              y: "80px",
+              width: "250px",
+              height: "400px",
+              title: "To Do",
+              color: "rgba(255, 255, 0, 0.1)",
+              zIndex: 1,
+            },
+            {
+              id: "progress-section",
+              x: "320px",
+              y: "80px",
+              width: "250px",
+              height: "400px",
+              title: "実行中",
+              color: "rgba(0, 255, 255, 0.1)",
+              zIndex: 2,
+            },
+            {
+              id: "done-section",
+              x: "600px",
+              y: "80px",
+              width: "250px",
+              height: "400px",
+              title: "完了済み",
+              color: "rgba(0, 255, 0, 0.1)",
+              zIndex: 3,
+            },
+          ],
+          textBoxes: [],
+          shapes: [],
+          paths: [],
+          connectors: [],
+          images: [],
+          board: {
+            panX: 0,
+            panY: 0,
+            scale: 1.0,
+            noteZIndexCounter: 1010,
+            sectionZIndexCounter: 4,
+          },
+          version: Date.now(),
+        },
+      },
+      standup: {
+        name: "スタンドアップミーティング",
+        description: "進捗をチームで共有します。",
+        icon: "fas fa-users",
+        data: {
+          notes: [
+            {
+              id: "yesterday-note",
+              x: "80px",
+              y: "150px",
+              width: "220px",
+              height: "180px",
+              content: "昨日したこと",
+              color: "#cfc",
+              zIndex: 1001,
+            },
+            {
+              id: "today-note",
+              x: "340px",
+              y: "150px",
+              width: "220px",
+              height: "180px",
+              content: "今日行うこと",
+              color: "#ccf",
+              zIndex: 1002,
+            },
+            {
+              id: "blockers-note",
+              x: "600px",
+              y: "150px",
+              width: "220px",
+              height: "180px",
+              content: "障害となりえること",
+              color: "#fcc",
+              zIndex: 1003,
+            },
+          ],
+          sections: [],
+          textBoxes: [
+            {
+              id: "standup-title",
+              x: "400px",
+              y: "60px",
+              content: "スタンドアップミーティング",
+              zIndex: 1001,
+            },
+            {
+              id: "date-text",
+              x: "400px",
+              y: "90px",
+              content: new Date().toLocaleDateString(),
+              zIndex: 1002,
+            },
+          ],
+          shapes: [],
+          paths: [],
+          connectors: [],
+          images: [],
+          board: {
+            panX: 0,
+            panY: 0,
+            scale: 1.0,
+            noteZIndexCounter: 1010,
+            sectionZIndexCounter: 1,
+          },
+          version: Date.now(),
+        },
+      },
+      meeting: {
+        name: "会議アジェンダ",
+        description: "会議の内容をまとめて整理します",
+        icon: "fas fa-calendar-alt",
+        data: {
+          notes: [
+            {
+              id: "agenda-1",
+              x: "100px",
+              y: "180px",
+              width: "250px",
+              height: "120px",
+              content: "1. プロジェクトの進捗",
+              color: "#ffc",
+              zIndex: 1001,
+            },
+            {
+              id: "agenda-2",
+              x: "100px",
+              y: "320px",
+              width: "250px",
+              height: "120px",
+              content: "2. 予算のレビュー",
+              color: "#ffc",
+              zIndex: 1002,
+            },
+            {
+              id: "agenda-3",
+              x: "100px",
+              y: "460px",
+              width: "250px",
+              height: "120px",
+              content: "3. 次のステップ",
+              color: "#ffc",
+              zIndex: 1003,
+            },
+            {
+              id: "notes-area",
+              x: "400px",
+              y: "180px",
+              width: "350px",
+              height: "400px",
+              content: "議事録:\n\n• \n• \n• ",
+              color: "#cff",
+              zIndex: 1004,
+            },
+          ],
+          sections: [],
+          textBoxes: [
+            {
+              id: "meeting-title",
+              x: "300px",
+              y: "60px",
+              content: "会議アジェンダ - " + new Date().toLocaleDateString(),
+              zIndex: 1001,
+            },
+            {
+              id: "attendees",
+              x: "100px",
+              y: "120px",
+              content: "出席者: ",
+              zIndex: 1002,
+            },
+          ],
+          shapes: [],
+          paths: [],
+          connectors: [],
+          images: [],
+          board: {
+            panX: 0,
+            panY: 0,
+            scale: 1.0,
+            noteZIndexCounter: 1010,
+            sectionZIndexCounter: 1,
+          },
+          version: Date.now(),
+        },
+      },
+    };
+  }
+
+  // Template management functions
+  function getCustomTemplates() {
+    const templates = localStorage.getItem("plottia_custom_templates");
+    return templates ? JSON.parse(templates) : {};
+  }
+
+  function saveCustomTemplate(name, description, boardData) {
+    const templates = getCustomTemplates();
+    const templateId = `template_${Date.now()}`;
+    templates[templateId] = {
+      id: templateId,
+      name: name,
+      description: description,
+      created: Date.now(),
+      data: JSON.parse(JSON.stringify(boardData)), // Deep copy
+    };
+    localStorage.setItem("plottia_custom_templates", JSON.stringify(templates));
+    return templateId;
+  }
+
+  function deleteCustomTemplate(templateId) {
+    const templates = getCustomTemplates();
+    delete templates[templateId];
+    localStorage.setItem("plottia_custom_templates", JSON.stringify(templates));
+  }
+
+  function createBoardFromTemplate(templateData) {
+    // Create a deep copy of the template data and update timestamps
+    const boardData = JSON.parse(JSON.stringify(templateData));
+    boardData.version = Date.now();
+
+    // Generate new IDs for all elements to avoid conflicts
+    const idMap = {};
+
+    // Update note IDs
+    boardData.notes?.forEach((note) => {
+      const oldId = note.id;
+      const newId = `note_${Date.now()}_${
+        Math.random()
+          .toString(36)
+          .substr(2, 9)
+      }`;
+      idMap[oldId] = newId;
+      note.id = newId;
+    });
+
+    // Update section IDs
+    boardData.sections?.forEach((section) => {
+      const oldId = section.id;
+      const newId = `section_${Date.now()}_${
+        Math.random()
+          .toString(36)
+          .substr(2, 9)
+      }`;
+      idMap[oldId] = newId;
+      section.id = newId;
+    });
+
+    // Update textBox IDs
+    boardData.textBoxes?.forEach((textBox) => {
+      const oldId = textBox.id;
+      const newId = `textbox_${Date.now()}_${
+        Math.random()
+          .toString(36)
+          .substr(2, 9)
+      }`;
+      idMap[oldId] = newId;
+      textBox.id = newId;
+    });
+
+    // Update shape IDs
+    boardData.shapes?.forEach((shape) => {
+      const oldId = shape.id;
+      const newId = `shape_${Date.now()}_${
+        Math.random()
+          .toString(36)
+          .substr(2, 9)
+      }`;
+      idMap[oldId] = newId;
+      shape.id = newId;
+    });
+
+    // Update connector references
+    boardData.connectors?.forEach((connector) => {
+      if (idMap[connector.startId]) {
+        connector.startId = idMap[connector.startId];
+      }
+      if (idMap[connector.endId]) {
+        connector.endId = idMap[connector.endId];
+      }
+      connector.id = `connector_${Date.now()}_${
+        Math.random()
+          .toString(36)
+          .substr(2, 9)
+      }`;
+    });
+
+    return boardData;
+  }
+
   function getCurrentState() {
     return JSON.parse(JSON.stringify(boardData));
   }
@@ -1091,12 +1545,19 @@ document.addEventListener("DOMContentLoaded", () => {
     note.classList.toggle("locked", data.isLocked);
 
     note.innerHTML = `<div class="note-header"><div class="color-picker">${
-      noteColors.map((c) =>
-        `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`
-      ).join("")
+      noteColors
+        .map(
+          (c) =>
+            `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`,
+        )
+        .join("")
     }</div><div class="lock-btn" title="ロック"><i class="fas ${
       data.isLocked ? "fa-lock" : "fa-unlock"
-    }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${parseLinks(data.content)}</div><textarea class="note-content" style="display: none;">${data.content}</textarea></div><div class="resizer"></div>`;
+    }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div><div class="note-body"><div class="note-view">${
+      parseLinks(
+        data.content,
+      )
+    }</div><textarea class="note-content" style="display: none;">${data.content}</textarea></div><div class="resizer"></div>`;
     note.querySelector(".note-header").style.backgroundColor = data.color;
     note.querySelector(".note-body").style.backgroundColor = data.color;
     objectContainer.appendChild(note);
@@ -1131,9 +1592,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     section.innerHTML =
       `<div class="section-header"><div class="section-title">${data.content}</div><div class="section-controls"><div class="color-picker">${
-        sectionColors.map((c) =>
-          `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`
-        ).join("")
+        sectionColors
+          .map(
+            (c) =>
+              `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`,
+          )
+          .join("")
       }</div><div class="lock-btn" title="ロック"><i class="fas ${
         data.isLocked ? "fa-lock" : "fa-unlock"
       }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div></div></div><div class="resizer"></div>`;
@@ -1166,7 +1630,11 @@ document.addEventListener("DOMContentLoaded", () => {
     textBox.classList.toggle("locked", data.isLocked);
 
     textBox.innerHTML = `<div class="text-content" contenteditable="${!data
-      .isLocked}">${parseLinks(data.content)}</div><div class="lock-btn" title="ロック"><i class="fas ${
+      .isLocked}">${
+      parseLinks(
+        data.content,
+      )
+    }</div><div class="lock-btn" title="ロック"><i class="fas ${
       data.isLocked ? "fa-lock" : "fa-unlock"
     }"></i></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div>`;
     objectContainer.appendChild(textBox);
@@ -1204,9 +1672,12 @@ document.addEventListener("DOMContentLoaded", () => {
         .isLocked}">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas ${
         data.isLocked ? "fa-lock" : "fa-unlock"
       }"></i></div><div class="color-picker">${
-        shapeColors.map((c) =>
-          `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`
-        ).join("")
+        shapeColors
+          .map(
+            (c) =>
+              `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`,
+          )
+          .join("")
       }</div>`;
     shape.querySelector(".shape-visual").style.backgroundColor = data.color;
     objectContainer.appendChild(shape);
@@ -1731,6 +2202,145 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Template UI functions
+  function showTemplateModal() {
+    templateOverlay.classList.remove("hidden");
+    populateBuiltinTemplates();
+    populateCustomTemplates();
+  }
+
+  function hideTemplateModal() {
+    templateOverlay.classList.add("hidden");
+  }
+
+  function populateBuiltinTemplates() {
+    const templates = getBuiltInTemplates();
+    builtinTemplatesGrid.innerHTML = "";
+
+    Object.entries(templates).forEach(([key, template]) => {
+      const card = document.createElement("div");
+      card.className = "template-card";
+      card.innerHTML = `
+        <div class="template-icon">
+          <i class="${template.icon}"></i>
+        </div>
+        <div class="template-name">${template.name}</div>
+        <div class="template-description">${template.description}</div>
+      `;
+
+      card.addEventListener("click", () => {
+        createFileFromTemplate(template.name, template.data);
+      });
+
+      builtinTemplatesGrid.appendChild(card);
+    });
+  }
+
+  function populateCustomTemplates() {
+    const templates = getCustomTemplates();
+    customTemplatesGrid.innerHTML = "";
+
+    if (Object.keys(templates).length === 0) {
+      customTemplatesGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; color: #666; padding: 40px;">
+          <i class="fas fa-clipboard-list" style="font-size: 3em; margin-bottom: 20px; opacity: 0.3;"></i>
+          <p>カスタムテンプレートがありません</p>
+          <p style="font-size: 14px;">現在のボードを「テンプレートとして保存」して、<br>後で再利用できます</p>
+        </div>
+      `;
+      return;
+    }
+
+    Object.entries(templates).forEach(([key, template]) => {
+      const card = document.createElement("div");
+      card.className = "template-card";
+      card.innerHTML = `
+        <div class="template-icon">
+          <i class="fas fa-user"></i>
+        </div>
+        <div class="template-name">${template.name}</div>
+        <div class="template-description">${template.description}</div>
+        <div class="template-meta">
+          <span>作成日: ${
+        new Date(
+          template.created,
+        ).toLocaleDateString()
+      }</span>
+          <div class="template-actions">
+            <button onclick="deleteTemplateAndRefresh('${template.id}');" title="削除">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      `;
+
+      card.addEventListener("click", (e) => {
+        if (!e.target.closest(".template-actions")) {
+          createFileFromTemplate(template.name, template.data);
+        }
+      });
+
+      customTemplatesGrid.appendChild(card);
+    });
+  }
+
+  async function createFileFromTemplate(templateName, templateData) {
+    const name = prompt(
+      "新しいファイルの名前を入力してください:",
+      `${templateName} - ${new Date().toLocaleDateString()}`,
+    );
+    if (!name) return;
+
+    const metadata = getFileMetadata();
+    const newFile = {
+      id: `plottia_board_${Date.now()}`,
+      name: name,
+      lastModified: Date.now(),
+    };
+    metadata.push(newFile);
+    saveFileMetadata(metadata);
+
+    const boardData = createBoardFromTemplate(templateData);
+    await db.set(newFile.id, boardData);
+
+    hideTemplateModal();
+    openFile(newFile.id);
+  }
+
+  function showSaveTemplateDialog() {
+    const name = prompt(
+      "テンプレート名を入力してください:",
+      "新しいテンプレート",
+    );
+    if (!name) return;
+
+    const description = prompt(
+      "テンプレートの説明を入力してください (オプション):",
+      "",
+    );
+
+    try {
+      saveCustomTemplate(
+        name,
+        description || "カスタムテンプレート",
+        getCurrentState(),
+      );
+      alert("テンプレートを保存しました！");
+    } catch (error) {
+      alert("テンプレートの保存に失敗しました: " + error.message);
+    }
+  }
+
+  function deleteTemplateAndRefresh(templateId) {
+    if (confirm("このテンプレートを削除しますか？")) {
+      deleteCustomTemplate(templateId);
+      populateCustomTemplates();
+    }
+  }
+
+  // Make this function globally accessible
+  window.deleteTemplateAndRefresh = deleteTemplateAndRefresh;
+
   async function openFile(fileId) {
     currentFileId = fileId;
     fileManagerOverlay.classList.add("hidden");
@@ -2228,6 +2838,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
   backToFilesBtn.addEventListener("click", showFileManager);
   createNewFileBtn.addEventListener("click", createNewFile);
+  createFromTemplateBtn.addEventListener("click", showTemplateModal);
+  closeTemplateBtn.addEventListener("click", hideTemplateModal);
+  saveTemplateBtn.addEventListener("click", showSaveTemplateDialog);
+
+  // Close template modal when clicking outside
+  templateOverlay.addEventListener("click", (e) => {
+    if (e.target === templateOverlay) {
+      hideTemplateModal();
+    }
+  });
+
+  // Template tab switching
+  builtinTemplatesTab.addEventListener("click", () => {
+    builtinTemplatesTab.classList.add("active");
+    customTemplatesTab.classList.remove("active");
+    builtinTemplatesGrid.classList.remove("hidden");
+    customTemplatesGrid.classList.add("hidden");
+  });
+
+  customTemplatesTab.addEventListener("click", () => {
+    customTemplatesTab.classList.add("active");
+    builtinTemplatesTab.classList.remove("active");
+    customTemplatesGrid.classList.remove("hidden");
+    builtinTemplatesGrid.classList.add("hidden");
+  });
+
   undoBtn.addEventListener("click", undo);
   redoBtn.addEventListener("click", redo);
   darkModeBtn.addEventListener("click", () => {
@@ -2433,7 +3069,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let formattedMessage =
       "捕捉されなかったPromiseのエラーが発生しました。\n\n";
     if (event.reason instanceof Error) {
-      formattedMessage += "エラー名: " +
+      formattedMessage += "エラー名: " + 
         event.reason.name +
         "\n" +
         "メッセージ: " +
