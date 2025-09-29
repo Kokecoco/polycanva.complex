@@ -1782,6 +1782,33 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function addCommonEventListeners(element, data) {
+    // --- コネクタ作成用クリックイベント ---
+    element.addEventListener("mousedown", (e) => {
+      if (isConnectorMode && !data.isLocked) {
+        e.stopPropagation();
+        // 1つ目の図形を選択
+        if (!connectorStartId) {
+          connectorStartId = data.id;
+          element.classList.add("selected");
+        } else if (connectorStartId && connectorStartId !== data.id) {
+          // 2つ目の図形を選択したらコネクタ作成
+          const connectorId = `connector_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+          generateOperation("CREATE_CONNECTOR", {
+            id: connectorId,
+            startId: connectorStartId,
+            endId: data.id,
+            color: "#333",
+            label: "",
+          });
+          // 選択解除・モード解除
+          const prev = document.getElementById(connectorStartId);
+          if (prev) prev.classList.remove("selected");
+          connectorStartId = null;
+          isConnectorMode = false;
+          document.body.classList.remove("connector-mode");
+        }
+      }
+    });
     // --- Shape selection and persistent controls ---
     if (element.classList.contains("shape")) {
       element.addEventListener("mousedown", (e) => {
@@ -2433,30 +2460,114 @@ document.addEventListener("DOMContentLoaded", () => {
     svgLayer.innerHTML =
       `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`;
     boardData.connectors?.forEach((conn) => {
-      const startPoint = getElementCenter(conn.startId);
-      const endPoint = getElementCenter(conn.endId);
-      if (startPoint && endPoint) {
-        const line = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "line",
-        );
-        line.setAttribute("x1", startPoint.x);
-        line.setAttribute("y1", startPoint.y);
-        line.setAttribute("x2", endPoint.x);
-        line.setAttribute("y2", endPoint.y);
-        line.setAttribute("class", "connector-line");
-        line.dataset.id = conn.id;
-        svgLayer.appendChild(line);
-        line.addEventListener("mousedown", (e) => {
-          e.stopPropagation();
-          clearSelection();
-          selectedElement = { type: "connector", id: conn.id };
-          document
-            .querySelectorAll(".connector-line")
-            .forEach((l) => l.classList.remove("selected"));
-          line.classList.add("selected");
-        });
+      const startEl = document.getElementById(conn.startId);
+      const endEl = document.getElementById(conn.endId);
+      if (!startEl || !endEl) return;
+      // 各図形の中心
+      const startCenter = {
+        x: parseFloat(startEl.style.left) + startEl.offsetWidth / 2,
+        y: parseFloat(startEl.style.top) + startEl.offsetHeight / 2,
+      };
+      const endCenter = {
+        x: parseFloat(endEl.style.left) + endEl.offsetWidth / 2,
+        y: parseFloat(endEl.style.top) + endEl.offsetHeight / 2,
+      };
+      // 各図形の外接矩形
+      const startRect = {
+        left: parseFloat(startEl.style.left),
+        top: parseFloat(startEl.style.top),
+        right: parseFloat(startEl.style.left) + startEl.offsetWidth,
+        bottom: parseFloat(startEl.style.top) + startEl.offsetHeight,
+        width: startEl.offsetWidth,
+        height: startEl.offsetHeight,
+      };
+      const endRect = {
+        left: parseFloat(endEl.style.left),
+        top: parseFloat(endEl.style.top),
+        right: parseFloat(endEl.style.left) + endEl.offsetWidth,
+        bottom: parseFloat(endEl.style.top) + endEl.offsetHeight,
+        width: endEl.offsetWidth,
+        height: endEl.offsetHeight,
+      };
+      // 2つの中心を結ぶ直線と各矩形の外枠との交点を計算
+      function getIntersection(rect, from, to) {
+        // 4辺との交点を計算し、矩形内にあるもののうちfrom→to方向で最も近いものを返す
+        const lines = [
+          // 上辺
+          { x1: rect.left, y1: rect.top, x2: rect.right, y2: rect.top },
+          // 下辺
+          { x1: rect.left, y1: rect.bottom, x2: rect.right, y2: rect.bottom },
+          // 左辺
+          { x1: rect.left, y1: rect.top, x2: rect.left, y2: rect.bottom },
+          // 右辺
+          { x1: rect.right, y1: rect.top, x2: rect.right, y2: rect.bottom },
+        ];
+        let closest = null;
+        let minDist = Infinity;
+        for (const l of lines) {
+          const pt = getLineIntersection(
+            from.x,
+            from.y,
+            to.x,
+            to.y,
+            l.x1,
+            l.y1,
+            l.x2,
+            l.y2,
+          );
+          if (pt &&
+            pt.x >= rect.left - 0.1 && pt.x <= rect.right + 0.1 &&
+            pt.y >= rect.top - 0.1 && pt.y <= rect.bottom + 0.1
+          ) {
+            // from→to方向のみ
+            const dot = (pt.x - from.x) * (to.x - from.x) + (pt.y - from.y) * (to.y - from.y);
+            if (dot > 0) {
+              const dist = Math.hypot(pt.x - from.x, pt.y - from.y);
+              if (dist < minDist) {
+                minDist = dist;
+                closest = pt;
+              }
+            }
+          }
+        }
+        // 交点がなければ中心
+        return closest || { x: from.x, y: from.y };
       }
+      // 2直線の交点
+      function getLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+        if (denom === 0) return null;
+        const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+        if (ua < 0 || ua > 1) return null;
+        const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+        if (ub < 0 || ub > 1) return null;
+        return {
+          x: x1 + ua * (x2 - x1),
+          y: y1 + ua * (y2 - y1),
+        };
+      }
+      const startPt = getIntersection(startRect, startCenter, endCenter);
+      const endPt = getIntersection(endRect, endCenter, startCenter);
+      const line = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "line",
+      );
+      line.setAttribute("x1", startPt.x);
+      line.setAttribute("y1", startPt.y);
+      line.setAttribute("x2", endPt.x);
+      line.setAttribute("y2", endPt.y);
+      line.setAttribute("class", "connector-line");
+      line.dataset.id = conn.id;
+      svgLayer.appendChild(line);
+      line.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+        clearSelection();
+        selectedElement = { type: "connector", id: conn.id };
+        document
+          .querySelectorAll(".connector-line")
+          .forEach((l) => l.classList.remove("selected"));
+        line.classList.add("selected");
+      });
     });
   }
 
