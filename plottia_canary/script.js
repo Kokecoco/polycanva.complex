@@ -1680,9 +1680,15 @@ document.addEventListener("DOMContentLoaded", () => {
       `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex};`;
     shape.classList.toggle("locked", data.isLocked);
 
-    shape.innerHTML =
-      `<div class="shape-visual"></div><div class="shape-label" contenteditable="${!data
-        .isLocked}">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas ${
+    if (data.shapeType === "diamond") {
+      // SVGでひし形を描画
+      shape.innerHTML =
+        `<div class="shape-visual" style="background:none;padding:0;">
+          <svg width="100%" height="100%" viewBox="0 0 100 100" style="display:block;">
+            <polygon points="50,0 100,50 50,100 0,50" fill="${data.color || '#fff'}" stroke="#333" stroke-width="1.5" />
+          </svg>
+        </div>` +
+        `<div class="shape-label" contenteditable="${!data.isLocked}">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas ${
         data.isLocked ? "fa-lock" : "fa-unlock"
       }"></i></div><div class="color-picker">${
         shapeColors
@@ -1692,7 +1698,21 @@ document.addEventListener("DOMContentLoaded", () => {
           )
           .join("")
       }</div>`;
-    shape.querySelector(".shape-visual").style.backgroundColor = data.color;
+    } else {
+      shape.innerHTML =
+        `<div class="shape-visual"></div><div class="shape-label" contenteditable="${!data
+          .isLocked}">${data.content}</div><div class="resizer"></div><div class="delete-btn" title="削除"><i class="fas fa-times"></i></div><div class="lock-btn" title="ロック"><i class="fas ${
+          data.isLocked ? "fa-lock" : "fa-unlock"
+        }"></i></div><div class="color-picker">${
+          shapeColors
+            .map(
+              (c) =>
+                `<div class="color-dot" style="background-color: ${c};" data-color="${c}"></div>`,
+            )
+            .join("")
+        }</div>`;
+      shape.querySelector(".shape-visual").style.backgroundColor = data.color;
+    }
     objectContainer.appendChild(shape);
     addCommonEventListeners(shape, data);
   }
@@ -2502,49 +2522,105 @@ document.addEventListener("DOMContentLoaded", () => {
         width: endEl.offsetWidth,
         height: endEl.offsetHeight,
       };
-      // 2つの中心を結ぶ直線と各矩形の外枠との交点を計算
-      function getIntersection(rect, from, to) {
-        // 4辺との交点を計算し、矩形内にあるもののうちfrom→to方向で最も近いものを返す
-        const lines = [
-          // 上辺
-          { x1: rect.left, y1: rect.top, x2: rect.right, y2: rect.top },
-          // 下辺
-          { x1: rect.left, y1: rect.bottom, x2: rect.right, y2: rect.bottom },
-          // 左辺
-          { x1: rect.left, y1: rect.top, x2: rect.left, y2: rect.bottom },
-          // 右辺
-          { x1: rect.right, y1: rect.top, x2: rect.right, y2: rect.bottom },
-        ];
-        let closest = null;
-        let minDist = Infinity;
-        for (const l of lines) {
-          const pt = getLineIntersection(
-            from.x,
-            from.y,
-            to.x,
-            to.y,
-            l.x1,
-            l.y1,
-            l.x2,
-            l.y2,
-          );
-          if (pt &&
-            pt.x >= rect.left - 0.1 && pt.x <= rect.right + 0.1 &&
-            pt.y >= rect.top - 0.1 && pt.y <= rect.bottom + 0.1
-          ) {
-            // from→to方向のみ
-            const dot = (pt.x - from.x) * (to.x - from.x) + (pt.y - from.y) * (to.y - from.y);
-            if (dot > 0) {
-              const dist = Math.hypot(pt.x - from.x, pt.y - from.y);
-              if (dist < minDist) {
-                minDist = dist;
-                closest = pt;
+      // 2つの中心を結ぶ直線と各図形の外枠との交点を計算
+      function getIntersection(rect, from, to, shapeType) {
+        if (shapeType === "circle") {
+          // 円の中心と半径を計算
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const rx = rect.width / 2;
+          const ry = rect.height / 2;
+          // fromが中心、toが外部点
+          const dx = to.x - cx;
+          const dy = to.y - cy;
+          // 直線と楕円の交点を計算
+          const denom = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+          if (denom === 0) return { x: cx, y: cy };
+          const t = 1 / Math.sqrt(denom);
+          if (t < 0) return { x: cx, y: cy };
+          return { x: cx + dx * t, y: cy + dy * t };
+        } else if (shapeType === "diamond") {
+          // ひし形（ダイヤモンド）の4頂点を計算
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const w = rect.width / 2;
+          const h = rect.height / 2;
+          const points = [
+            { x: cx, y: cy - h }, // top
+            { x: cx + w, y: cy }, // right
+            { x: cx, y: cy + h }, // bottom
+            { x: cx - w, y: cy }, // left
+          ];
+          // 4辺のリスト
+          const lines = [
+            { x1: points[0].x, y1: points[0].y, x2: points[1].x, y2: points[1].y },
+            { x1: points[1].x, y1: points[1].y, x2: points[2].x, y2: points[2].y },
+            { x1: points[2].x, y1: points[2].y, x2: points[3].x, y2: points[3].y },
+            { x1: points[3].x, y1: points[3].y, x2: points[0].x, y2: points[0].y },
+          ];
+          let closest = null;
+          let minDist = Infinity;
+          for (const l of lines) {
+            const pt = getLineIntersection(
+              from.x,
+              from.y,
+              to.x,
+              to.y,
+              l.x1,
+              l.y1,
+              l.x2,
+              l.y2,
+            );
+            if (pt) {
+              // from→to方向のみ
+              const dot = (pt.x - from.x) * (to.x - from.x) + (pt.y - from.y) * (to.y - from.y);
+              if (dot > 0) {
+                const dist = Math.hypot(pt.x - from.x, pt.y - from.y);
+                if (dist < minDist) {
+                  minDist = dist;
+                  closest = pt;
+                }
               }
             }
           }
+          return closest || { x: from.x, y: from.y };
+        } else {
+          // 四角形（矩形）
+          const lines = [
+            { x1: rect.left, y1: rect.top, x2: rect.right, y2: rect.top },
+            { x1: rect.left, y1: rect.bottom, x2: rect.right, y2: rect.bottom },
+            { x1: rect.left, y1: rect.top, x2: rect.left, y2: rect.bottom },
+            { x1: rect.right, y1: rect.top, x2: rect.right, y2: rect.bottom },
+          ];
+          let closest = null;
+          let minDist = Infinity;
+          for (const l of lines) {
+            const pt = getLineIntersection(
+              from.x,
+              from.y,
+              to.x,
+              to.y,
+              l.x1,
+              l.y1,
+              l.x2,
+              l.y2,
+            );
+            if (pt &&
+              pt.x >= rect.left - 0.1 && pt.x <= rect.right + 0.1 &&
+              pt.y >= rect.top - 0.1 && pt.y <= rect.bottom + 0.1
+            ) {
+              const dot = (pt.x - from.x) * (to.x - from.x) + (pt.y - from.y) * (to.y - from.y);
+              if (dot > 0) {
+                const dist = Math.hypot(pt.x - from.x, pt.y - from.y);
+                if (dist < minDist) {
+                  minDist = dist;
+                  closest = pt;
+                }
+              }
+            }
+          }
+          return closest || { x: from.x, y: from.y };
         }
-        // 交点がなければ中心
-        return closest || { x: from.x, y: from.y };
       }
       // 2直線の交点
       function getLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -2559,8 +2635,11 @@ document.addEventListener("DOMContentLoaded", () => {
           y: y1 + ua * (y2 - y1),
         };
       }
-      const startPt = getIntersection(startRect, startCenter, endCenter);
-      const endPt = getIntersection(endRect, endCenter, startCenter);
+  // shapeTypeはclassNameから取得
+  const startShapeType = (startEl.className.match(/shape (\w+)/) || [])[1] || "square";
+  const endShapeType = (endEl.className.match(/shape (\w+)/) || [])[1] || "square";
+  const startPt = getIntersection(startRect, startCenter, endCenter, startShapeType);
+  const endPt = getIntersection(endRect, endCenter, startCenter, endShapeType);
       // Create a group to contain both the visible line and invisible hit area
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       group.dataset.id = conn.id;

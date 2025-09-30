@@ -562,6 +562,8 @@ body.eraser-mode {
 }
 .shape.diamond .shape-visual {
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  border: 2px solid #333;
+  box-sizing: border-box;
 }
 .shape .shape-label {
   position: relative;
