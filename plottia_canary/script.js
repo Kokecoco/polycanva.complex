@@ -2561,18 +2561,38 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       const startPt = getIntersection(startRect, startCenter, endCenter);
       const endPt = getIntersection(endRect, endCenter, startCenter);
-      const line = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "line",
-      );
+      // Create a group to contain both the visible line and invisible hit area
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.dataset.id = conn.id;
+      
+      // Create the invisible thick line for easier clicking (hit area)
+      const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      hitArea.setAttribute("x1", startPt.x);
+      hitArea.setAttribute("y1", startPt.y);
+      hitArea.setAttribute("x2", endPt.x);
+      hitArea.setAttribute("y2", endPt.y);
+      hitArea.setAttribute("stroke", "transparent");
+      hitArea.setAttribute("stroke-width", "12"); // Much thicker for easy clicking
+      hitArea.setAttribute("stroke-linecap", "round");
+      hitArea.style.pointerEvents = "all";
+      hitArea.style.cursor = "pointer";
+      
+      // Create the visible line
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       line.setAttribute("x1", startPt.x);
       line.setAttribute("y1", startPt.y);
       line.setAttribute("x2", endPt.x);
       line.setAttribute("y2", endPt.y);
       line.setAttribute("class", "connector-line");
-      line.dataset.id = conn.id;
-      svgLayer.appendChild(line);
-      line.addEventListener("mousedown", (e) => {
+      line.style.pointerEvents = "none"; // Only hit area handles clicks
+      
+      // Add both to the group
+      group.appendChild(hitArea);
+      group.appendChild(line);
+      svgLayer.appendChild(group);
+      
+      // Add event listeners to the hit area
+      hitArea.addEventListener("mousedown", (e) => {
           e.stopPropagation();
           // すでに選択中なら選択解除
           if (selectedElement && selectedElement.type === "connector" && selectedElement.id === conn.id) {
@@ -2585,13 +2605,13 @@ document.addEventListener("DOMContentLoaded", () => {
             line.classList.add("selected");
           }
       });
-        // 右クリックで削除
-        line.addEventListener("contextmenu", (e) => {
+      // 右クリックで削除
+      hitArea.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           generateOperation("DELETE_CONNECTOR", { id: conn.id });
           selectedElement = null;
           document.querySelectorAll(".connector-line").forEach((l) => l.classList.remove("selected"));
-        });
+      });
     });
   }
 
