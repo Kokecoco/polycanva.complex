@@ -2648,8 +2648,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const viewRect = {
       width: (window.innerWidth / boardData.board.scale) * minimapScale,
       height: (window.innerHeight / boardData.board.scale) * minimapScale,
-      left: -boardData.board.panX * minimapScale,
-      top: -boardData.board.panY * minimapScale,
+      left: (-boardData.board.panX / boardData.board.scale) * minimapScale,
+      top: (-boardData.board.panY / boardData.board.scale) * minimapScale,
     };
     viewport.style.cssText =
       `width:${viewRect.width}px; height:${viewRect.height}px; left:${viewRect.left}px; top:${viewRect.top}px;`;
@@ -2668,8 +2668,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // 新しいpanX, panYを計算
         const newLeft = startLeft + dx;
         const newTop = startTop + dy;
-        boardData.board.panX = -newLeft / minimapScale;
-        boardData.board.panY = -newTop / minimapScale;
+        boardData.board.panX = (-newLeft / minimapScale) * boardData.board.scale;
+        boardData.board.panY = (-newTop / minimapScale) * boardData.board.scale;
         applyTransform();
       }
       function onUp() {
@@ -2688,12 +2688,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const y = e.clientY - rect.top;
       // 中心がクリック位置に来るようにpanを調整
       boardData.board.panX = -(
-        x / minimapScale -
-        window.innerWidth / 2 / boardData.board.scale
+        (x / minimapScale) * boardData.board.scale -
+        window.innerWidth / 2
       );
       boardData.board.panY = -(
-        y / minimapScale -
-        window.innerHeight / 2 / boardData.board.scale
+        (y / minimapScale) * boardData.board.scale -
+        window.innerHeight / 2
       );
       applyTransform();
       saveState();
