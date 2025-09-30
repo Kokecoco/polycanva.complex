@@ -298,7 +298,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getElementCenter(elementId) { const el = document.getElementById(elementId); if (!el) return null; const x = parseFloat(el.style.left) + el.offsetWidth / 2; const y = parseFloat(el.style.top) + el.offsetHeight / 2; return { x, y }; }
-    function drawAllConnectors() { if(!svgLayer) return; svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`; connectors.forEach(conn => { const startPoint = getElementCenter(conn.startId); const endPoint = getElementCenter(conn.endId); if (startPoint && endPoint) { const line = document.createElementNS('http://www.w3.org/2000/svg', 'line'); line.setAttribute('x1', startPoint.x); line.setAttribute('y1', startPoint.y); line.setAttribute('x2', endPoint.x); line.setAttribute('y2', endPoint.y); line.setAttribute('class', 'connector-line'); line.dataset.id = conn.id; svgLayer.appendChild(line); line.addEventListener('mousedown', e => { e.stopPropagation(); clearSelection(); selectedElement = { type: 'connector', id: conn.id }; document.querySelectorAll('.connector-line').forEach(l=>l.classList.remove('selected')); line.classList.add('selected'); }); } }); }
+    function drawAllConnectors() { 
+        if(!svgLayer) return; 
+        svgLayer.innerHTML = `<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#333" /></marker></defs>`; 
+        connectors.forEach(conn => { 
+            const startPoint = getElementCenter(conn.startId); 
+            const endPoint = getElementCenter(conn.endId); 
+            if (startPoint && endPoint) { 
+                // Create a group to contain both the visible line and invisible hit area
+                const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                group.dataset.id = conn.id;
+                
+                // Create the invisible thick line for easier clicking (hit area)
+                const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                hitArea.setAttribute("x1", startPoint.x);
+                hitArea.setAttribute("y1", startPoint.y);
+                hitArea.setAttribute("x2", endPoint.x);
+                hitArea.setAttribute("y2", endPoint.y);
+                hitArea.setAttribute("stroke", "transparent");
+                hitArea.setAttribute("stroke-width", "12"); // Much thicker for easy clicking
+                hitArea.setAttribute("stroke-linecap", "round");
+                hitArea.style.pointerEvents = "all";
+                hitArea.style.cursor = "pointer";
+                
+                // Create the visible line
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", startPoint.x);
+                line.setAttribute("y1", startPoint.y);
+                line.setAttribute("x2", endPoint.x);
+                line.setAttribute("y2", endPoint.y);
+                line.setAttribute("class", "connector-line");
+                line.style.pointerEvents = "none"; // Only hit area handles clicks
+                
+                // Add both to the group
+                group.appendChild(hitArea);
+                group.appendChild(line);
+                svgLayer.appendChild(group);
+                
+                // Add event listeners to the hit area
+                hitArea.addEventListener('mousedown', e => { 
+                    e.stopPropagation(); 
+                    clearSelection(); 
+                    selectedElement = { type: 'connector', id: conn.id }; 
+                    document.querySelectorAll('.connector-line').forEach(l=>l.classList.remove('selected')); 
+                    line.classList.add('selected'); 
+                }); 
+            } 
+        }); 
+    }
     function applyTransform() { board.style.transform = `translate(${boardState.panX}px, ${boardState.panY}px) scale(${boardState.scale})`; updateZoomDisplay(); drawAllConnectors(); updateMinimap(); }
     function updateZoomDisplay() { zoomDisplay.textContent = `${Math.round(boardState.scale * 100)}%`; }
     function parseLinks(text) {

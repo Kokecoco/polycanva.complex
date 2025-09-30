@@ -480,14 +480,13 @@ body.eraser-mode {
 #connector-svg-layer .connector-line {
   stroke: #333;
   stroke-width: 2px;
-  transition: stroke 0.2s;
+  transition: stroke 0.2s, stroke-width 0.2s;
   marker-end: url(#arrowhead);
+  stroke-linecap: round;
 }
 #connector-svg-layer .connector-line.selected {
   stroke: #007bff;
   stroke-width: 4px;
-  pointer-events: all;
-  cursor: pointer;
 }
 #minimap {
   position: fixed;
