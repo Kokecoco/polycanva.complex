@@ -2191,7 +2191,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fileList.innerHTML = "";
     if (metadata.length === 0) {
       fileList.innerHTML =
-        "<li>ファイルがありません。新しいファイルを作成してください。</li>";
+        "<li>プロジェクトを開始するには、新しいファイルを作成してください。</li>";
     }
     metadata.forEach((file) => {
       const li = document.createElement("li");
