@@ -120,6 +120,9 @@
         <button id="shortcut-settings-btn" title="ショートカット設定">
           <i class="fas fa-keyboard"></i>
         </button>
+        <button id="ai-settings-btn" title="AI機能設定">
+          <i class="fas fa-robot"></i>
+        </button>
         <button id="qr-code-btn" title="QRコードで招待リンクを表示 (Ctrl+Q)" class="hidden">
           <i class="fas fa-qrcode"></i>
         </button>
@@ -240,6 +243,63 @@
     <div id="command-palette-modal" role="dialog" aria-modal="true">
       <input id="command-palette-input" placeholder="コマンドを入力 (例: new, duplicate, delete)"/>
       <div id="command-palette-list"></div>
+    </div>
+  </div>
+
+  <!-- AI Settings Modal -->
+  <div id="ai-settings-overlay" class="hidden">
+    <div id="ai-settings-modal" role="dialog" aria-modal="true">
+      <h3>AI機能設定</h3>
+      <div class="ai-settings-content">
+        <div class="ai-provider-section">
+          <label>AIプロバイダー</label>
+          <select id="ai-provider-select">
+            <option value="none">使用しない</option>
+            <option value="gemini">Google Gemini</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
+        </div>
+        
+        <div id="gemini-settings" class="ai-provider-settings hidden">
+          <label for="gemini-api-key">Gemini APIキー</label>
+          <input type="password" id="gemini-api-key" placeholder="AIzaSy..."/>
+          <small>Google AI StudioでAPIキーを取得: <a href="https://aistudio.google.com/app/apikey" target="_blank">https://aistudio.google.com/app/apikey</a></small>
+        </div>
+
+        <div id="openrouter-settings" class="ai-provider-settings hidden">
+          <label for="openrouter-api-key">OpenRouter APIキー</label>
+          <input type="password" id="openrouter-api-key" placeholder="sk-or-..."/>
+          <small>OpenRouterでAPIキーを取得: <a href="https://openrouter.ai/keys" target="_blank">https://openrouter.ai/keys</a></small>
+          <label for="openrouter-model">モデル</label>
+          <select id="openrouter-model">
+            <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (無料)</option>
+            <option value="google/gemini-flash-1.5">Gemini 1.5 Flash</option>
+            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+            <option value="openai/gpt-4">GPT-4</option>
+          </select>
+        </div>
+
+        <div class="ai-features-section">
+          <h4>利用可能な機能</h4>
+          <ul>
+            <li><strong>AIスタイリング:</strong> 選択要素のデザイン提案</li>
+            <li><strong>AIテンプレート:</strong> テーマからボード作成</li>
+            <li><strong>AI補完:</strong> 入力文章を補完 (Ctrl+Space)</li>
+            <li><strong>AIスペルチェック:</strong> 文章校正</li>
+            <li><strong>AIアイデア出し:</strong> ブレインストーミング</li>
+          </ul>
+        </div>
+
+        <div class="ai-status">
+          <span id="ai-status-text">未設定</span>
+        </div>
+      </div>
+      
+      <div class="ai-settings-actions">
+        <button id="test-ai-connection-btn">接続テスト</button>
+        <button id="save-ai-settings-btn">保存</button>
+        <button id="close-ai-settings-btn">閉じる</button>
+      </div>
     </div>
   </div>
   
