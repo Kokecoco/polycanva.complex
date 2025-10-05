@@ -1,3 +1,4 @@
+// getNonOverlappingPosition has been moved inside DOMContentLoaded so it can access boardData
 document.addEventListener("DOMContentLoaded", () => {
   // --- 要素取得 ---
   const fileManagerOverlay = document.getElementById("file-manager-overlay");
@@ -73,6 +74,77 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentFileId = null;
   // boardData is the single source of truth for the board state.
   let boardData = createEmptyBoard();
+  // Find a non-overlapping position for a new element by scanning nearby offsets
+  function getNonOverlappingPosition(width = 220, height = 220) {
+    // Compute a tidy grid and snap positions to it. This produces neater layouts.
+    const scale = boardData.board?.scale || 1;
+    const panX = boardData.board?.panX || 0;
+    const panY = boardData.board?.panY || 0;
+    const baseX = (window.innerWidth / 2 - width / 2 - panX) / scale;
+    const baseY = (window.innerHeight / 2 - height / 2 - panY) / scale;
+
+    // grid size slightly larger than element so there's spacing
+    const gridGap = 20; // px gap between items
+    const gridSize = Math.max(width, height) + gridGap;
+
+    // collect existing rects
+    const collections = [
+      ...(boardData.notes || []),
+      ...(boardData.textBoxes || []),
+      ...(boardData.shapes || []),
+      ...(boardData.sections || []),
+      ...(boardData.images || []),
+    ];
+
+    const existing = collections.map((it) => {
+      const el = document.getElementById(it.id);
+      const w = el ? el.offsetWidth : parseFloat(it.width) || width;
+      const h = el ? el.offsetHeight : parseFloat(it.height) || height;
+      const x = parseFloat(it.x) || 0;
+      const y = parseFloat(it.y) || 0;
+      return {
+        left: x,
+        top: y,
+        right: x + w,
+        bottom: y + h,
+      };
+    });
+
+    function overlapsRect(x, y) {
+      const left = x;
+      const top = y;
+      const right = x + width;
+      const bottom = y + height;
+      return existing.some((r) => !(right <= r.left || left >= r.right || bottom <= r.top || top >= r.bottom));
+    }
+
+    // compute nearest grid cell to base center
+    const cx = Math.round(baseX / gridSize);
+    const cy = Math.round(baseY / gridSize);
+
+    const maxRadius = 50; // search limit in grid cells
+    for (let radius = 0; radius <= maxRadius; radius++) {
+      if (radius === 0) {
+        const px = Math.round(cx * gridSize);
+        const py = Math.round(cy * gridSize);
+        if (!overlapsRect(px, py)) return { x: `${px}px`, y: `${py}px` };
+        continue;
+      }
+      // iterate the ring around (cx,cy)
+      for (let gx = cx - radius; gx <= cx + radius; gx++) {
+        for (let gy = cy - radius; gy <= cy + radius; gy++) {
+          // only check outer ring
+          if (gx !== cx - radius && gx !== cx + radius && gy !== cy - radius && gy !== cy + radius) continue;
+          const px = Math.round(gx * gridSize);
+          const py = Math.round(gy * gridSize);
+          if (!overlapsRect(px, py)) return { x: `${px}px`, y: `${py}px` };
+        }
+      }
+    }
+
+    // fallback to center if nothing found
+    return { x: `${Math.round(baseX)}px`, y: `${Math.round(baseY)}px` };
+  }
   let selectedElement = null;
   let isConnectorMode = false,
     connectorStartId = null;
@@ -80,6 +152,10 @@ document.addEventListener("DOMContentLoaded", () => {
     isEraserMode = false;
   let initialPinchDistance = null;
   let currentStrokeWidth = 5;
+
+  // Selection helper state
+  let selectionOrder = []; // array of element ids in DOM order for cycling
+  let selectionIndex = -1;
 
   // Collaboration & Sync variables
   let myUndoStack = [];
@@ -126,6 +202,127 @@ document.addEventListener("DOMContentLoaded", () => {
       return `<a href="${url}" target="_blank" rel="noopener noreferrer">${match}</a>`;
     });
   }
+
+  // Debounced save helper for responsive offline editing
+  let saveTimeout = null;
+  function scheduleSave(delay = 500) {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      saveState().catch((e) => console.warn('Save failed', e));
+    }, delay);
+  }
+
+  // Selection management utilities
+  function rebuildSelectionOrder() {
+    selectionOrder = Array.from(objectContainer.children).map((el) => el.dataset.id).filter(Boolean);
+    // also include sections
+    const sectionIds = Array.from(sectionContainer.children).map((el) => el.dataset.id).filter(Boolean);
+    // keep object order then sections (simple approach)
+    selectionOrder = selectionOrder.concat(sectionIds.filter((id) => !selectionOrder.includes(id)));
+    if (selectionIndex >= selectionOrder.length) selectionIndex = selectionOrder.length - 1;
+  }
+
+  function setSelectedElementById(id) {
+    clearSelection();
+    if (!id) return;
+    const el = document.querySelector(`[data-id="${id}"]`);
+    if (el) {
+      selectedElement = el;
+      el.classList.add("selected");
+      // bring to front visually
+      el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
+    }
+  }
+
+  // Helper to toggle element into edit mode and focus its editable part
+  function enterEditModeFor(el) {
+    if (!el) return;
+    const editable = el.querySelector('.note-content, .shape-label, .text-content, textarea, [contenteditable="true"]');
+    const view = el.querySelector('.note-view');
+    if (editable) {
+      if (view && view.style.display !== 'none') {
+        view.style.display = 'none';
+        editable.style.display = 'block';
+      }
+      try { editable.focus(); } catch (e) {}
+      if (editable.select) {
+        try { editable.select(); } catch (e) {}
+      }
+    }
+  }
+
+  function cycleSelection(forward = true) {
+    rebuildSelectionOrder();
+    if (selectionOrder.length === 0) return;
+    if (forward) {
+      selectionIndex = (selectionIndex + 1) % selectionOrder.length;
+    } else {
+      selectionIndex = (selectionIndex - 1 + selectionOrder.length) % selectionOrder.length;
+    }
+    setSelectedElementById(selectionOrder[selectionIndex]);
+  }
+
+  function nudgeSelected(dx, dy) {
+    if (!selectedElement) return;
+    const id = selectedElement.dataset.id;
+    const data = findElementData(id);
+    if (!data) return;
+    data.x = (data.x || 0) + dx;
+    data.y = (data.y || 0) + dy;
+    // update DOM position
+    selectedElement.style.left = (data.x || 0) + "px";
+    selectedElement.style.top = (data.y || 0) + "px";
+    scheduleSave(2000);
+  }
+
+  function duplicateSelected() {
+    if (!selectedElement) return;
+    const id = selectedElement.dataset.id;
+    const found = findElementData(id);
+    if (!found || !found.item) return;
+    const item = found.item;
+    // shallow clone the item data and give a new id
+    const clone = JSON.parse(JSON.stringify(item));
+    clone.id = `${clone.id || 'el'}_${Date.now()}`;
+    // bump position slightly (handle px strings or numbers)
+    if (typeof clone.x === 'string') {
+      clone.x = `${(parseFloat(clone.x) || 0) + 20}px`;
+    } else if (typeof clone.x === 'number') {
+      clone.x = clone.x + 20;
+    }
+    if (typeof clone.y === 'string') {
+      clone.y = `${(parseFloat(clone.y) || 0) + 20}px`;
+    } else if (typeof clone.y === 'number') {
+      clone.y = clone.y + 20;
+    }
+
+    // Determine create operation type from collection
+    const collectionToType = {
+      notes: 'CREATE_NOTE',
+      sections: 'CREATE_SECTION',
+      textBoxes: 'CREATE_TEXTBOX',
+      shapes: 'CREATE_SHAPE',
+      images: 'CREATE_IMAGE',
+    };
+    const opType = collectionToType[found.collection];
+    if (opType) {
+      generateOperation(opType, clone, null);
+      scheduleSave(2000);
+    }
+  }
+
+  function deleteSelected() {
+    if (!selectedElement) return;
+    const id = selectedElement.dataset.id;
+    const found = findElementData(id);
+    if (!found) return;
+    // Use the operation model so applyOperation and sync work correctly
+    generateOperation('DELETE_ELEMENTS', { elementIds: [id] });
+    // applyOperation will remove DOM and update boardData; clear local selection
+    selectedElement = null;
+    scheduleSave(2000);
+  }
+
 
   // =================================================================
   // 画像圧縮ユーティリティ
@@ -617,6 +814,228 @@ document.addEventListener("DOMContentLoaded", () => {
       copyShareLink();
     }
   });
+
+  // Lightweight quick-edit keyboard shortcuts (offline-friendly)
+  document.addEventListener("keydown", (e) => {
+    // Don't intercept when user is typing into a form/control
+    const active = document.activeElement;
+    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) return;
+
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const mod = isMac ? e.metaKey : e.ctrlKey;
+
+    // N: create new note
+    if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      createNote();
+      scheduleSave(1000);
+      return;
+    }
+
+    // Tab / Shift+Tab: cycle selection
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      cycleSelection(!e.shiftKey);
+      return;
+    }
+
+    // Enter: focus editable part of selected element
+    if (e.key === 'Enter') {
+      if (selectedElement) {
+        e.preventDefault();
+        enterEditModeFor(selectedElement);
+      }
+      return;
+    }
+
+    // Arrow keys: nudge selected element
+    const arrowMap = { ArrowLeft: [-1,0], ArrowRight: [1,0], ArrowUp: [0,-1], ArrowDown: [0,1] };
+    if (e.key in arrowMap) {
+      // If any modifier other than Shift is pressed, ignore to allow browser behavior
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      e.preventDefault();
+      const [dx, dy] = arrowMap[e.key];
+      const step = e.shiftKey ? 10 : 1;
+      nudgeSelected(dx * step, dy * step);
+      return;
+    }
+
+    // Delete/Backspace: delete selected
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      deleteSelected();
+      return;
+    }
+
+    // Duplicate: Ctrl/Cmd + D
+    if (mod && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      duplicateSelected();
+      return;
+    }
+  });
+
+  // ----------------------------
+  // Keybinding manager
+  // ----------------------------
+  const SHORTCUTS_KEY = "plottia_shortcuts_v1";
+  const defaultBindings = {
+    newNote: "N",
+    cycleNext: "Tab",
+    cyclePrev: "Shift+Tab",
+    edit: "Enter",
+    nudgeLeft: "ArrowLeft",
+    nudgeRight: "ArrowRight",
+    nudgeUp: "ArrowUp",
+    nudgeDown: "ArrowDown",
+    delete: "Delete",
+    duplicate: "Ctrl+D",
+  };
+
+  function loadBindings() {
+    try {
+      const raw = localStorage.getItem(SHORTCUTS_KEY);
+      if (!raw) return { ...defaultBindings };
+      return { ...defaultBindings, ...JSON.parse(raw) };
+    } catch (e) {
+      return { ...defaultBindings };
+    }
+  }
+
+  function saveBindings(obj) {
+    try {
+      localStorage.setItem(SHORTCUTS_KEY, JSON.stringify(obj));
+    } catch (e) {
+      console.warn("Could not save shortcuts", e);
+    }
+  }
+
+  let keyBindings = loadBindings();
+
+  // Helper: normalize KeyboardEvent into readable combo string
+  function normalizeEventToCombo(e) {
+    const parts = [];
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.metaKey) parts.push("Meta");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    // Use e.key for the main key
+    parts.push(e.key);
+    return parts.join("+");
+  }
+
+  function eventMatchesBinding(e, binding) {
+    if (!binding) return false;
+    // binding can be simple like 'N' or 'Ctrl+D' or 'Shift+Tab'
+    const combo = normalizeEventToCombo(e);
+    // Normalize some browser differences for Tab/Enter/Arrow keys
+    const normalized = combo.replace('Meta+', 'Ctrl+');
+    return normalized === binding || e.key === binding;
+  }
+
+  // UI wiring for settings modal
+  const shortcutBtn = document.getElementById('shortcut-settings-btn');
+  const shortcutOverlay = document.getElementById('shortcut-settings-overlay');
+  const shortcutList = document.getElementById('shortcut-list');
+  const closeShortcutBtn = document.getElementById('close-shortcut-settings-btn');
+  const resetShortcutBtn = document.getElementById('reset-shortcuts-btn');
+
+  const shortcutDefinitions = [
+    { key: 'newNote', label: '新しい付箋を作成' },
+    { key: 'cycleNext', label: '選択を次へ (Tab)' },
+    { key: 'cyclePrev', label: '選択を前へ (Shift+Tab)' },
+    { key: 'edit', label: '選択を編集モードへ (Enter)' },
+    { key: 'nudgeLeft', label: '左に微移動' },
+    { key: 'nudgeRight', label: '右に微移動' },
+    { key: 'nudgeUp', label: '上に微移動' },
+    { key: 'nudgeDown', label: '下に微移動' },
+    { key: 'delete', label: '削除' },
+    { key: 'duplicate', label: '複製' },
+  ];
+
+  function renderShortcutUI() {
+    shortcutList.innerHTML = '';
+    shortcutDefinitions.forEach((def) => {
+      const row = document.createElement('div');
+      row.className = 'shortcut-row';
+      const label = document.createElement('label');
+      label.textContent = def.label;
+      const capture = document.createElement('div');
+      capture.className = 'shortcut-capture';
+      capture.tabIndex = 0;
+      capture.dataset.key = def.key;
+      capture.textContent = keyBindings[def.key] || '';
+      // Capture key combo when focused
+      capture.addEventListener('keydown', (ev) => {
+        ev.preventDefault();
+        const combo = normalizeEventToCombo(ev).replace('Meta+', 'Ctrl+');
+        keyBindings[def.key] = combo;
+        capture.textContent = combo;
+        saveBindings(keyBindings);
+      });
+      // Clicking focuses the div so it receives keydown
+      capture.addEventListener('click', () => capture.focus());
+      row.appendChild(label);
+      row.appendChild(capture);
+      shortcutList.appendChild(row);
+    });
+  }
+
+  shortcutBtn?.addEventListener('click', () => {
+    renderShortcutUI();
+    shortcutOverlay.classList.remove('hidden');
+  });
+  closeShortcutBtn?.addEventListener('click', () => {
+    shortcutOverlay.classList.add('hidden');
+  });
+  resetShortcutBtn?.addEventListener('click', () => {
+    keyBindings = { ...defaultBindings };
+    saveBindings(keyBindings);
+    renderShortcutUI();
+  });
+
+  // Integrate custom bindings into the lightweight handler by checking them first
+  // We wrap the original handler behavior with a top-level check here
+  document.addEventListener('keydown', (e) => {
+    // Ignore typing in inputs
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+    // Check each binding and run corresponding action
+    if (eventMatchesBinding(e, keyBindings.newNote)) {
+      e.preventDefault(); createNote(); scheduleSave(1000); return;
+    }
+    if (eventMatchesBinding(e, keyBindings.cycleNext)) { e.preventDefault(); cycleSelection(true); return; }
+    if (eventMatchesBinding(e, keyBindings.cyclePrev)) { e.preventDefault(); cycleSelection(false); return; }
+    if (eventMatchesBinding(e, keyBindings.edit)) {
+      e.preventDefault(); if (selectedElement) { enterEditModeFor(selectedElement); } return;
+    }
+    if (eventMatchesBinding(e, keyBindings.delete)) { e.preventDefault(); deleteSelected(); return; }
+    if (eventMatchesBinding(e, keyBindings.duplicate)) { e.preventDefault(); duplicateSelected(); return; }
+    // Arrow nudges: we still support Shift for large steps
+    if (eventMatchesBinding(e, keyBindings.nudgeLeft)) { e.preventDefault(); nudgeSelected(e.shiftKey ? -10 : -1, 0); return; }
+    if (eventMatchesBinding(e, keyBindings.nudgeRight)) { e.preventDefault(); nudgeSelected(e.shiftKey ? 10 : 1, 0); return; }
+    if (eventMatchesBinding(e, keyBindings.nudgeUp)) { e.preventDefault(); nudgeSelected(0, e.shiftKey ? -10 : -1); return; }
+    if (eventMatchesBinding(e, keyBindings.nudgeDown)) { e.preventDefault(); nudgeSelected(0, e.shiftKey ? 10 : 1); return; }
+  }, true);
+
+  // Capture-phase handler to ensure Tab cycles and Enter toggles edit reliably
+  document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      cycleSelection(!e.shiftKey);
+      return;
+    }
+    if (e.key === 'Enter') {
+      if (selectedElement) {
+        e.preventDefault();
+        enterEditModeFor(selectedElement);
+      }
+      return;
+    }
+  }, true);
 
   // =================================================================
   // 2. 状態管理 & 操作ベース同期
@@ -1523,7 +1942,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function createNote(data, fromOperation = false) {
     if (!fromOperation) {
-      const pos = getNewElementPosition();
+      // compute a non-overlapping position for the new note
+      const defaultWidth = 220;
+      const defaultHeight = 220;
+      const pos = getNonOverlappingPosition(defaultWidth, defaultHeight);
       const payload = {
         id: `note-${myPeerId}-${Date.now()}`,
         x: pos.x,
@@ -1542,6 +1964,31 @@ document.addEventListener("DOMContentLoaded", () => {
           payload: { elementIds: [payload.id] },
         },
       });
+      // After operation applied, focus the newly created note for fast editing
+      setTimeout(() => {
+        try {
+          setSelectedElementById(payload.id);
+          const el = document.getElementById(payload.id);
+          if (el) {
+            const ta = el.querySelector('.note-content');
+            const view = el.querySelector('.note-view');
+            if (ta) {
+              if (view && view.style.display !== 'none') {
+                view.style.display = 'none';
+                ta.style.display = 'block';
+              }
+              ta.focus();
+              // move cursor to end
+              if (ta.setSelectionRange) {
+                const len = ta.value ? ta.value.length : 0;
+                try { ta.setSelectionRange(len, len); } catch (e) {}
+              }
+            }
+          }
+        } catch (e) {
+          // ignore focus errors
+        }
+      }, 0);
       return;
     }
 
@@ -1550,6 +1997,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const note = document.createElement("div");
     note.className = "note";
     note.id = data.id;
+  note.dataset.id = data.id;
     note.style.left = data.x;
     note.style.top = data.y;
     note.style.width = data.width;
@@ -1599,6 +2047,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const section = document.createElement("div");
     section.className = "section";
     section.id = data.id;
+  section.dataset.id = data.id;
     section.style.cssText =
       `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex}; background-color:${data.color};`;
     section.classList.toggle("locked", data.isLocked);
@@ -1638,6 +2087,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const textBox = document.createElement("div");
     textBox.className = "text-box";
     textBox.id = data.id;
+  textBox.dataset.id = data.id;
     textBox.style.cssText =
       `left:${data.x}; top:${data.y}; z-index:${data.zIndex}; width:${data.width};`;
     textBox.classList.toggle("locked", data.isLocked);
@@ -1676,6 +2126,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const shape = document.createElement("div");
     shape.className = `shape ${data.shapeType}`;
     shape.id = data.id;
+  shape.dataset.id = data.id;
     shape.style.cssText =
       `left:${data.x}; top:${data.y}; width:${data.width}; height:${data.height}; z-index:${data.zIndex};`;
     shape.classList.toggle("locked", data.isLocked);
@@ -1758,6 +2209,9 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
     imageWrapper.appendChild(img);
+
+  // dataset id for selection cycling
+  imageWrapper.dataset.id = data.id;
 
     // Show/hide controls on hover
     imageWrapper.addEventListener("mouseenter", () => {
@@ -1935,7 +2389,7 @@ document.addEventListener("DOMContentLoaded", () => {
         drawAllConnectors();
       };
       const onPointerUp = () => {
-        document.body.classList.remove("is-dragging");
+        board.classList.remove("grabbing");
         document.removeEventListener("mousemove", onPointerMove);
         document.removeEventListener("mouseup", onPointerUp);
         const elementsToMove = [
@@ -2035,12 +2489,35 @@ document.addEventListener("DOMContentLoaded", () => {
           editTarget.style.display = "none";
           inputTarget.style.display = "block";
         }
+        // cache original content for possible cancel
+        inputTarget._originalContent = inputTarget.isContentEditable ? inputTarget.innerHTML : inputTarget.value;
         inputTarget.focus();
       });
+
+      inputTarget.addEventListener("focus", () => {
+        // store original content when gaining focus via any mean
+        inputTarget._originalContent = inputTarget.isContentEditable ? inputTarget.innerHTML : inputTarget.value;
+      });
+
       inputTarget.addEventListener("blur", finishEditing);
+
       inputTarget.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && inputTarget.tagName !== "TEXTAREA") {
           inputTarget.blur();
+        }
+        if (e.key === "Escape") {
+          // Exit edit mode without reverting content.
+          // Keep the element selected; just hide the editor and blur.
+          e.preventDefault();
+          try {
+            if (editTarget && editTarget !== inputTarget) {
+              editTarget.style.display = "block";
+              inputTarget.style.display = "none";
+            }
+            inputTarget.blur();
+          } catch (err) {
+            // ignore focus errors
+          }
         }
       });
     }
@@ -2696,7 +3173,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateMinimap() {
     minimap.innerHTML = "";
-    const minimapScale = minimap.offsetWidth / board.offsetWidth;
+    // Compute minimap scale relative to the board's full virtual size (board.width/height)
+    // board element may be transformed; use boardData.board.scale and known board CSS size
+    const boardWidth = parseFloat(getComputedStyle(board).width) || board.offsetWidth;
+    const boardHeight = parseFloat(getComputedStyle(board).height) || board.offsetHeight;
+    const minimapScale = minimap.offsetWidth / boardWidth;
     const allElements = [
       ...(boardData.notes || []),
       ...(boardData.sections || []),
@@ -2711,8 +3192,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const elRect = {
         left: parseFloat(item.x) * minimapScale,
         top: parseFloat(item.y) * minimapScale,
-        width: el.offsetWidth * minimapScale,
-        height: el.offsetHeight * minimapScale,
+        width: (el.offsetWidth) * minimapScale,
+        height: (el.offsetHeight) * minimapScale,
       };
       const mapEl = document.createElement("div");
       mapEl.className = "minimap-element";
@@ -2765,15 +3246,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const rect = minimap.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      // 中心がクリック位置に来るようにpanを調整
-      boardData.board.panX = -(
-        x / minimapScale -
-        window.innerWidth / 2 / boardData.board.scale
-      );
-      boardData.board.panY = -(
-        y / minimapScale -
-        window.innerHeight / 2 / boardData.board.scale
-      );
+      // Compute clicked position in board coordinates (un-transformed)
+      const boardX = x / minimapScale;
+      const boardY = y / minimapScale;
+      // Set pan so that the clicked board coordinate becomes centered in the window
+      boardData.board.panX = -(boardX - (window.innerWidth / 2) / boardData.board.scale);
+      boardData.board.panY = -(boardY - (window.innerHeight / 2) / boardData.board.scale);
       applyTransform();
       saveState();
     };
@@ -3320,4 +3798,126 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     showErrorModal(formattedMessage);
   });
+
+  // ----------------------------
+  // Rapid Capture & Command Palette
+  // ----------------------------
+  let rapidCaptureMode = false;
+  const commandOverlay = document.getElementById('command-palette-overlay');
+  const commandInput = document.getElementById('command-palette-input');
+  const commandListEl = document.getElementById('command-palette-list');
+
+  const COMMANDS = [
+    { id: 'new', label: 'New Note', fn: () => { createNote(); scheduleSave(500); } },
+    { id: 'duplicate', label: 'Duplicate Selected', fn: () => duplicateSelected() },
+    { id: 'delete', label: 'Delete Selected', fn: () => deleteSelected() },
+    { id: 'cycle_next', label: 'Cycle Next', fn: () => cycleSelection(true) },
+    { id: 'cycle_prev', label: 'Cycle Prev', fn: () => cycleSelection(false) },
+    { id: 'toggle_rapid', label: 'Toggle Rapid Capture', fn: () => toggleRapidCapture() },
+    { id: 'edit', label: 'Enter Edit', fn: () => { if (selectedElement) enterEditModeFor(selectedElement); } },
+  ];
+
+  function renderCommandList(filter = '') {
+    commandListEl.innerHTML = '';
+    const q = filter.trim().toLowerCase();
+    COMMANDS.filter(c => !q || c.label.toLowerCase().includes(q) || c.id.includes(q))
+      .forEach((c) => {
+        const div = document.createElement('div');
+        div.className = 'command-item';
+        div.textContent = c.label;
+        div.dataset.id = c.id;
+        div.addEventListener('click', () => { c.fn(); closeCommandPalette(); });
+        commandListEl.appendChild(div);
+      });
+  }
+
+  function openCommandPalette() {
+    renderCommandList();
+    commandOverlay.classList.remove('hidden');
+    commandOverlay.setAttribute('aria-hidden','false');
+    commandInput.value = '';
+    commandInput.focus();
+  }
+  function closeCommandPalette() {
+    commandOverlay.classList.add('hidden');
+    commandOverlay.setAttribute('aria-hidden','true');
+    document.activeElement?.blur();
+  }
+
+  commandInput?.addEventListener('input', (e) => renderCommandList(e.target.value));
+  commandInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeCommandPalette(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = commandListEl.querySelector('.command-item');
+      if (first) first.click();
+    }
+  });
+
+  function toggleRapidCapture(on = null) {
+    rapidCaptureMode = on === null ? !rapidCaptureMode : !!on;
+    document.body.classList.toggle('rapid-capture', rapidCaptureMode);
+  }
+
+  // When entering edit mode, tag editable for rapid flow
+  const origEnterEdit = enterEditModeFor;
+  enterEditModeFor = function(el) {
+    origEnterEdit(el);
+    if (!el) return;
+    const editable = el.querySelector('.note-content, .shape-label, .text-content, textarea, [contenteditable="true"]');
+    if (editable && rapidCaptureMode) {
+      editable.dataset.rapidFocus = '1';
+    }
+  };
+
+  // When an editable loses focus and had rapidFocus flag -> create next note
+  document.addEventListener('focusout', (e) => {
+    try {
+      const t = e.target;
+      if (t && t.dataset && t.dataset.rapidFocus) {
+        delete t.dataset.rapidFocus;
+        // small delay to ensure blur/finishEditing already ran
+        setTimeout(() => {
+          if (rapidCaptureMode) {
+            createNote();
+            scheduleSave(500);
+          }
+        }, 10);
+      }
+    } catch (err) { /* ignore */ }
+  }, true);
+
+  // Global key handlers for new features (capture-phase to avoid interference)
+  document.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd + K => command palette
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openCommandPalette();
+      return;
+    }
+    // Shift+N toggles rapid capture
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'N' || e.key === 'n')) {
+      e.preventDefault();
+      toggleRapidCapture();
+      return;
+    }
+  }, true);
+
+  // Close command palette when clicking outside
+  document.addEventListener('mousedown', (e) => {
+    if (!commandOverlay || commandOverlay.classList.contains('hidden')) return;
+    if (!e.target.closest('#command-palette-modal')) closeCommandPalette();
+  });
+
+  // If command palette is open, prevent other shortcuts while typing
+  document.addEventListener('keydown', (e) => {
+    if (!commandOverlay) return;
+    if (!commandOverlay.classList.contains('hidden')) {
+      // allow Escape/Enter only, prevent other global handlers
+      if (e.key !== 'Escape' && e.key !== 'Enter' && e.key.length === 1) {
+        // let input handle it
+        return;
+      }
+    }
+  }, true);
 });

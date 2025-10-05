@@ -351,6 +351,68 @@ body.dark-mode .template-actions button:hover {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   transition: background-color 0.2s;
 }
+/* Shortcut settings modal */
+#shortcut-settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 40000;
+}
+#shortcut-settings-modal {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  width: 520px;
+  max-width: 95%;
+  box-shadow: 0 6px 30px rgba(0,0,0,0.3);
+}
+#shortcut-settings-modal h3 { margin-top: 0; }
+.shortcut-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+.shortcut-row label { flex: 1; }
+.shortcut-capture { flex: 1; padding:8px; border:1px solid #ccc; border-radius:4px; background:#f9f9f9; cursor:pointer; }
+.shortcut-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+.shortcut-actions button { padding:8px 12px; }
+#shortcut-settings-overlay.hidden { display:none; }
+
+/* Command palette styles */
+#command-palette-overlay {
+  position: fixed;
+  top: 0; left: 0; right:0; bottom:0;
+  display:flex; align-items:flex-start; justify-content:center;
+  padding-top: 12vh;
+  background: rgba(0,0,0,0.45);
+  z-index: 50000;
+}
+#command-palette-modal {
+  width: 560px;
+  max-width: 95%;
+  background: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+}
+#command-palette-input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+#command-palette-list { max-height: 200px; overflow:auto; font-size:14px; color:#333; }
+.command-item { padding:8px; border-radius:4px; cursor:pointer; }
+.command-item:hover, .command-item.active { background:#f0f0f0; }
+
+/* Rapid capture visual hint (optional) */
+body.rapid-capture #toolbar { box-shadow: 0 0 0 3px rgba(0,123,255,0.08) inset; }
+
 #toolbar button:hover {
   background-color: #555;
 }
