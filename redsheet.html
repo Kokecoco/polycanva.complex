@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web赤シートメーカー</title>
+    <title>Web赤シートメーカー | クイズ自動生成・共有機能付き暗記帳ツール</title>
+    <meta name="description" content="無料で使えるオンライン赤シート作成ツール。4択クイズやマッチング問題を自動生成し、URLやファイルで簡単に共有できます。英単語や試験勉強の暗記に最適です。">
     <style>
         :root {
             --primary-color: #d32f2f;
@@ -55,10 +56,12 @@
         .focus-body .answer-area { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: var(--answer-color); visibility: hidden; }
         .focus-body .answer-area.visible { visibility: visible; }
         .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
-        .quiz-options button { width: 100%; padding: 15px; font-size: 16px; background-color: #007bff; text-align: left; }
-        .quiz-options button.correct { background-color: var(--correct-color) !important; color: white; }
-        .quiz-options button.incorrect { background-color: var(--incorrect-color) !important; color: white; }
-        .quiz-options button:disabled { opacity: 0.7; cursor: not-allowed; }
+        .quiz-option-container { display: flex; flex-direction: column; }
+        .quiz-option-button { width: 100%; padding: 15px; font-size: 16px; background-color: #007bff; text-align: left; }
+        .quiz-option-button.correct { background-color: var(--correct-color) !important; color: white; }
+        .quiz-option-button.incorrect { background-color: var(--incorrect-color) !important; color: white; }
+        .quiz-option-button:disabled { opacity: 0.7; cursor: not-allowed; }
+        .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
         
         .matching-container { display: flex; justify-content: space-between; }
@@ -86,15 +89,12 @@
             <h3>主な機能</h3>
             <ul>
                 <li><strong>赤シート学習</strong>: 作成した問題の答えを赤シートのように隠して学習できます。</li>
-                <li><strong>4択クイズ</strong>: 登録した問題から、AIを使わずに単語の類似度を判定して賢い4択クイズを自動生成します。間違えた問題の復習機能もあります。</li>
+                <li><strong>4択クイズ</strong>: 登録した問題から、単語の類似度を判定して賢い4択クイズを自動生成します。間違えた問題の復習機能もあります。</li>
                 <li><strong>マッチング問題</strong>: 問題と答えを線で結ぶゲーム形式で楽しく記憶度をチェックできます。</li>
                 <li><strong>共有＆保存</strong>: 作成した問題はURLやJSONファイルで友達と共有したり、バックアップしたりできます。</li>
                 <li><strong>印刷対応</strong>: 紙と物理的な赤シートでの学習用に、問題リストをきれいに印刷できます。</li>
             </ul>
-            <h3>活用例</h3>
-            <p>英単語、歴史の年号、法律の条文、資格試験の専門用語など、あらゆる暗記学習にご活用ください。</p>
         </div>
-        <p class="no-print">問題を作成し、多様なモードで学習。URL共有や印刷も可能です。</p>
 
         <div class="section-box input-area no-print">
             <h2>1. 問題を作成（一問一答）</h2>
@@ -212,7 +212,7 @@
         let currentFocusIndex = 0;
         let currentQuizIndex = 0;
         let quizQuestions = [];
-        let quizMistakes = []; // ★★★★★ 間違いを記録する配列を追加 ★★★★★
+        let quizMistakes = [];
         let selectedMatchingItem = null;
         let currentMatchingSet = [];
 
@@ -248,7 +248,7 @@
         };
         const renderQuestions = () => {
             questionList.innerHTML = ''; questionCount.textContent = questions.length; updateButtonsState();
-            if (questions.length === 0) { questionList.innerHTML = '<li>問題を追加することで開始できます</li>'; return; }
+            if (questions.length === 0) { questionList.innerHTML = '<li>まだ問題がありません。</li>'; return; }
             questions.forEach((q, index) => {
                 const li = document.createElement('li'); li.className = 'question-item';
                 li.innerHTML = `<div class="content"><div class="question-text">Q${index + 1}: ${sanitizeHTML(q.question)}</div><div class="answer-text hidden">A: ${sanitizeHTML(q.answer)}</div></div><div class="actions no-print"><button class="delete-button" data-index="${index}">削除</button></div>`;
@@ -287,19 +287,23 @@
             const incorrectOptions = [...new Set(otherAnswers)].map(ans => ({ text: ans, distance: levenshteinDistance(correctAnswer, ans) })).sort((a, b) => a.distance - b.distance).slice(0, 3).map(item => item.text);
             const options = shuffleArray([correctAnswer, ...incorrectOptions]);
             options.forEach(option => {
-                const button = document.createElement('button'); button.innerHTML = sanitizeHTML(option);
+                const container = document.createElement('div');
+                container.className = 'quiz-option-container';
+                const button = document.createElement('button');
+                button.className = 'quiz-option-button';
+                button.innerHTML = sanitizeHTML(option);
                 button.addEventListener('click', () => checkAnswer(button, option, correctAnswer));
-                quizOptions.appendChild(button);
+                container.appendChild(button);
+                quizOptions.appendChild(container);
             });
         };
 
         const checkAnswer = (button, selectedAnswer, correctAnswer) => {
-            Array.from(quizOptions.children).forEach(btn => btn.disabled = true);
+            Array.from(document.querySelectorAll('.quiz-option-button')).forEach(btn => btn.disabled = true);
             const isCorrect = selectedAnswer === correctAnswer;
             
             if (isCorrect) {
                 button.classList.add('correct');
-                // 正解したら0.8秒待って次に進む
                 setTimeout(() => {
                     if (currentQuizIndex < quizQuestions.length - 1) {
                         currentQuizIndex++; renderQuizQuestion();
@@ -308,13 +312,28 @@
                     }
                 }, 800);
             } else {
-                // ★★★★★ 間違えた問題を追加 ★★★★★
                 const currentQ = quizQuestions[currentQuizIndex];
                 if (!quizMistakes.find(q => q.id === currentQ.id)) {
                     quizMistakes.push(currentQ);
                 }
                 button.classList.add('incorrect');
-                Array.from(quizOptions.children).forEach(btn => { if (btn.textContent === correctAnswer) btn.classList.add('correct'); });
+                
+                // ★★★★★ 誤答の解説機能 ★★★★★
+                Array.from(quizOptions.querySelectorAll('.quiz-option-button')).forEach(btn => {
+                    const btnAnswerText = btn.textContent;
+                    if (btnAnswerText === correctAnswer) {
+                        btn.classList.add('correct');
+                    } else if (btn.classList.contains('incorrect')) {
+                        const originalQuestion = questions.find(q => q.answer === btnAnswerText);
+                        if (originalQuestion) {
+                            const explanation = document.createElement('div');
+                            explanation.className = 'quiz-explanation';
+                            explanation.textContent = `（これは「${originalQuestion.question}」の答えです）`;
+                            btn.parentElement.appendChild(explanation);
+                        }
+                    }
+                });
+
                 quizNextButton.style.display = 'block';
                 if (currentQuizIndex === quizQuestions.length - 1) {
                     quizNextButton.textContent = '結果を見る';
@@ -334,21 +353,20 @@
             setTimeout(() => {
                 alert(message);
                 if (mistakesCount > 0 && confirm('間違えた問題に再挑戦しますか？')) {
-                    // 復習モードを開始
                     quizQuestions = shuffleArray([...quizMistakes]);
-                    quizMistakes = []; // 復習モードでの間違いを新たに記録するためリセット
+                    quizMistakes = [];
                     currentQuizIndex = 0;
                     renderQuizQuestion();
                 } else {
                     endQuizMode();
                 }
-            }, 200); // 最後の問題の表示を少し待つ
+            }, 200);
         };
 
         const startQuizMode = () => { 
             if (questions.length < 4) return;
             quizQuestions = shuffleArray([...questions]); 
-            quizMistakes = []; // ★★★★★ クイズ開始時に間違いリストをリセット ★★★★★
+            quizMistakes = [];
             currentQuizIndex = 0; 
             quizNextButton.textContent = '次の問題へ'; 
             renderQuizQuestion(); 
