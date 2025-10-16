@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web赤シートメーカー</title>
+    <style>
+        :root {
+            --primary-color: #d32f2f;
+            --secondary-color: #f1f1f1;
+            --border-color: #ccc;
+            --text-color: #333;
+            --answer-hidden-bg: #d32f2f;
+            --answer-hidden-color: #d32f2f;
+        }
+        body {
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            line-height: 1.6;
+            background-color: var(--secondary-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            text-align: center;
+            color: var(--primary-color);
+        }
+        .input-area, .share-area, .file-area {
+            background-color: #fafafa;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        textarea, input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            box-sizing: border-box;
+            resize: vertical;
+        }
+        button, .file-label {
+            background-color: var(--primary-color);
+            color: #fff;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+            text-align: center;
+        }
+        button:hover, .file-label:hover {
+            background-color: #b71c1c;
+        }
+        button:disabled {
+            background-color: #aaa;
+            cursor: not-allowed;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        #question-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .question-item {
+            background-color: #fff;
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+        }
+        .question-item .content {
+            flex-grow: 1;
+        }
+        .question-item .actions {
+            margin-top: 10px;
+            text-align: right;
+        }
+        .question-item .actions button {
+            background-color: #757575;
+            padding: 5px 10px;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .question-text {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .answer-text {
+            cursor: pointer;
+            transition: all 0.2s;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .answer-text.hidden {
+            background-color: var(--answer-hidden-bg);
+            color: var(--answer-hidden-color);
+            user-select: none;
+        }
+        #share-url {
+            background-color: #eee;
+        }
+        .file-input {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Web赤シートメーカー</h1>
+        <p>問題と答えを入力して、あなただけの暗記帳を作りましょう。作成した問題はURLやファイルで共有できます。</p>
+
+        <div class="input-area">
+            <h2>1. 問題を作成</h2>
+            <textarea id="question-input" rows="3" placeholder="問題文を入力..."></textarea>
+            <textarea id="answer-input" rows="3" placeholder="答えを入力..."></textarea>
+            <button id="add-button">問題を追加</button>
+        </div>
+
+        <div class="controls">
+            <h2 style="margin: 0;">問題リスト (<span id="question-count">0</span>問)</h2>
+            <button id="toggle-all-button" disabled>答えを全て隠す/表示</button>
+        </div>
+        <ul id="question-list">
+            <!-- ここに問題が動的に追加されます -->
+        </ul>
+
+        <div class="share-area">
+            <h2>2. URLで共有</h2>
+            <p>現在の問題リストを1つのURLとして生成します。このURLを友達に送れば、同じ問題リストを再現できます。</p>
+            <button id="generate-url-button" disabled>共有URLを生成</button>
+            <input type="text" id="share-url" placeholder="ここに共有URLが生成されます" readonly>
+            <button id="copy-url-button" style="display: none;">URLをコピー</button>
+        </div>
+        
+        <div class="file-area">
+            <h2>3. ファイルで保存・読込</h2>
+            <p>問題リストをファイルとして保存したり、以前保存したファイルを読み込んだりできます。</p>
+            <button id="export-json-button" disabled>JSONファイルで保存</button>
+            <label for="import-json-input" class="file-label">JSONファイルを読み込む</label>
+            <input type="file" id="import-json-input" class="file-input" accept=".json">
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const questionInput = document.getElementById('question-input');
+            const answerInput = document.getElementById('answer-input');
+            const addButton = document.getElementById('add-button');
+            const questionList = document.getElementById('question-list');
+            const questionCount = document.getElementById('question-count');
+            const toggleAllButton = document.getElementById('toggle-all-button');
+            
+            const generateUrlButton = document.getElementById('generate-url-button');
+            const shareUrlInput = document.getElementById('share-url');
+            const copyUrlButton = document.getElementById('copy-url-button');
+            
+            const exportJsonButton = document.getElementById('export-json-button');
+            const importJsonInput = document.getElementById('import-json-input');
+
+            let questions = [];
+            let allAnswersVisible = false;
+
+            // --- 関数定義 ---
+
+            const renderQuestions = () => {
+                questionList.innerHTML = '';
+                questionCount.textContent = questions.length;
+
+                if (questions.length === 0) {
+                    toggleAllButton.disabled = true;
+                    generateUrlButton.disabled = true;
+                    exportJsonButton.disabled = true;
+                    questionList.innerHTML = '<li>まだ問題がありません。</li>';
+                    return;
+                }
+
+                toggleAllButton.disabled = false;
+                generateUrlButton.disabled = false;
+                exportJsonButton.disabled = false;
+
+                questions.forEach((q, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'question-item';
+                    li.innerHTML = `
+                        <div class="content">
+                            <div class="question-text">Q${index + 1}: ${q.question.replace(/\n/g, '<br>')}</div>
+                            <div class="answer-text hidden" data-index="${index}">A: ${q.answer.replace(/\n/g, '<br>')}</div>
+                        </div>
+                        <div class="actions">
+                            <button class="delete-button" data-index="${index}">削除</button>
+                        </div>
+                    `;
+                    questionList.appendChild(li);
+                });
+                updateAllAnswersVisibility();
+            };
+
+            const addQuestion = () => {
+                const questionText = questionInput.value.trim();
+                const answerText = answerInput.value.trim();
+
+                if (questionText && answerText) {
+                    questions.push({ question: questionText, answer: answerText });
+                    questionInput.value = '';
+                    answerInput.value = '';
+                    renderQuestions();
+                    questionInput.focus();
+                } else {
+                    alert('問題と答えの両方を入力してください。');
+                }
+            };
+            
+            const deleteQuestion = (index) => {
+                if (confirm(`問題${index + 1}を削除しますか？`)) {
+                    questions.splice(index, 1);
+                    renderQuestions();
+                }
+            };
+            
+            const toggleAnswer = (element) => {
+                element.classList.toggle('hidden');
+            };
+
+            const updateAllAnswersVisibility = () => {
+                const answerElements = document.querySelectorAll('.answer-text');
+                answerElements.forEach(el => {
+                    if (allAnswersVisible) {
+                        el.classList.remove('hidden');
+                    } else {
+                        el.classList.add('hidden');
+                    }
+                });
+            };
+
+            const toggleAllAnswers = () => {
+                allAnswersVisible = !allAnswersVisible;
+                updateAllAnswersVisibility();
+            };
+
+            const generateShareUrl = () => {
+                try {
+                    const jsonString = JSON.stringify(questions);
+                    // 日本語を安全にエンコードするためにencodeURIComponentを使用
+                    const base64String = btoa(encodeURIComponent(jsonString));
+                    const url = `${location.origin}${location.pathname}#${base64String}`;
+                    shareUrlInput.value = url;
+                    copyUrlButton.style.display = 'inline-block';
+                    alert('共有URLを生成しました。');
+                } catch (e) {
+                    console.error(e);
+                    alert('URLの生成に失敗しました。問題が多すぎる可能性があります。');
+                }
+            };
+            
+            const copyUrlToClipboard = () => {
+                shareUrlInput.select();
+                document.execCommand('copy');
+                alert('URLをクリップボードにコピーしました。');
+            };
+
+            const loadFromUrl = () => {
+                if (location.hash) {
+                    try {
+                        const base64String = location.hash.substring(1);
+                        // デコード時もdecodeURIComponentを使用
+                        const jsonString = decodeURIComponent(atob(base64String));
+                        const data = JSON.parse(jsonString);
+                        if (Array.isArray(data)) {
+                            questions = data;
+                            renderQuestions();
+                            alert(`URLから${questions.length}問の問題を読み込みました。`);
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert('URLのデータが不正です。');
+                        // URLが不正な場合はハッシュをクリア
+                        history.replaceState(null, '', ' ');
+                    }
+                }
+            };
+            
+            const exportToJson = () => {
+                const jsonString = JSON.stringify(questions, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'web-akasheet-data.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            const importFromJson = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (Array.isArray(data)) {
+                            if (confirm(`${data.length}問の問題を読み込みますか？現在の問題リストは上書きされます。`)) {
+                                questions = data;
+                                renderQuestions();
+                            }
+                        } else {
+                           alert('ファイル形式が正しくありません。');
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert('ファイルの読み込みに失敗しました。');
+                    }
+                };
+                reader.readAsText(file);
+                // 同じファイルを再度選択できるように値をリセット
+                event.target.value = '';
+            };
+
+
+            // --- イベントリスナー設定 ---
+
+            addButton.addEventListener('click', addQuestion);
+            toggleAllButton.addEventListener('click', toggleAllAnswers);
+            generateUrlButton.addEventListener('click', generateShareUrl);
+            copyUrlButton.addEventListener('click', copyUrlToClipboard);
+            exportJsonButton.addEventListener('click', exportToJson);
+            importJsonInput.addEventListener('change', importFromJson);
+            
+            questionList.addEventListener('click', (e) => {
+                // 個別の答えの表示/非表示
+                if (e.target.classList.contains('answer-text')) {
+                    toggleAnswer(e.target);
+                }
+                // 削除ボタン
+                if (e.target.classList.contains('delete-button')) {
+                    const index = parseInt(e.target.dataset.index, 10);
+                    deleteQuestion(index);
+                }
+            });
+
+            // --- 初期化処理 ---
+            loadFromUrl(); // ページ読み込み時にURLからデータを復元
+            renderQuestions(); // 初回描画
+        });
+    </script>
+</body>
+</html>
