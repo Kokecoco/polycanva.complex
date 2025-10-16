@@ -63,7 +63,7 @@
         
         .matching-container { display: flex; justify-content: space-between; }
         .matching-list { list-style: none; padding: 0; width: 48%; border: 1px solid var(--border-color); border-radius: 5px; }
-        .matching-item { padding: 10px; margin: 5px; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+        .matching-item { padding: 10px; margin: 5px; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; transition: all 0.2s; word-wrap: break-word; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); }
         .matching-item.matched { background-color: var(--matched-color); color: #888; cursor: default; border-style: dashed; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
@@ -122,7 +122,7 @@
         </div>
     </div>
 
-    <!-- 集中学習モード用モーダル -->
+    <!-- Modals -->
     <div id="focus-mode-modal" class="modal-overlay no-print">
         <div class="modal-card">
             <div class="modal-header"><h3>集中学習モード</h3><span id="focus-counter"></span></div>
@@ -143,8 +143,6 @@
             </div>
         </div>
     </div>
-    
-    <!-- 4択クイズモード用モーダル -->
     <div id="quiz-mode-modal" class="modal-overlay no-print">
         <div class="modal-card">
             <div class="modal-header"><h3>4択クイズモード</h3><span id="quiz-counter"></span></div>
@@ -158,8 +156,6 @@
             </div>
         </div>
     </div>
-    
-    <!-- マッチング問題モード用モーダル -->
     <div id="matching-mode-modal" class="modal-overlay no-print">
         <div class="modal-card">
             <div class="modal-header"><h3>マッチング問題</h3><span id="matching-progress"></span></div>
@@ -178,7 +174,7 @@
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
-        // --- DOM要素の取得 ---
+        // --- DOM Elements ---
         const qa = sel => document.querySelector(sel);
         const questionInput = qa('#question-input'), answerInput = qa('#answer-input'), addButton = qa('#add-button');
         const questionList = qa('#question-list'), questionCount = qa('#question-count');
@@ -196,19 +192,33 @@
         const matchingModal = qa('#matching-mode-modal'), matchingQuestions = qa('#matching-questions'), matchingAnswers = qa('#matching-answers'), matchingProgress = qa('#matching-progress');
         const matchingResetButton = qa('#matching-reset-button'), matchingCloseButton = qa('#matching-close-button');
 
-        // --- 状態変数 ---
+        // --- State Variables ---
         let questions = [];
         let allAnswersVisible = false;
         let currentFocusIndex = 0;
         let currentQuizIndex = 0;
         let quizQuestions = [];
+        let quizMistakes = []; // ★★★★★ 間違いを記録する配列を追加 ★★★★★
         let selectedMatchingItem = null;
         let currentMatchingSet = [];
 
-        // --- 汎用関数 ---
+        // --- Utility Functions ---
         const shuffleArray = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
+        const sanitizeHTML = str => str.replace(/\n/g, '<br>');
+        const levenshteinDistance = (str1 = '', str2 = '') => {
+            const track = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+            for (let i = 0; i <= str1.length; i += 1) { track[0][i] = i; }
+            for (let j = 0; j <= str2.length; j += 1) { track[j][0] = j; }
+            for (let j = 1; j <= str2.length; j += 1) {
+                for (let i = 1; i <= str1.length; i += 1) {
+                    const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+                    track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator);
+                }
+            }
+            return track[str2.length][str1.length];
+        };
 
-        // --- UI更新 ---
+        // --- UI Update ---
         const updateButtonsState = () => {
             const count = questions.length;
             const hasQuestions = count > 0;
@@ -222,118 +232,135 @@
             if(hasQuestions) matchingCountInput.max = count;
             generateUrlButton.disabled = exportJsonButton.disabled = printButton.disabled = !hasQuestions;
         };
-
         const renderQuestions = () => {
-            questionList.innerHTML = '';
-            questionCount.textContent = questions.length;
-            updateButtonsState();
+            questionList.innerHTML = ''; questionCount.textContent = questions.length; updateButtonsState();
             if (questions.length === 0) { questionList.innerHTML = '<li>まだ問題がありません。</li>'; return; }
             questions.forEach((q, index) => {
-                const li = document.createElement('li');
-                li.className = 'question-item';
-                li.innerHTML = `<div class="content"><div class="question-text">Q${index + 1}: ${q.question.replace(/\n/g, '<br>')}</div><div class="answer-text hidden">A: ${q.answer.replace(/\n/g, '<br>')}</div></div><div class="actions no-print"><button class="delete-button" data-index="${index}">削除</button></div>`;
+                const li = document.createElement('li'); li.className = 'question-item';
+                li.innerHTML = `<div class="content"><div class="question-text">Q${index + 1}: ${sanitizeHTML(q.question)}</div><div class="answer-text hidden">A: ${sanitizeHTML(q.answer)}</div></div><div class="actions no-print"><button class="delete-button" data-index="${index}">削除</button></div>`;
                 questionList.appendChild(li);
             });
             updateAllAnswersVisibility();
         };
 
-        // --- 問題操作 ---
+        // --- Question Management ---
         const addQuestion = () => {
             const q = questionInput.value.trim(), a = answerInput.value.trim();
-            if (q && a) {
-                questions.push({ id: Date.now(), question: q, answer: a });
-                questionInput.value = answerInput.value = '';
-                renderQuestions();
-                questionInput.focus();
-            } else alert('問題と答えを入力してください。');
+            if (q && a) { questions.push({ id: Date.now(), question: q, answer: a }); questionInput.value = answerInput.value = ''; renderQuestions(); questionInput.focus(); }
+            else alert('問題と答えを入力してください。');
         };
-
         const deleteQuestion = index => { if (confirm(`問題${index + 1}を削除しますか？`)) { questions.splice(index, 1); renderQuestions(); } };
         const updateAllAnswersVisibility = () => document.querySelectorAll('.answer-text').forEach(el => allAnswersVisible ? el.classList.remove('hidden') : el.classList.add('hidden'));
 
-        // --- 集中学習モード ---
+        // --- Focus Mode ---
         const renderFocusQuestion = () => {
-            const q = questions[currentFocusIndex];
-            focusCounter.textContent = `${currentFocusIndex + 1} / ${questions.length}`;
-            focusQuestion.innerHTML = `Q: ${q.question.replace(/\n/g, '<br>')}`;
-            focusAnswer.innerHTML = q.answer.replace(/\n/g, '<br>');
-            focusAnswerArea.classList.remove('visible');
-            focusToggleAnswerButton.textContent = '答えを見る';
-            focusPrevButton.disabled = currentFocusIndex === 0;
-            focusNextButton.disabled = currentFocusIndex === questions.length - 1;
+            const q = questions[currentFocusIndex]; focusCounter.textContent = `${currentFocusIndex + 1} / ${questions.length}`;
+            focusQuestion.innerHTML = `Q: ${sanitizeHTML(q.question)}`; focusAnswer.innerHTML = sanitizeHTML(q.answer);
+            focusAnswerArea.classList.remove('visible'); focusToggleAnswerButton.textContent = '答えを見る';
+            focusPrevButton.disabled = currentFocusIndex === 0; focusNextButton.disabled = currentFocusIndex === questions.length - 1;
         };
         const startFocusMode = () => { currentFocusIndex = 0; renderFocusQuestion(); focusModal.style.display = 'flex'; document.body.classList.add('modal-open'); };
         const endFocusMode = () => { focusModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
 
-        // --- 4択クイズモード ---
+        // --- Quiz Mode ---
         const renderQuizQuestion = () => {
-            quizOptions.innerHTML = '';
-            quizNextButton.style.display = 'none';
+            quizOptions.innerHTML = ''; quizNextButton.style.display = 'none';
             const currentQ = quizQuestions[currentQuizIndex];
+            const correctAnswer = currentQ.answer;
             quizCounter.textContent = `${currentQuizIndex + 1} / ${quizQuestions.length}`;
-            quizQuestion.innerHTML = `Q: ${currentQ.question.replace(/\n/g, '<br>')}`;
-            const otherAnswers = questions.map(q => q.answer).filter(ans => ans !== currentQ.answer);
-            const incorrectOptions = shuffleArray([...new Set(otherAnswers)]).slice(0, 3);
-            const options = shuffleArray([currentQ.answer, ...incorrectOptions]);
+            quizQuestion.innerHTML = `Q: ${sanitizeHTML(currentQ.question)}`;
+            const otherAnswers = questions.map(q => q.answer).filter(ans => ans !== correctAnswer);
+            const incorrectOptions = [...new Set(otherAnswers)].map(ans => ({ text: ans, distance: levenshteinDistance(correctAnswer, ans) })).sort((a, b) => a.distance - b.distance).slice(0, 3).map(item => item.text);
+            const options = shuffleArray([correctAnswer, ...incorrectOptions]);
             options.forEach(option => {
-                const button = document.createElement('button');
-                button.innerHTML = option.replace(/\n/g, '<br>');
-                button.addEventListener('click', () => checkAnswer(button, option, currentQ.answer));
+                const button = document.createElement('button'); button.innerHTML = sanitizeHTML(option);
+                button.addEventListener('click', () => checkAnswer(button, option, correctAnswer));
                 quizOptions.appendChild(button);
             });
         };
+
         const checkAnswer = (button, selectedAnswer, correctAnswer) => {
             Array.from(quizOptions.children).forEach(btn => btn.disabled = true);
-            if (selectedAnswer === correctAnswer) {
+            const isCorrect = selectedAnswer === correctAnswer;
+            
+            if (isCorrect) {
                 button.classList.add('correct');
+                // 正解したら0.8秒待って次に進む
                 setTimeout(() => {
                     if (currentQuizIndex < quizQuestions.length - 1) {
-                        currentQuizIndex++;
-                        renderQuizQuestion();
-                    } else { alert('全問正解！クイズが終了しました！'); endQuizMode(); }
+                        currentQuizIndex++; renderQuizQuestion();
+                    } else {
+                        handleQuizCompletion();
+                    }
                 }, 800);
             } else {
+                // ★★★★★ 間違えた問題を追加 ★★★★★
+                const currentQ = quizQuestions[currentQuizIndex];
+                if (!quizMistakes.find(q => q.id === currentQ.id)) {
+                    quizMistakes.push(currentQ);
+                }
                 button.classList.add('incorrect');
-                Array.from(quizOptions.children).forEach(btn => { if (btn.innerHTML.replace(/<br>/g, '\n') === correctAnswer) btn.classList.add('correct'); });
+                Array.from(quizOptions.children).forEach(btn => { if (btn.textContent === correctAnswer) btn.classList.add('correct'); });
                 quizNextButton.style.display = 'block';
-                if (currentQuizIndex === quizQuestions.length - 1) quizNextButton.textContent = '結果を見る';
+                if (currentQuizIndex === quizQuestions.length - 1) {
+                    quizNextButton.textContent = '結果を見る';
+                }
             }
         };
-        const startQuizMode = () => {
+
+        const handleQuizCompletion = () => {
+            const total = quizQuestions.length;
+            const mistakesCount = quizMistakes.length;
+            const correctCount = total - mistakesCount;
+
+            let message = mistakesCount === 0 
+                ? '全問正解です！素晴らしい！'
+                : `${total}問中、${correctCount}問正解でした。`;
+
+            setTimeout(() => {
+                alert(message);
+                if (mistakesCount > 0 && confirm('間違えた問題に再挑戦しますか？')) {
+                    // 復習モードを開始
+                    quizQuestions = shuffleArray([...quizMistakes]);
+                    quizMistakes = []; // 復習モードでの間違いを新たに記録するためリセット
+                    currentQuizIndex = 0;
+                    renderQuizQuestion();
+                } else {
+                    endQuizMode();
+                }
+            }, 200); // 最後の問題の表示を少し待つ
+        };
+
+        const startQuizMode = () => { 
             if (questions.length < 4) return;
-            quizQuestions = shuffleArray([...questions]);
-            currentQuizIndex = 0;
-            quizNextButton.textContent = '次の問題へ';
-            renderQuizQuestion();
-            quizModal.style.display = 'flex';
+            quizQuestions = shuffleArray([...questions]); 
+            quizMistakes = []; // ★★★★★ クイズ開始時に間違いリストをリセット ★★★★★
+            currentQuizIndex = 0; 
+            quizNextButton.textContent = '次の問題へ'; 
+            renderQuizQuestion(); 
+            quizModal.style.display = 'flex'; 
             document.body.classList.add('modal-open');
         };
         const endQuizMode = () => { quizModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
 
-        // --- マッチング問題モード ---
+        // --- Matching Mode ---
         const startMatchingMode = () => {
             const count = parseInt(matchingCountInput.value, 10);
             if (count < 5 || count > questions.length) { alert(`問題数は5以上、${questions.length}以下で指定してください。`); return; }
             currentMatchingSet = shuffleArray([...questions]).slice(0, count);
-            renderMatchingGame();
-            matchingModal.style.display = 'flex';
-            document.body.classList.add('modal-open');
+            renderMatchingGame(); matchingModal.style.display = 'flex'; document.body.classList.add('modal-open');
         };
         const renderMatchingGame = () => {
-            selectedMatchingItem = null;
-            matchingQuestions.innerHTML = '';
-            matchingAnswers.innerHTML = '';
-            const answers = shuffleArray(currentMatchingSet.map(q => ({ id: q.id, text: q.answer })));
+            selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
+            const answers = shuffleArray(currentMatchingSet.map(q => ({ ...q })));
             currentMatchingSet.forEach(q => {
-                const li = document.createElement('li');
-                li.className = 'matching-item'; li.innerHTML = q.question.replace(/\n/g, '<br>');
+                const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(q.question);
                 li.dataset.id = q.id; li.dataset.type = 'question';
                 matchingQuestions.appendChild(li);
             });
             answers.forEach(a => {
-                const li = document.createElement('li');
-                li.className = 'matching-item'; li.innerHTML = a.text.replace(/\n/g, '<br>');
-                li.dataset.id = a.id; li.dataset.type = 'answer';
+                const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(a.answer);
+                li.dataset.id = a.id; li.dataset.type = 'answer'; li.dataset.answerText = a.answer;
                 matchingAnswers.appendChild(li);
             });
             updateMatchingProgress();
@@ -341,41 +368,31 @@
         const handleMatchingClick = e => {
             const target = e.target.closest('.matching-item');
             if (!target || target.classList.contains('matched')) return;
-            if (!selectedMatchingItem) {
-                if (document.querySelector('.matching-item.selected')) return;
-                selectedMatchingItem = target;
-                target.classList.add('selected');
-            } else {
-                if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) {
-                    selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return;
-                }
-                if (target.dataset.id === selectedMatchingItem.dataset.id) {
-                    target.classList.add('matched'); selectedMatchingItem.classList.add('matched');
-                    target.classList.remove('selected'); selectedMatchingItem.classList.remove('selected');
-                    selectedMatchingItem = null;
-                    updateMatchingProgress();
-                    if (document.querySelectorAll('.matching-item:not(.matched)').length === 0) setTimeout(() => alert('全問正解！クリアです！'), 200);
+            if (!selectedMatchingItem) { if (document.querySelector('.matching-item.selected')) return; selectedMatchingItem = target; target.classList.add('selected'); }
+            else {
+                if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
+                let questionEl, answerEl;
+                if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; }
+                else { questionEl = target; answerEl = selectedMatchingItem; }
+                const questionObj = currentMatchingSet.find(q => q.id == questionEl.dataset.id);
+                if (questionObj && questionObj.answer === answerEl.dataset.answerText) {
+                    questionEl.classList.add('matched'); answerEl.classList.add('matched');
+                    questionEl.classList.remove('selected'); answerEl.classList.remove('selected');
+                    selectedMatchingItem = null; updateMatchingProgress();
+                    if (document.querySelectorAll('#matching-container .matching-item:not(.matched)').length === 0) setTimeout(() => alert('全問正解！クリアです！'), 200);
                 } else {
-                    target.classList.add('incorrect-flash'); selectedMatchingItem.classList.add('incorrect-flash');
-                    const prevSelectedItem = selectedMatchingItem;
-                    selectedMatchingItem = null;
-                    setTimeout(() => { target.classList.remove('incorrect-flash'); prevSelectedItem.classList.remove('incorrect-flash', 'selected'); }, 500);
+                    questionEl.classList.add('incorrect-flash'); answerEl.classList.add('incorrect-flash');
+                    const prevSelectedItem = selectedMatchingItem; selectedMatchingItem = null;
+                    setTimeout(() => { questionEl.classList.remove('incorrect-flash', 'selected'); answerEl.classList.remove('incorrect-flash', 'selected'); prevSelectedItem.classList.remove('incorrect-flash', 'selected'); }, 500);
                 }
             }
         };
         const updateMatchingProgress = () => { const matchedCount = document.querySelectorAll('#matching-container .matched').length / 2; matchingProgress.textContent = `${matchedCount} / ${currentMatchingSet.length}`; };
         const endMatchingMode = () => { matchingModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
 
-        // --- データ入出力 ---
+        // --- Data I/O ---
         const generateShareUrl = () => { try { const url = `${location.origin}${location.pathname}#${btoa(encodeURIComponent(JSON.stringify(questions)))}`; navigator.clipboard.writeText(url).then(() => alert('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
-        const loadFromUrl = () => {
-            if (location.hash) {
-                try {
-                    const data = JSON.parse(decodeURIComponent(atob(location.hash.substring(1))));
-                    if (Array.isArray(data)) { questions = data; renderQuestions(); }
-                } catch (e) { alert('URLのデータが不正です。'); history.replaceState(null, '', ' '); }
-            }
-        };
+        const loadFromUrl = () => { if (location.hash) { try { const data = JSON.parse(decodeURIComponent(atob(location.hash.substring(1)))); if (Array.isArray(data)) { questions = data; renderQuestions(); } } catch (e) { alert('URLのデータが不正です。'); history.replaceState(null, '', ' '); } } };
         const exportToJson = () => { const blob = new Blob([JSON.stringify(questions, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'web-akasheet-data.json'; a.click(); URL.revokeObjectURL(a.href); };
         const importFromJson = e => {
             const file = e.target.files[0]; if (!file) return;
@@ -392,7 +409,7 @@
             reader.readAsText(file); e.target.value = '';
         };
 
-        // --- イベントリスナー ---
+        // --- Event Listeners ---
         addButton.addEventListener('click', addQuestion);
         toggleAllButton.addEventListener('click', () => { allAnswersVisible = !allAnswersVisible; updateAllAnswersVisibility(); });
         shuffleButton.addEventListener('click', () => { shuffleArray(questions); renderQuestions(); });
@@ -405,7 +422,7 @@
         focusNextButton.addEventListener('click', () => { if (currentFocusIndex < questions.length - 1) { currentFocusIndex++; renderFocusQuestion(); } });
         focusPrevButton.addEventListener('click', () => { if (currentFocusIndex > 0) { currentFocusIndex--; renderFocusQuestion(); } });
         quizCloseButton.addEventListener('click', endQuizMode);
-        quizNextButton.addEventListener('click', () => { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { alert('クイズが終了しました！'); endQuizMode(); } });
+        quizNextButton.addEventListener('click', () => { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } });
         matchingModal.addEventListener('click', handleMatchingClick);
         matchingResetButton.addEventListener('click', renderMatchingGame);
         matchingCloseButton.addEventListener('click', endMatchingMode);
@@ -414,7 +431,7 @@
         importJsonInput.addEventListener('change', importFromJson);
         printButton.addEventListener('click', () => window.print());
 
-        // --- 初期化 ---
+        // --- Initialization ---
         loadFromUrl();
         renderQuestions();
     });
