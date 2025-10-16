@@ -80,6 +80,20 @@
 <body>
     <div class="container">
         <h1>Web赤シートメーカー</h1>
+        <div class="section-box content-section no-print">
+            <h2>Web赤シートメーカーとは？</h2>
+            <p>「Web赤シートメーカー」は、あなただけのオリジナル暗記帳をブラウザ上で簡単に作成・共有できる無料の学習ツールです。サーバー不要で動作し、作成した問題はすべてお使いのデバイスに保存されます。</p>
+            <h3>主な機能</h3>
+            <ul>
+                <li><strong>赤シート学習</strong>: 作成した問題の答えを赤シートのように隠して学習できます。</li>
+                <li><strong>4択クイズ</strong>: 登録した問題から、AIを使わずに単語の類似度を判定して賢い4択クイズを自動生成します。間違えた問題の復習機能もあります。</li>
+                <li><strong>マッチング問題</strong>: 問題と答えを線で結ぶゲーム形式で楽しく記憶度をチェックできます。</li>
+                <li><strong>共有＆保存</strong>: 作成した問題はURLやJSONファイルで友達と共有したり、バックアップしたりできます。</li>
+                <li><strong>印刷対応</strong>: 紙と物理的な赤シートでの学習用に、問題リストをきれいに印刷できます。</li>
+            </ul>
+            <h3>活用例</h3>
+            <p>英単語、歴史の年号、法律の条文、資格試験の専門用語など、あらゆる暗記学習にご活用ください。</p>
+        </div>
         <p class="no-print">問題を作成し、多様なモードで学習。URL共有や印刷も可能です。</p>
 
         <div class="section-box input-area no-print">
@@ -234,7 +248,7 @@
         };
         const renderQuestions = () => {
             questionList.innerHTML = ''; questionCount.textContent = questions.length; updateButtonsState();
-            if (questions.length === 0) { questionList.innerHTML = '<li>まだ問題がありません。</li>'; return; }
+            if (questions.length === 0) { questionList.innerHTML = '<li>問題を追加することで開始できます</li>'; return; }
             questions.forEach((q, index) => {
                 const li = document.createElement('li'); li.className = 'question-item';
                 li.innerHTML = `<div class="content"><div class="question-text">Q${index + 1}: ${sanitizeHTML(q.question)}</div><div class="answer-text hidden">A: ${sanitizeHTML(q.answer)}</div></div><div class="actions no-print"><button class="delete-button" data-index="${index}">削除</button></div>`;
