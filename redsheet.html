@@ -367,7 +367,7 @@
         const endMatchingMode = () => { matchingModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
 
         // --- データ入出力 ---
-        const generateShareUrl = () => { try { const url = `${location.origin}${location.pathname}#${btoa(encodeURIComponent(JSON.stringify(questions))}`; navigator.clipboard.writeText(url).then(() => alert('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
+        const generateShareUrl = () => { try { const url = `${location.origin}${location.pathname}#${btoa(encodeURIComponent(JSON.stringify(questions)))}`; navigator.clipboard.writeText(url).then(() => alert('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
         const loadFromUrl = () => {
             if (location.hash) {
                 try {
@@ -384,7 +384,7 @@
                 try {
                     const data = JSON.parse(re.target.result);
                     if (Array.isArray(data) && confirm(`${data.length}問を読込みますか？`)) {
-                        if (data.length > 0 && typeof data[0].id === 'undefined') data.forEach((item, index) => item.id = Date.now() + index);
+                        if (data.length > 0 && typeof data[0].id === 'undefined') { data.forEach((item, index) => { item.id = Date.now() + index; }); }
                         questions = data; renderQuestions();
                     }
                 } catch (err) { alert('ファイルの読込に失敗しました。'); }
@@ -396,7 +396,7 @@
         addButton.addEventListener('click', addQuestion);
         toggleAllButton.addEventListener('click', () => { allAnswersVisible = !allAnswersVisible; updateAllAnswersVisibility(); });
         shuffleButton.addEventListener('click', () => { shuffleArray(questions); renderQuestions(); });
-        questionList.addEventListener('click', e => { if (e.target.classList.contains('answer-text')) e.target.classList.toggle('hidden'); if (e.target.classList.contains('delete-button')) deleteQuestion(parseInt(e.target.dataset.index, 10)); });
+        questionList.addEventListener('click', e => { if (e.target.classList.contains('answer-text')) { e.target.classList.toggle('hidden'); } if (e.target.classList.contains('delete-button')) { deleteQuestion(parseInt(e.target.dataset.index, 10)); } });
         startFocusModeButton.addEventListener('click', startFocusMode);
         startQuizModeButton.addEventListener('click', startQuizMode);
         startMatchingModeButton.addEventListener('click', startMatchingMode);
