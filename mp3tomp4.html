@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MP4 to MP3 Converter (Client-Side)</title>
+
+    <!-- CSSをHTMLファイル内に直接記述 -->
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1em;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #fff;
+            padding: 2em;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #444;
+        }
+        p {
+            line-height: 1.6;
+        }
+        input[type="file"] {
+            display: block;
+            margin: 2em auto;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        #status {
+            margin: 1.5em 0;
+        }
+        progress {
+            width: 100%;
+            height: 20px;
+        }
+        #result a {
+            display: inline-block;
+            margin-top: 1em;
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        #result a:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MP4 を MP3 に変換</h1>
+        <p>サーバーにファイルをアップロードせず、お使いのブラウザ上で変換処理を行います。</p>
+        
+        <input type="file" id="uploader" accept="video/mp4">
+        
+        <div id="status">
+            <p id="message">MP4ファイルを選択してください。</p>
+            <progress id="progress" value="0" max="100" style="display: none;"></progress>
+        </div>
+        
+        <button id="convert-button" disabled>変換実行</button>
+        
+        <div id="result" style="display: none;">
+            <h2>変換完了！</h2>
+            <a id="download-link" download="output.mp3">MP3ファイルをダウンロード</a>
+        </div>
+    </div>
+
+    <!-- ffmpeg.wasm ライブラリをCDNから読み込み -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+
+    <!-- JavaScriptをHTMLファイル内に直接記述 -->
+    <script>
+        // HTML要素を取得
+        const uploader = document.getElementById('uploader');
+        const convertButton = document.getElementById('convert-button');
+        const message = document.getElementById('message');
+        const progress = document.getElementById('progress');
+        const resultArea = document.getElementById('result');
+        const downloadLink = document.getElementById('download-link');
+
+        let inputFile = null;
+
+        // ffmpeg.wasmのインスタンスを作成
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({
+            log: true, // 処理ログをコンソールに出力する
+            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+        });
+
+        // ファイルが選択されたときの処理
+        uploader.addEventListener('change', (event) => {
+            inputFile = event.target.files[0];
+            if (inputFile) {
+                message.textContent = `${inputFile.name} が選択されました。`;
+                convertButton.disabled = false;
+                resultArea.style.display = 'none'; // 前回の結果を隠す
+            }
+        });
+
+        // 変換ボタンがクリックされたときの処理
+        convertButton.addEventListener('click', async () => {
+            if (!inputFile) return;
+
+            // UIを処理中の状態に更新
+            convertButton.disabled = true;
+            message.textContent = '準備中...';
+            progress.style.display = 'block';
+            progress.value = 0;
+
+            // ffmpeg.wasmのコアをロード（初回のみ時間がかかる）
+            if (!ffmpeg.isLoaded()) {
+                await ffmpeg.load();
+            }
+            
+            message.textContent = '変換処理を実行中...';
+
+            // 選択されたファイルをffmpegの仮想ファイルシステムに書き込む
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(inputFile));
+
+            // 変換の進捗を監視
+            ffmpeg.setProgress(({ ratio }) => {
+                progress.value = ratio * 100;
+                console.log(`進捗: ${ratio * 100}%`);
+            });
+
+            // FFmpegコマンドを実行してMP4からMP3へ変換
+            // -i input.mp4: 入力ファイル
+            // -vn: 映像を無効にする
+            // -acodec libmp3lame: MP3コーデックを使用
+            // -ab 192k: ビットレートを192kbpsに設定
+            // output.mp3: 出力ファイル名
+            await ffmpeg.run('-i', 'input.mp4', '-vn', '-acodec', 'libmp3lame', '-ab', '192k', 'output.mp3');
+            
+            message.textContent = '変換が完了しました！';
+
+            // 変換されたファイルを仮想ファイルシステムから読み出す
+            const data = ffmpeg.FS('readFile', 'output.mp3');
+
+            // 読み出したデータをBlobオブジェクトに変換し、ダウンロード用のURLを生成
+            const mp3Blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+            const url = URL.createObjectURL(mp3Blob);
+            
+            // ダウンロードリンクを表示
+            downloadLink.href = url;
+            resultArea.style.display = 'block';
+            convertButton.disabled = false;
+        });
+    </script>
+</body>
+</html>
