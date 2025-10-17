@@ -88,8 +88,8 @@
         const { createFFmpeg, fetchFile } = FFmpeg;
         const ffmpeg = createFFmpeg({
             logger: ({ message }) => logToPanel(message),
-            // ★★★ ここがGitHub Pagesで動作させるための重要な変更点 ★★★
-            corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js',
+            // ★★★ バージョン不一致エラーを解決するための修正 ★★★
+            corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js',
         });
 
         uploader.addEventListener('change', (event) => {
