@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web赤シートメーカー | クイズ自動生成・共有機能付き暗記帳ツール</title>
     <meta name="description" content="無料で使えるオンライン赤シート作成ツール。4択クイズやマッチング問題を自動生成し、URLやファイルで簡単に共有できます。英単語や試験勉強の暗記に最適です。">
+    <!-- ▼▼▼ pakoライブラリの読み込みを追加 ▼▼▼ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root {
             --primary-color: #d32f2f;
@@ -25,6 +27,7 @@
             margin: 0;
             padding: 20px;
         }
+        /* ... (他のCSSは変更なし) ... */
         body.modal-open { overflow: hidden; }
         .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1, h2 { text-align: center; color: var(--primary-color); }
@@ -43,27 +46,23 @@
         .answer-text { cursor: pointer; transition: all 0.2s; padding: 5px; border-radius: 3px; color: var(--answer-color); }
         .answer-text.hidden { background-color: var(--answer-color); user-select: none; }
         .file-input { display: none; }
-
-        /* --- モーダル共通スタイル --- */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal-card { background-color: #fff; width: 90%; max-width: 700px; max-height: 90vh; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
         .modal-header { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
         .modal-header h3 { margin: 0; }
         .modal-body { padding: 20px; overflow-y: auto; flex-grow: 1; }
         .modal-footer { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-top: 1px solid var(--border-color); text-align: center; }
-
-        /* --- モード別スタイル --- */
         .focus-body .answer-area { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: var(--answer-color); visibility: hidden; }
         .focus-body .answer-area.visible { visibility: visible; }
         .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
-        .quiz-option-container { display: flex; flex-direction: column; }
+        .quiz-option-container { display: flex; flex-direction: column; position: relative; }
         .quiz-option-button { width: 100%; padding: 15px; font-size: 16px; background-color: #007bff; text-align: left; }
+        .quiz-option-button::before { content: attr(data-key) ". "; font-weight: bold; margin-right: 5px; }
         .quiz-option-button.correct { background-color: var(--correct-color) !important; color: white; }
         .quiz-option-button.incorrect { background-color: var(--incorrect-color) !important; color: white; }
         .quiz-option-button:disabled { opacity: 0.7; cursor: not-allowed; }
         .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
-        
         .matching-container { display: flex; justify-content: space-between; }
         .matching-list { list-style: none; padding: 0; width: 48%; border: 1px solid var(--border-color); border-radius: 5px; }
         .matching-item { padding: 10px; margin: 5px; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; transition: all 0.2s; word-wrap: break-word; }
@@ -71,33 +70,22 @@
         .matching-item.matched { background-color: var(--matched-color); color: #888; cursor: default; border-style: dashed; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
-
         @media (min-width: 600px) { .quiz-options { grid-template-columns: 1fr 1fr; } }
-        @media print {
-            .no-print { display: none; } body { padding: 0; background-color: #fff; } .container { max-width: 100%; margin: 0; padding: 0; box-shadow: none; border: none; }
-            .controls h2 { text-align: left; color: #000; } .question-item { page-break-inside: avoid; }
-            .answer-text, .answer-text.hidden { background-color: transparent !important; color: var(--answer-color) !important; user-select: auto !important; }
-        }
+        @media print { .no-print { display: none; } body { padding: 0; background-color: #fff; } .container { max-width: 100%; margin: 0; padding: 0; box-shadow: none; border: none; } .controls h2 { text-align: left; color: #000; } .question-item { page-break-inside: avoid; } .answer-text, .answer-text.hidden { background-color: transparent !important; color: var(--answer-color) !important; user-select: auto !important; } }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- ... (HTML部分は変更なし) ... -->
+        <div class="container">
         <h1>Web赤シートメーカー</h1>
         <div class="section-box content-section no-print">
             <h2>Web赤シートメーカーとは？</h2>
             <p>「Web赤シートメーカー」は、あなただけのオリジナル暗記帳をブラウザ上で簡単に作成・共有できる無料の学習ツールです。サーバー不要で動作し、作成した問題はすべてお使いのデバイスに保存されます。</p>
-            <h3>主な機能</h3>
-            <ul>
-                <li><strong>赤シート学習</strong>: 作成した問題の答えを赤シートのように隠して学習できます。</li>
-                <li><strong>4択クイズ</strong>: 登録した問題から、単語の類似度を判定して賢い4択クイズを自動生成します。間違えた問題の復習機能もあります。</li>
-                <li><strong>マッチング問題</strong>: 問題と答えを線で結ぶゲーム形式で楽しく記憶度をチェックできます。</li>
-                <li><strong>共有＆保存</strong>: 作成した問題はURLやJSONファイルで友達と共有したり、バックアップしたりできます。</li>
-                <li><strong>印刷対応</strong>: 紙と物理的な赤シートでの学習用に、問題リストをきれいに印刷できます。</li>
-            </ul>
         </div>
 
         <div class="section-box input-area no-print">
             <h2>1. 問題を作成（一問一答）</h2>
+            <p>問題と答えを入力し、<code>Ctrl + Enter</code>でも追加できます。</p>
             <textarea id="question-input" rows="3" placeholder="問題文を入力..."></textarea>
             <textarea id="answer-input" rows="3" placeholder="答えを入力..."></textarea>
             <button id="add-button">問題を追加</button>
@@ -148,12 +136,12 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="focus-toggle-answer-button">答えを見る</button>
+                <button id="focus-toggle-answer-button">答えを見る (Space)</button>
                 <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-                    <button id="focus-prev-button">前の問題へ</button>
-                    <button id="focus-next-button">次の問題へ</button>
+                    <button id="focus-prev-button">(←) 前の問題へ</button>
+                    <button id="focus-next-button">次の問題へ (→)</button>
                 </div>
-                 <button id="focus-close-button" style="margin-top: 10px; background-color: #6c757d;">モードを終了</button>
+                 <button id="focus-close-button" style="margin-top: 10px; background-color: #6c757d;">モードを終了 (Esc)</button>
             </div>
         </div>
     </div>
@@ -165,8 +153,8 @@
                 <div id="quiz-options" class="quiz-options"></div>
             </div>
             <div class="modal-footer">
-                <button id="quiz-next-button">次の問題へ</button>
-                <button id="quiz-close-button" style="margin-top: 10px; background-color: #6c757d;">モードを終了</button>
+                <button id="quiz-next-button">次の問題へ (Enter)</button>
+                <button id="quiz-close-button" style="margin-top: 10px; background-color: #6c757d;">モードを終了 (Esc)</button>
             </div>
         </div>
     </div>
@@ -181,14 +169,14 @@
             </div>
             <div class="modal-footer">
                 <button id="matching-reset-button">リセット</button>
-                <button id="matching-close-button" style="background-color: #6c757d;">モードを終了</button>
+                <button id="matching-close-button" style="background-color: #6c757d;">モードを終了 (Esc)</button>
             </div>
         </div>
     </div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
-        // --- DOM Elements ---
+        // --- (他のJavaScript部分は変更なし) ---
         const qa = sel => document.querySelector(sel);
         const questionInput = qa('#question-input'), answerInput = qa('#answer-input'), addButton = qa('#add-button');
         const questionList = qa('#question-list'), questionCount = qa('#question-count');
@@ -196,17 +184,12 @@
         const startFocusModeButton = qa('#start-focus-mode-button'), startQuizModeButton = qa('#start-quiz-mode-button'), quizModeNotice = qa('#quiz-mode-notice');
         const matchingCountInput = qa('#matching-count-input'), startMatchingModeButton = qa('#start-matching-mode-button'), matchingModeNotice = qa('#matching-mode-notice');
         const generateUrlButton = qa('#generate-url-button'), exportJsonButton = qa('#export-json-button'), importJsonInput = qa('#import-json-input'), printButton = qa('#print-button');
-        
         const focusModal = qa('#focus-mode-modal'), focusCounter = qa('#focus-counter'), focusQuestion = qa('#focus-question'), focusAnswerArea = qa('#focus-answer-area'), focusAnswer = qa('#focus-answer');
         const focusToggleAnswerButton = qa('#focus-toggle-answer-button'), focusPrevButton = qa('#focus-prev-button'), focusNextButton = qa('#focus-next-button'), focusCloseButton = qa('#focus-close-button');
-
         const quizModal = qa('#quiz-mode-modal'), quizCounter = qa('#quiz-counter'), quizQuestion = qa('#quiz-question'), quizOptions = qa('#quiz-options');
         const quizNextButton = qa('#quiz-next-button'), quizCloseButton = qa('#quiz-close-button');
-
         const matchingModal = qa('#matching-mode-modal'), matchingQuestions = qa('#matching-questions'), matchingAnswers = qa('#matching-answers'), matchingProgress = qa('#matching-progress');
         const matchingResetButton = qa('#matching-reset-button'), matchingCloseButton = qa('#matching-close-button');
-
-        // --- State Variables ---
         let questions = [];
         let allAnswersVisible = false;
         let currentFocusIndex = 0;
@@ -215,8 +198,6 @@
         let quizMistakes = [];
         let selectedMatchingItem = null;
         let currentMatchingSet = [];
-
-        // --- Utility Functions ---
         const shuffleArray = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
         const sanitizeHTML = str => str.replace(/\n/g, '<br>');
         const levenshteinDistance = (str1 = '', str2 = '') => {
@@ -231,8 +212,6 @@
             }
             return track[str2.length][str1.length];
         };
-
-        // --- UI Update ---
         const updateButtonsState = () => {
             const count = questions.length;
             const hasQuestions = count > 0;
@@ -256,8 +235,6 @@
             });
             updateAllAnswersVisibility();
         };
-
-        // --- Question Management ---
         const addQuestion = () => {
             const q = questionInput.value.trim(), a = answerInput.value.trim();
             if (q && a) { questions.push({ id: Date.now(), question: q, answer: a }); questionInput.value = answerInput.value = ''; renderQuestions(); questionInput.focus(); }
@@ -265,18 +242,14 @@
         };
         const deleteQuestion = index => { if (confirm(`問題${index + 1}を削除しますか？`)) { questions.splice(index, 1); renderQuestions(); } };
         const updateAllAnswersVisibility = () => document.querySelectorAll('.answer-text').forEach(el => allAnswersVisible ? el.classList.remove('hidden') : el.classList.add('hidden'));
-
-        // --- Focus Mode ---
         const renderFocusQuestion = () => {
             const q = questions[currentFocusIndex]; focusCounter.textContent = `${currentFocusIndex + 1} / ${questions.length}`;
             focusQuestion.innerHTML = `Q: ${sanitizeHTML(q.question)}`; focusAnswer.innerHTML = sanitizeHTML(q.answer);
-            focusAnswerArea.classList.remove('visible'); focusToggleAnswerButton.textContent = '答えを見る';
+            focusAnswerArea.classList.remove('visible'); focusToggleAnswerButton.textContent = '答えを見る (Space)';
             focusPrevButton.disabled = currentFocusIndex === 0; focusNextButton.disabled = currentFocusIndex === questions.length - 1;
         };
         const startFocusMode = () => { currentFocusIndex = 0; renderFocusQuestion(); focusModal.style.display = 'flex'; document.body.classList.add('modal-open'); };
         const endFocusMode = () => { focusModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
-
-        // --- Quiz Mode ---
         const renderQuizQuestion = () => {
             quizOptions.innerHTML = ''; quizNextButton.style.display = 'none';
             const currentQ = quizQuestions[currentQuizIndex];
@@ -286,96 +259,55 @@
             const otherAnswers = questions.map(q => q.answer).filter(ans => ans !== correctAnswer);
             const incorrectOptions = [...new Set(otherAnswers)].map(ans => ({ text: ans, distance: levenshteinDistance(correctAnswer, ans) })).sort((a, b) => a.distance - b.distance).slice(0, 3).map(item => item.text);
             const options = shuffleArray([correctAnswer, ...incorrectOptions]);
-            options.forEach(option => {
-                const container = document.createElement('div');
-                container.className = 'quiz-option-container';
-                const button = document.createElement('button');
-                button.className = 'quiz-option-button';
-                button.innerHTML = sanitizeHTML(option);
+            options.forEach((option, index) => {
+                const container = document.createElement('div'); container.className = 'quiz-option-container';
+                const button = document.createElement('button'); button.className = 'quiz-option-button';
+                button.innerHTML = sanitizeHTML(option); button.dataset.key = index + 1;
                 button.addEventListener('click', () => checkAnswer(button, option, correctAnswer));
-                container.appendChild(button);
-                quizOptions.appendChild(container);
+                container.appendChild(button); quizOptions.appendChild(container);
             });
         };
-
         const checkAnswer = (button, selectedAnswer, correctAnswer) => {
             Array.from(document.querySelectorAll('.quiz-option-button')).forEach(btn => btn.disabled = true);
             const isCorrect = selectedAnswer === correctAnswer;
-            
             if (isCorrect) {
                 button.classList.add('correct');
                 setTimeout(() => {
-                    if (currentQuizIndex < quizQuestions.length - 1) {
-                        currentQuizIndex++; renderQuizQuestion();
-                    } else {
-                        handleQuizCompletion();
-                    }
+                    if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); }
+                    else { handleQuizCompletion(); }
                 }, 800);
             } else {
                 const currentQ = quizQuestions[currentQuizIndex];
-                if (!quizMistakes.find(q => q.id === currentQ.id)) {
-                    quizMistakes.push(currentQ);
-                }
+                if (!quizMistakes.find(q => q.id === currentQ.id)) { quizMistakes.push(currentQ); }
                 button.classList.add('incorrect');
-                
-                // ★★★★★ 誤答の解説機能 ★★★★★
                 Array.from(quizOptions.querySelectorAll('.quiz-option-button')).forEach(btn => {
                     const btnAnswerText = btn.textContent;
-                    if (btnAnswerText === correctAnswer) {
-                        btn.classList.add('correct');
-                    } else if (btn.classList.contains('incorrect')) {
+                    if (btnAnswerText === correctAnswer) { btn.classList.add('correct'); }
+                    else if (btn.classList.contains('incorrect')) {
                         const originalQuestion = questions.find(q => q.answer === btnAnswerText);
                         if (originalQuestion) {
-                            const explanation = document.createElement('div');
-                            explanation.className = 'quiz-explanation';
+                            const explanation = document.createElement('div'); explanation.className = 'quiz-explanation';
                             explanation.textContent = `（これは「${originalQuestion.question}」の答えです）`;
                             btn.parentElement.appendChild(explanation);
                         }
                     }
                 });
-
                 quizNextButton.style.display = 'block';
-                if (currentQuizIndex === quizQuestions.length - 1) {
-                    quizNextButton.textContent = '結果を見る';
-                }
+                if (currentQuizIndex === quizQuestions.length - 1) { quizNextButton.textContent = '結果を見る'; }
             }
         };
-
         const handleQuizCompletion = () => {
-            const total = quizQuestions.length;
-            const mistakesCount = quizMistakes.length;
-            const correctCount = total - mistakesCount;
-
-            let message = mistakesCount === 0 
-                ? '全問正解です！素晴らしい！'
-                : `${total}問中、${correctCount}問正解でした。`;
-
+            const total = quizQuestions.length; const mistakesCount = quizMistakes.length; const correctCount = total - mistakesCount;
+            let message = mistakesCount === 0 ? '全問正解です！素晴らしい！' : `${total}問中、${correctCount}問正解でした。`;
             setTimeout(() => {
                 alert(message);
                 if (mistakesCount > 0 && confirm('間違えた問題に再挑戦しますか？')) {
-                    quizQuestions = shuffleArray([...quizMistakes]);
-                    quizMistakes = [];
-                    currentQuizIndex = 0;
-                    renderQuizQuestion();
-                } else {
-                    endQuizMode();
-                }
+                    quizQuestions = shuffleArray([...quizMistakes]); quizMistakes = []; currentQuizIndex = 0; renderQuizQuestion();
+                } else { endQuizMode(); }
             }, 200);
         };
-
-        const startQuizMode = () => { 
-            if (questions.length < 4) return;
-            quizQuestions = shuffleArray([...questions]); 
-            quizMistakes = [];
-            currentQuizIndex = 0; 
-            quizNextButton.textContent = '次の問題へ'; 
-            renderQuizQuestion(); 
-            quizModal.style.display = 'flex'; 
-            document.body.classList.add('modal-open');
-        };
+        const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); quizModal.style.display = 'flex'; document.body.classList.add('modal-open'); };
         const endQuizMode = () => { quizModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
-
-        // --- Matching Mode ---
         const startMatchingMode = () => {
             const count = parseInt(matchingCountInput.value, 10);
             if (count < 5 || count > questions.length) { alert(`問題数は5以上、${questions.length}以下で指定してください。`); return; }
@@ -387,13 +319,11 @@
             const answers = shuffleArray(currentMatchingSet.map(q => ({ ...q })));
             currentMatchingSet.forEach(q => {
                 const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(q.question);
-                li.dataset.id = q.id; li.dataset.type = 'question';
-                matchingQuestions.appendChild(li);
+                li.dataset.id = q.id; li.dataset.type = 'question'; matchingQuestions.appendChild(li);
             });
             answers.forEach(a => {
                 const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(a.answer);
-                li.dataset.id = a.id; li.dataset.type = 'answer'; li.dataset.answerText = a.answer;
-                matchingAnswers.appendChild(li);
+                li.dataset.id = a.id; li.dataset.type = 'answer'; li.dataset.answerText = a.answer; matchingAnswers.appendChild(li);
             });
             updateMatchingProgress();
         };
@@ -422,9 +352,48 @@
         const updateMatchingProgress = () => { const matchedCount = document.querySelectorAll('#matching-container .matched').length / 2; matchingProgress.textContent = `${matchedCount} / ${currentMatchingSet.length}`; };
         const endMatchingMode = () => { matchingModal.style.display = 'none'; document.body.classList.remove('modal-open'); };
 
-        // --- Data I/O ---
-        const generateShareUrl = () => { try { const url = `${location.origin}${location.pathname}#${btoa(encodeURIComponent(JSON.stringify(questions)))}`; navigator.clipboard.writeText(url).then(() => alert('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
-        const loadFromUrl = () => { if (location.hash) { try { const data = JSON.parse(decodeURIComponent(atob(location.hash.substring(1)))); if (Array.isArray(data)) { questions = data; renderQuestions(); } } catch (e) { alert('URLのデータが不正です。'); history.replaceState(null, '', ' '); } } };
+        // --- Data I/O (URL圧縮・解凍機能) ---
+        // ★★★★★ URL生成ロジックの修正 ★★★★★
+        const generateShareUrl = () => {
+            try {
+                const jsonString = JSON.stringify(questions);
+                // データをpakoで圧縮
+                const compressed = pako.deflate(jsonString, { to: 'string' });
+                // 圧縮データをBase64に変換
+                const base64String = btoa(compressed);
+                const url = `${location.origin}${location.pathname}#${base64String}`;
+                navigator.clipboard.writeText(url).then(() => alert('共有URLをクリップボードにコピーしました。'));
+            } catch (e) {
+                console.error("URL Generation Error: ", e);
+                alert('URLの生成に失敗しました。');
+            }
+        };
+
+        // ★★★★★ URL読込ロジックの修正 ★★★★★
+        const loadFromUrl = () => {
+            if (location.hash) {
+                try {
+                    const base64String = location.hash.substring(1);
+                    // Base64データをデコード
+                    const compressed = atob(base64String);
+                    // pakoで解凍
+                    const jsonString = pako.inflate(compressed, { to: 'string' });
+                    const data = JSON.parse(jsonString);
+                    if (Array.isArray(data)) {
+                        if (data.length > 0 && typeof data[0].id === 'undefined') {
+                            data.forEach((item, index) => { item.id = Date.now() + index; });
+                        }
+                        questions = data;
+                        renderQuestions();
+                    }
+                } catch (e) {
+                    console.error("URL Loading Error: ", e);
+                    alert('URLのデータが不正か、古い形式のため読み込めませんでした。');
+                    history.replaceState(null, '', ' ');
+                }
+            }
+        };
+
         const exportToJson = () => { const blob = new Blob([JSON.stringify(questions, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'web-akasheet-data.json'; a.click(); URL.revokeObjectURL(a.href); };
         const importFromJson = e => {
             const file = e.target.files[0]; if (!file) return;
@@ -450,11 +419,11 @@
         startQuizModeButton.addEventListener('click', startQuizMode);
         startMatchingModeButton.addEventListener('click', startMatchingMode);
         focusCloseButton.addEventListener('click', endFocusMode);
-        focusToggleAnswerButton.addEventListener('click', () => { focusAnswerArea.classList.toggle('visible'); focusToggleAnswerButton.textContent = focusAnswerArea.classList.contains('visible') ? '答えを隠す' : '答えを見る'; });
-        focusNextButton.addEventListener('click', () => { if (currentFocusIndex < questions.length - 1) { currentFocusIndex++; renderFocusQuestion(); } });
-        focusPrevButton.addEventListener('click', () => { if (currentFocusIndex > 0) { currentFocusIndex--; renderFocusQuestion(); } });
+        focusToggleAnswerButton.addEventListener('click', () => { focusAnswerArea.classList.toggle('visible'); focusToggleAnswerButton.textContent = focusAnswerArea.classList.contains('visible') ? '答えを隠す (Space)' : '答えを見る (Space)'; });
+        focusNextButton.addEventListener('click', () => { if (!focusNextButton.disabled && currentFocusIndex < questions.length - 1) { currentFocusIndex++; renderFocusQuestion(); } });
+        focusPrevButton.addEventListener('click', () => { if (!focusPrevButton.disabled && currentFocusIndex > 0) { currentFocusIndex--; renderFocusQuestion(); } });
         quizCloseButton.addEventListener('click', endQuizMode);
-        quizNextButton.addEventListener('click', () => { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } });
+        quizNextButton.addEventListener('click', () => { if (!quizNextButton.disabled && currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } });
         matchingModal.addEventListener('click', handleMatchingClick);
         matchingResetButton.addEventListener('click', renderMatchingGame);
         matchingCloseButton.addEventListener('click', endMatchingMode);
@@ -462,6 +431,24 @@
         exportJsonButton.addEventListener('click', exportToJson);
         importJsonInput.addEventListener('change', importFromJson);
         printButton.addEventListener('click', () => window.print());
+
+        document.addEventListener('keydown', e => {
+            const isModalActive = focusModal.style.display === 'flex' || quizModal.style.display === 'flex' || matchingModal.style.display === 'flex';
+            if (e.ctrlKey && e.key === 'Enter' && (document.activeElement === questionInput || document.activeElement === answerInput)) { e.preventDefault(); addButton.click(); }
+            if (e.key === 'Escape' && isModalActive) { endFocusMode(); endQuizMode(); endMatchingMode(); }
+            if (focusModal.style.display === 'flex') {
+                if (e.key === ' ') { e.preventDefault(); focusToggleAnswerButton.click(); }
+                if (e.key === 'ArrowRight') { focusNextButton.click(); }
+                if (e.key === 'ArrowLeft') { focusPrevButton.click(); }
+            }
+            if (quizModal.style.display === 'flex') {
+                if (['1', '2', '3', '4'].includes(e.key)) {
+                    const choiceButton = qa(`.quiz-option-button[data-key="${e.key}"]`);
+                    if (choiceButton && !choiceButton.disabled) { choiceButton.click(); }
+                }
+                if (e.key === 'Enter' && quizNextButton.style.display === 'block') { quizNextButton.click(); }
+            }
+        });
 
         // --- Initialization ---
         loadFromUrl();
