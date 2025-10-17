@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MP4 to MP3 Converter (Client-Side)</title>
+    <title>MP4 to MP3 Converter with Log Panel</title>
 
     <style>
         body {
             font-family: sans-serif;
-            background-color: #f4f4f9;
+            background-color: #f0f2f5;
             color: #333;
             display: flex;
-            justify-content: center;
+            flex-direction: column; /* 上下に要素を並べる */
             align-items: center;
             min-height: 100vh;
             margin: 0;
@@ -22,13 +22,14 @@
             background-color: #fff;
             padding: 2em;
             border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             text-align: center;
-            max-width: 500px;
+            max-width: 550px;
             width: 100%;
+            margin-bottom: 1.5em; /* ログパネルとの間隔 */
         }
         h1 {
-            color: #444;
+            color: #1c1e21;
         }
         p {
             line-height: 1.6;
@@ -41,9 +42,10 @@
             background-color: #007bff;
             color: white;
             border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
+            padding: 12px 24px;
+            border-radius: 6px;
             font-size: 1em;
+            font-weight: bold;
             cursor: pointer;
             transition: background-color 0.3s;
         }
@@ -56,56 +58,88 @@
         }
         #status {
             margin: 1.5em 0;
-            min-height: 80px; /* 状態表示エリアの高さを確保 */
+            min-height: 60px;
         }
         progress {
             width: 100%;
-            height: 20px;
+            height: 12px;
+            border-radius: 6px;
         }
         #result a {
             display: inline-block;
             margin-top: 1em;
             background-color: #28a745;
             color: white;
-            padding: 10px 20px;
+            padding: 12px 24px;
             text-decoration: none;
-            border-radius: 5px;
+            border-radius: 6px;
+            font-weight: bold;
             transition: background-color 0.3s;
         }
         #result a:hover {
             background-color: #218838;
         }
-        
-        /* --- ここからローディングスピナーのスタイル --- */
-        .loader {
-            border: 5px solid #f3f3f3; /* 薄い灰色 */
-            border-top: 5px solid #3498db; /* 青色 */
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1.5s linear infinite;
-            margin: 1em auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
         .hidden {
             display: none;
         }
-        /* --- ここまでローディングスピナーのスタイル --- */
+        
+        /* --- ここからログパネルのスタイル --- */
+        .log-container {
+            width: 100%;
+            max-width: 550px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .log-header {
+            background-color: #f5f6f7;
+            padding: 0.75em 1em;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .log-header h3 {
+            margin: 0;
+            font-size: 1em;
+            color: #444;
+        }
+        .log-header button {
+            background-color: #6c757d;
+            padding: 5px 10px;
+            font-size: 0.8em;
+        }
+        #log-panel {
+            height: 200px;
+            background-color: #2a2f3a;
+            color: #f1f1f1;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            padding: 1em;
+            overflow-y: scroll;
+            text-align: left;
+            white-space: pre-wrap; /* 自動で折り返す */
+            word-wrap: break-word;
+        }
+        .log-entry {
+            margin-bottom: 0.5em;
+        }
+        .log-info { color: #f1f1f1; }
+        .log-success { color: #28a745; font-weight: bold; }
+        .log-error { color: #dc3545; font-weight: bold; }
+        .log-command { color: #ffc107; }
+        .log-time { color: #888; margin-right: 0.5em; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>MP4 を MP3 に変換</h1>
-        <p>サーバーにファイルをアップロードせず、お使いのブラウザ上で変換処理を行います。</p>
+        <p>ブラウザ上で安全に変換します。下のログパネルで処理状況を確認できます。</p>
         
         <input type="file" id="uploader" accept="video/mp4">
         
         <div id="status">
-            <!-- ローディングスピナーを追加 (初期状態は非表示) -->
-            <div id="loader" class="loader hidden"></div>
             <p id="message">MP4ファイルを選択してください。</p>
             <progress id="progress" value="0" max="100" class="hidden"></progress>
         </div>
@@ -118,86 +152,131 @@
         </div>
     </div>
 
-    <!-- ffmpeg.wasm ライブラリをCDNから読み込み -->
+    <!-- ログパネルのHTML構造 -->
+    <div class="log-container">
+        <div class="log-header">
+            <h3>DevTools風 ログパネル</h3>
+            <button id="clear-log-button">ログを消去</button>
+        </div>
+        <div id="log-panel"></div>
+    </div>
+
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 
     <script>
-        // HTML要素を取得
+        // --- HTML要素の取得 ---
         const uploader = document.getElementById('uploader');
         const convertButton = document.getElementById('convert-button');
         const message = document.getElementById('message');
         const progress = document.getElementById('progress');
         const resultArea = document.getElementById('result');
         const downloadLink = document.getElementById('download-link');
-        const loader = document.getElementById('loader'); // ローダー要素を取得
+        const logPanel = document.getElementById('log-panel');
+        const clearLogButton = document.getElementById('clear-log-button');
 
         let inputFile = null;
 
-        // ffmpeg.wasmのインスタンスを作成
+        // --- ログパネル用関数 ---
+        const logToPanel = (text, type = 'info') => {
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.innerHTML = `<span class="log-time">[${time}]</span>${text}`;
+            logPanel.appendChild(entry);
+            // 自動で一番下にスクロール
+            logPanel.scrollTop = logPanel.scrollHeight;
+        };
+
+        logToPanel('ページが読み込まれました。処理を開始できます。');
+
+        // --- FFmpegのセットアップ ---
         const { createFFmpeg, fetchFile } = FFmpeg;
         const ffmpeg = createFFmpeg({
-            // log: true, // コンソールログは不要なのでコメントアウト
+            // このloggerオプションがDevTools機能の核です
+            logger: ({ message }) => {
+                // ffmpeg.wasm内部からのメッセージをログパネルに表示
+                // "Fetching"や"Compiling"などのメッセージがここに出力されます
+                logToPanel(message);
+            },
             corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
         });
 
-        // ファイルが選択されたときの処理
+        // --- イベントリスナー ---
         uploader.addEventListener('change', (event) => {
             inputFile = event.target.files[0];
             if (inputFile) {
-                message.textContent = `${inputFile.name} が選択されました。`;
+                const messageText = `${inputFile.name} が選択されました。`;
+                message.textContent = messageText;
+                logToPanel(messageText, 'info');
                 convertButton.disabled = false;
-                resultArea.classList.add('hidden'); // 前回の結果を隠す
-                progress.classList.add('hidden'); // プログレスバーも隠す
+                resultArea.classList.add('hidden');
+                progress.classList.add('hidden');
             }
         });
+        
+        clearLogButton.addEventListener('click', () => {
+            logPanel.innerHTML = '';
+            logToPanel('ログが消去されました。');
+        });
 
-        // 変換ボタンがクリックされたときの処理
         convertButton.addEventListener('click', async () => {
             if (!inputFile) return;
 
-            // --- UIを処理中の状態に更新 ---
+            // UIをリセット
             convertButton.disabled = true;
             resultArea.classList.add('hidden');
             progress.classList.add('hidden');
 
-            // --- FFmpegの読み込み状況を表示 ---
-            loader.classList.remove('hidden'); // スピナーを表示
-            message.textContent = 'FFmpegのコアを読み込んでいます... (初回は時間がかかる場合があります)';
+            try {
+                // --- FFmpegのロード ---
+                if (!ffmpeg.isLoaded()) {
+                    logToPanel('FFmpegコアのロードを開始します...', 'info');
+                    await ffmpeg.load();
+                    logToPanel('FFmpegコアのロードが完了しました。', 'success');
+                } else {
+                    logToPanel('FFmpegコアは既にロード済みです。', 'info');
+                }
 
-            // ffmpeg.wasmのコアをロード
-            if (!ffmpeg.isLoaded()) {
-                await ffmpeg.load();
+                // --- ファイルの書き込み ---
+                message.textContent = 'ファイルをメモリに書き込み中...';
+                logToPanel('選択されたファイルをFFmpegの仮想ファイルシステムに書き込みます。');
+                ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(inputFile));
+                logToPanel('ファイルの書き込みが完了しました。', 'success');
+
+                // --- 変換処理 ---
+                message.textContent = '変換処理を実行中...';
+                progress.classList.remove('hidden');
+                progress.value = 0;
+                
+                ffmpeg.setProgress(({ ratio }) => {
+                    progress.value = ratio * 100;
+                });
+                
+                const command = '-i input.mp4 -vn -acodec libmp3lame -ab 192k output.mp3';
+                logToPanel(`FFmpegコマンドを実行します: ${command}`, 'command');
+                await ffmpeg.run(...command.split(' '));
+                
+                logToPanel('変換処理が完了しました！', 'success');
+                message.textContent = '変換が完了しました！';
+
+                // --- 結果の読み出しとダウンロード ---
+                const data = ffmpeg.FS('readFile', 'output.mp3');
+                const mp3Blob = new Blob([data.buffer], { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(mp3Blob);
+                
+                downloadLink.href = url;
+                resultArea.classList.remove('hidden');
+                progress.classList.add('hidden');
+                logToPanel('ダウンロードリンクを生成しました。', 'success');
+
+            } catch (error) {
+                message.textContent = 'エラーが発生しました。';
+                logToPanel(`エラーが発生しました: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                // 成功しても失敗してもボタンを再度有効にする
+                convertButton.disabled = false;
             }
-            
-            // --- 読み込み完了後、変換処理へ ---
-            loader.classList.add('hidden'); // スピナーを非表示
-            progress.classList.remove('hidden'); // プログレスバーを表示
-            progress.value = 0;
-            message.textContent = 'ファイルの変換処理を実行中...';
-
-            // 選択されたファイルをffmpegの仮想ファイルシステムに書き込む
-            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(inputFile));
-
-            // 変換の進捗を監視し、プログレスバーに反映
-            ffmpeg.setProgress(({ ratio }) => {
-                progress.value = ratio * 100;
-            });
-
-            // FFmpegコマンドを実行
-            await ffmpeg.run('-i', 'input.mp4', '-vn', '-acodec', 'libmp3lame', '-ab', '192k', 'output.mp3');
-            
-            message.textContent = '変換が完了しました！';
-
-            // 変換されたファイルを仮想ファイルシステムから読み出す
-            const data = ffmpeg.FS('readFile', 'output.mp3');
-            const mp3Blob = new Blob([data.buffer], { type: 'audio/mpeg' });
-            const url = URL.createObjectURL(mp3Blob);
-            
-            // ダウンロードリンクを表示
-            downloadLink.href = url;
-            resultArea.classList.remove('hidden');
-            progress.classList.add('hidden'); // プログレスバーを非表示
-            convertButton.disabled = false;
         });
     </script>
 </body>
