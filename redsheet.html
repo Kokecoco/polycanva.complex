@@ -8,59 +8,34 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root {
-            --primary-color: #1E90FF; /* DodgerBlue */
-            --primary-dark-color: #1C86EE;
-            --secondary-color: #f4f7fa;
-            --border-color: #e1e5eb;
-            --text-color: #333;
-            --light-text-color: #777;
-            --card-bg-color: #ffffff;
-            --answer-color: #d32f2f;
-            --correct-color: #28a745;
-            --incorrect-color: #dc3545;
-            --selected-color: #a5d6a7;
-            --matched-color: #e0e0e0;
+            --primary-color: #1E90FF; --primary-dark-color: #1C86EE; --secondary-color: #f4f7fa;
+            --border-color: #e1e5eb; --text-color: #333; --light-text-color: #777;
+            --card-bg-color: #ffffff; --answer-color: #d32f2f; --correct-color: #28a745;
+            --incorrect-color: #dc3545; --selected-color: #a5d6a7; --matched-color: #e0e0e0;
         }
         *, *::before, *::after { box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.6;
-            background-color: var(--secondary-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 20px;
-            transition: background-color 0.3s;
+            line-height: 1.6; background-color: var(--secondary-color); color: var(--text-color); margin: 0; padding: 20px;
         }
         body.modal-open { overflow: hidden; }
         .app-container { max-width: 800px; margin: 0 auto; background-color: var(--card-bg-color); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); overflow: hidden; }
-        
-        /* --- タブUI --- */
         .tab-nav { display: flex; background-color: #fff; border-bottom: 1px solid var(--border-color); }
         .tab-button {
-            flex-grow: 1; padding: 15px 10px; border: none; background-color: transparent;
-            font-size: 16px; font-weight: 500; color: var(--light-text-color);
-            cursor: pointer; transition: all 0.2s; position: relative;
+            flex-grow: 1; padding: 15px 10px; border: none; background-color: transparent; font-size: 16px;
+            font-weight: 500; color: var(--light-text-color); cursor: pointer; transition: all 0.2s; position: relative;
         }
         .tab-button.active { color: var(--primary-color); }
-        .tab-button.active::after {
-            content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
-            height: 3px; background-color: var(--primary-color);
-        }
+        .tab-button.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 3px; background-color: var(--primary-color); }
         .tab-content { display: none; padding: 25px; }
         .tab-content.active { display: block; animation: fadeIn 0.4s; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
         h2 { text-align: left; margin-top: 0; color: #333; }
         p, label { color: var(--light-text-color); font-size: 15px; }
         hr { border: none; border-top: 1px solid var(--border-color); margin: 25px 0; }
-        
         .section-box { border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; margin-bottom: 20px; background-color: #fff; }
-        textarea, input, input[type="number"] {
-            width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color);
-            border-radius: 6px; font-size: 16px; transition: border-color 0.2s, box-shadow 0.2s;
-        }
+        textarea, input, input[type="number"] { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 16px; transition: border-color 0.2s, box-shadow 0.2s; }
         textarea:focus, input:focus, input[type="number"]:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.2); outline: none; }
-        
         button, .file-label {
             background-color: var(--primary-color); color: #fff; border: none; padding: 12px 18px;
             border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 500;
@@ -69,13 +44,10 @@
         button:hover, .file-label:hover { background-color: var(--primary-dark-color); }
         button:disabled { background-color: #aaa; cursor: not-allowed; }
         .button-secondary { background-color: #6c757d; } .button-secondary:hover { background-color: #5a6268; }
-
-        /* --- 問題リスト --- */
         #question-list { list-style-type: none; padding: 0; margin-top: 20px; }
         .question-item {
-            background-color: var(--card-bg-color); border: 1px solid var(--border-color);
-            padding: 15px 20px; margin-bottom: 15px; border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: box-shadow 0.2s, transform 0.2s;
+            background-color: var(--card-bg-color); border: 1px solid var(--border-color); padding: 15px 20px; margin-bottom: 15px;
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: box-shadow 0.2s, transform 0.2s;
         }
         .question-item:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.08); transform: translateY(-2px); }
         .question-item-header { display: flex; justify-content: space-between; align-items: center; }
@@ -84,30 +56,14 @@
         .answer-text.hidden { background-color: var(--answer-color); user-select: none; }
         .question-item .actions button { background-color: #e6e6e6; color: #555; padding: 6px 10px; font-size: 12px; }
         .question-item .actions button:hover { background-color: #dcdcdc; }
-
-        /* --- モーダル --- */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.6);
-            display: flex; justify-content: center; align-items: center;
-            z-index: 1000;
-            opacity: 0; visibility: hidden;
-            transition: opacity 0.3s, visibility 0.3s;
-        }
-        .modal-card {
-            background-color: #fff; width: 90%; max-width: 700px; max-height: 90vh;
-            border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            display: flex; flex-direction: column; overflow: hidden;
-            transform: scale(0.95); opacity: 0;
-            transition: transform 0.3s, opacity 0.3s;
-        }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
+        .modal-card { background-color: #fff; width: 90%; max-width: 700px; max-height: 90vh; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; transform: scale(0.95); opacity: 0; transition: transform 0.3s, opacity 0.3s; }
         .modal-overlay.visible { opacity: 1; visibility: visible; }
         .modal-overlay.visible .modal-card { transform: scale(1); opacity: 1; }
         .modal-header { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
         .modal-header h3 { margin: 0; font-size: 18px; }
         .modal-body { padding: 25px; overflow-y: auto; flex-grow: 1; }
         .modal-footer { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-top: 1px solid var(--border-color); text-align: center; }
-        
         .focus-body .answer-area { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: var(--answer-color); visibility: hidden; }
         .focus-body .answer-area.visible { visibility: visible; }
         .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
@@ -120,34 +76,18 @@
         .quiz-option-button:disabled { opacity: 0.8; cursor: not-allowed; }
         .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
-        
         .matching-container { display: flex; justify-content: space-between; }
-        .matching-list { list-style: none; padding: 0; width: 48%; border: 1px solid var(--border-color); border-radius: 5px; }
-        .matching-item { padding: 10px; margin: 5px; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; transition: all 0.2s; word-wrap: break-word; }
-        .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); }
-        .matching-item.matched { background-color: var(--matched-color); color: #888; cursor: default; border-style: dashed; }
+        .matching-list { list-style: none; padding: 0; width: 48%; }
+        .matching-item { padding: 10px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.4s, transform 0.4s; word-wrap: break-word; }
+        .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
-
-        /* --- トースト通知 --- */
-        .toast-notification {
-            position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%);
-            background-color: rgba(0,0,0,0.75); color: white; padding: 12px 20px;
-            border-radius: 25px; font-size: 15px; z-index: 2000;
-            transition: bottom 0.5s ease-in-out;
-        }
-        .toast-notification.show { bottom: 30px; }
-
         .file-input { display: none; }
+        .toast-notification { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.75); color: white; padding: 12px 20px; border-radius: 25px; font-size: 15px; z-index: 2000; transition: bottom 0.5s ease-in-out; }
+        .toast-notification.show { bottom: 30px; }
         @media (min-width: 600px) { .quiz-options { grid-template-columns: 1fr 1fr; } }
-        @media print {
-            .no-print, .tab-nav { display: none; } body { padding: 20px; background-color: #fff; }
-            .app-container, .question-item { box-shadow: none; border: 1px solid #ccc; }
-            .tab-content { display: block !important; padding: 0; }
-            .controls h2 { text-align: left; color: #000; }
-            .question-item { page-break-inside: avoid; }
-            .answer-text, .answer-text.hidden { background-color: transparent !important; color: var(--answer-color) !important; user-select: auto !important; }
-        }
+        @media print { .no-print, .tab-nav { display: none; } body { padding: 20px; background-color: #fff; } .app-container, .question-item { box-shadow: none; border: 1px solid #ccc; } .tab-content { display: block !important; padding: 0; } .controls h2 { text-align: left; color: #000; } .question-item { page-break-inside: avoid; } .answer-text, .answer-text.hidden { background-color: transparent !important; color: var(--answer-color) !important; user-select: auto !important; } }
     </style>
 </head>
 <body>
@@ -157,7 +97,6 @@
             <button class="tab-button" data-tab="learn">学習</button>
             <button class="tab-button" data-tab="manage">共有・管理</button>
         </nav>
-
         <div id="edit-tab" class="tab-content active">
             <div class="section-box">
                 <h2>問題を作成</h2>
@@ -166,7 +105,6 @@
                 <textarea id="answer-input" rows="3" placeholder="答えを入力..."></textarea>
                 <button id="add-button">問題を追加</button>
             </div>
-            
             <div class="controls">
                 <h2>問題リスト (<span id="question-count">0</span>問)</h2>
                 <div class="no-print">
@@ -176,7 +114,6 @@
             </div>
             <ul id="question-list"></ul>
         </div>
-
         <div id="learn-tab" class="tab-content">
             <h2>学習モードを選択</h2>
             <div class="section-box">
@@ -199,7 +136,6 @@
                 <small id="matching-mode-notice" style="color: #666; margin-top: 5px; display: block;">（5問以上で利用可）</small>
             </div>
         </div>
-
         <div id="manage-tab" class="tab-content">
             <h2>共有・データ管理</h2>
             <div class="section-box">
@@ -221,9 +157,7 @@
             </div>
         </div>
     </div>
-    
     <div id="toast-notification" class="toast-notification"></div>
-
     <div id="focus-mode-modal" class="modal-overlay no-print">
         <div class="modal-card">
             <div class="modal-header"><h3>集中学習モード</h3><span id="focus-counter"></span></div>
@@ -292,7 +226,8 @@
         
         let questions = []; let allAnswersVisible = false; let currentFocusIndex = 0;
         let currentQuizIndex = 0; let quizQuestions = []; let quizMistakes = [];
-        let selectedMatchingItem = null; let currentMatchingSet = [];
+        let selectedMatchingItem = null; let matchingPool = []; let matchingActiveSet = [];
+        const MATCHING_VISIBLE_COUNT = 5;
 
         const tabs = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
@@ -374,11 +309,11 @@
         const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
         const endQuizMode = () => { hideModal(quizModal); };
         
-        const startMatchingMode = () => { const count = parseInt(matchingCountInput.value, 10); if (count < 5 || count > questions.length) { alert(`問題数は5以上、${questions.length}以下で指定してください。`); return; } currentMatchingSet = shuffleArray([...questions]).slice(0, count); renderMatchingGame(); showModal(matchingModal); };
+        const startMatchingMode = () => { const count = parseInt(matchingCountInput.value, 10); if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; } matchingPool = shuffleArray([...questions]).slice(0, count); matchingActiveSet = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT)); renderMatchingGame(); showModal(matchingModal); };
         const renderMatchingGame = () => {
             selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
-            const answers = shuffleArray(currentMatchingSet.map(q => ({ ...q })));
-            currentMatchingSet.forEach(q => { const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(q.question); li.dataset.id = q.id; li.dataset.type = 'question'; matchingQuestions.appendChild(li); });
+            const answers = shuffleArray([...matchingActiveSet]);
+            matchingActiveSet.forEach(q => { const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(q.question); li.dataset.id = q.id; li.dataset.type = 'question'; matchingQuestions.appendChild(li); });
             answers.forEach(a => { const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(a.answer); li.dataset.id = a.id; li.dataset.type = 'answer'; li.dataset.answerText = a.answer; matchingAnswers.appendChild(li); });
             updateMatchingProgress();
         };
@@ -388,12 +323,33 @@
             else {
                 if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
                 let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
-                const questionObj = currentMatchingSet.find(q => q.id == questionEl.dataset.id);
+                const questionObj = matchingActiveSet.find(q => q.id == questionEl.dataset.id);
                 if (questionObj && questionObj.answer === answerEl.dataset.answerText) {
-                    questionEl.classList.add('matched'); answerEl.classList.add('matched');
-                    questionEl.classList.remove('selected'); answerEl.classList.remove('selected');
-                    selectedMatchingItem = null; updateMatchingProgress();
-                    if (document.querySelectorAll('#matching-container .matching-item:not(.matched)').length === 0) setTimeout(() => alert('全問正解！クリアです！'), 200);
+                    questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
+                    setTimeout(() => {
+                        const questionNode = qa(`.matching-item[data-id='${questionObj.id}'][data-type='question']`);
+                        const answerNode = Array.from(matchingAnswers.querySelectorAll('.matching-item')).find(el => el.dataset.answerText === questionObj.answer && !el.classList.contains('matched'));
+                        if(answerNode) answerNode.classList.add('matched');
+
+                        matchingActiveSet = matchingActiveSet.filter(q => q.id != questionObj.id);
+                        if (matchingPool.length > 0) {
+                            const newItem = matchingPool.shift();
+                            matchingActiveSet.push(newItem);
+                            const newQ = document.createElement('li'); newQ.className = 'matching-item'; newQ.innerHTML = sanitizeHTML(newItem.question); newQ.dataset.id = newItem.id; newQ.dataset.type = 'question';
+                            const newA = document.createElement('li'); newA.className = 'matching-item'; newA.innerHTML = sanitizeHTML(newItem.answer); newA.dataset.id = newItem.id; newA.dataset.type = 'answer'; newA.dataset.answerText = newItem.answer;
+                            
+                            const qParent = questionNode.parentElement;
+                            const aParent = answerNode.parentElement;
+
+                            qParent.insertBefore(newQ, qParent.children[Math.floor(Math.random() * qParent.children.length)]);
+                            aParent.insertBefore(newA, aParent.children[Math.floor(Math.random() * aParent.children.length)]);
+                        }
+                        questionNode.remove();
+                        answerNode.remove();
+
+                        updateMatchingProgress();
+                        if (matchingActiveSet.length === 0) { setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 400); }
+                    }, 400);
                 } else {
                     questionEl.classList.add('incorrect-flash'); answerEl.classList.add('incorrect-flash');
                     const prevSelectedItem = selectedMatchingItem; selectedMatchingItem = null;
@@ -401,7 +357,7 @@
                 }
             }
         };
-        const updateMatchingProgress = () => { const matchedCount = document.querySelectorAll('#matching-container .matched').length / 2; matchingProgress.textContent = `${matchedCount} / ${currentMatchingSet.length}`; };
+        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const remainingCount = matchingPool.length + matchingActiveSet.length; const solvedCount = totalCount - remainingCount; matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
         const endMatchingMode = () => { hideModal(matchingModal); };
         
         const generateShareUrl = () => { try { const jsonString = JSON.stringify(questions); const compressed = pako.deflate(jsonString, { to: 'string' }); const base64String = btoa(compressed); const url = `${location.origin}${location.pathname}#${base64String}`; navigator.clipboard.writeText(url).then(() => showToast('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
@@ -418,7 +374,8 @@
         focusNextButton.addEventListener('click', () => { if (!focusNextButton.disabled) { currentFocusIndex++; renderFocusQuestion(); } });
         focusPrevButton.addEventListener('click', () => { if (!focusPrevButton.disabled) { currentFocusIndex--; renderFocusQuestion(); } });
         quizCloseButton.addEventListener('click', endQuizMode); quizNextButton.addEventListener('click', () => { if (!quizNextButton.disabled) { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } } });
-        matchingResetButton.addEventListener('click', renderMatchingGame); matchingCloseButton.addEventListener('click', endMatchingMode); matchingModal.addEventListener('click', handleMatchingClick);
+        matchingResetButton.addEventListener('click', startMatchingMode); // リセットはモードを最初からやり直す
+        matchingCloseButton.addEventListener('click', endMatchingMode); matchingModal.addEventListener('click', handleMatchingClick);
         generateUrlButton.addEventListener('click', generateShareUrl); exportJsonButton.addEventListener('click', exportToJson); importJsonInput.addEventListener('change', importFromJson); printButton.addEventListener('click', () => window.print());
 
         document.addEventListener('keydown', e => {
@@ -434,7 +391,7 @@
                 if (e.key === 'Enter' && quizNextButton.style.display === 'block') { quizNextButton.click(); }
             }
         });
-
+        
         loadFromUrl();
         renderQuestions();
     });
