@@ -64,7 +64,6 @@
         .modal-header h3 { margin: 0; font-size: 18px; }
         .modal-body { padding: 25px; overflow-y: auto; flex-grow: 1; }
         .modal-footer { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-top: 1px solid var(--border-color); text-align: center; }
-        
         .focus-body .answer-area { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: var(--answer-color); visibility: hidden; }
         .focus-body .answer-area.visible { visibility: visible; }
         .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
@@ -77,15 +76,13 @@
         .quiz-option-button:disabled { opacity: 0.8; cursor: not-allowed; }
         .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
-        
         .matching-container { display: flex; justify-content: space-between; }
-        .matching-list { list-style: none; padding: 0; width: 48%; }
-        .matching-item { padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.4s, transform 0.4s; word-wrap: break-word; }
+        .matching-list { list-style: none; padding: 0; width: 48%; display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
-
         .file-input { display: none; }
         .toast-notification { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.75); color: white; padding: 12px 20px; border-radius: 25px; font-size: 15px; z-index: 2000; transition: bottom 0.5s ease-in-out; }
         .toast-notification.show { bottom: 30px; }
@@ -312,12 +309,25 @@
         const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
         const endQuizMode = () => { hideModal(quizModal); };
         
-        const startMatchingMode = () => { const count = parseInt(matchingCountInput.value, 10); if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; } matchingPool = shuffleArray([...questions]).slice(0, count); matchingActiveSet = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT)); renderMatchingGame(); showModal(matchingModal); };
+        // ★★★★★ 修正されたマッチングモードのロジック ★★★★★
+        const startMatchingMode = () => {
+            const count = parseInt(matchingCountInput.value, 10);
+            if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; }
+            matchingPool = shuffleArray([...questions]).slice(0, count);
+            matchingActiveSet = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT));
+            renderMatchingGame(); showModal(matchingModal);
+        };
         const renderMatchingGame = () => {
             selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
             const answers = shuffleArray([...matchingActiveSet]);
-            matchingActiveSet.forEach(q => { const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(q.question); li.dataset.id = q.id; li.dataset.type = 'question'; matchingQuestions.appendChild(li); });
-            answers.forEach(a => { const li = document.createElement('li'); li.className = 'matching-item'; li.innerHTML = sanitizeHTML(a.answer); li.dataset.id = a.id; li.dataset.type = 'answer'; li.dataset.answerText = a.answer; matchingAnswers.appendChild(li); });
+            const createItem = (item, type) => {
+                const li = document.createElement('li'); li.className = 'matching-item';
+                li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
+                li.dataset.id = item.id; li.dataset.type = type;
+                return li;
+            };
+            matchingActiveSet.forEach(q => matchingQuestions.appendChild(createItem(q, 'question')));
+            answers.forEach(a => matchingAnswers.appendChild(createItem(a, 'answer')));
             updateMatchingProgress();
         };
         const handleMatchingClick = e => {
@@ -327,13 +337,12 @@
                 if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
                 let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
                 const questionObj = matchingActiveSet.find(q => q.id == questionEl.dataset.id);
-                if (questionObj && questionObj.answer === answerEl.dataset.answerText) {
+                if (questionObj && questionObj.answer === answerEl.textContent) {
                     questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
                     setTimeout(() => {
                         matchingActiveSet = matchingActiveSet.filter(q => q.id != questionObj.id);
                         if (matchingPool.length > 0) {
-                            const newItem = matchingPool.shift();
-                            matchingActiveSet.push(newItem);
+                            matchingActiveSet.push(matchingPool.shift());
                         }
                         renderMatchingGame();
                         if (matchingActiveSet.length === 0) {
