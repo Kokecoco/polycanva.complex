@@ -309,12 +309,13 @@
         const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
         const endQuizMode = () => { hideModal(quizModal); };
         
-        // ★★★★★ 最終修正版マッチングモード ★★★★★
+        // ★★★★★ 修正前のマッチングモード ★★★★★
         const startMatchingMode = () => {
             const count = parseInt(matchingCountInput.value, 10);
             if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; }
-            matchingPool = shuffleArray([...questions]).slice(0, count);
-            questionSlots = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT));
+            const allMatchingQuestions = shuffleArray([...questions]);
+            matchingPool = allMatchingQuestions.slice(MATCHING_VISIBLE_COUNT, count);
+            questionSlots = allMatchingQuestions.slice(0, MATCHING_VISIBLE_COUNT);
             answerSlots = shuffleArray([...questionSlots]);
             renderMatchingGame(); showModal(matchingModal);
         };
@@ -325,10 +326,11 @@
                 if(item) {
                     li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
                     li.dataset.id = item.id;
+                    li.dataset.type = type;
                 } else {
                     li.style.visibility = 'hidden'; // 空のスロット
+                    li.style.pointerEvents = 'none';
                 }
-                li.dataset.type = type;
                 return li;
             };
             for(let i = 0; i < MATCHING_VISIBLE_COUNT; i++) {
@@ -337,52 +339,92 @@
             }
             updateMatchingProgress();
         };
+
+        // ▼▼▼▼▼ ここから修正後のコード ▼▼▼▼▼
         const handleMatchingClick = e => {
-            const target = e.target.closest('.matching-item'); if (!target || target.classList.contains('matched') || !target.dataset.id) return;
-            if (!selectedMatchingItem) { if (document.querySelector('.matching-item.selected')) return; selectedMatchingItem = target; target.classList.add('selected'); }
+            const target = e.target.closest('.matching-item');
+            // クリック対象外、または既にマッチ済みの場合は処理しない
+            if (!target || target.classList.contains('matched') || !target.dataset.id) return;
+
+            // 1つ目のアイテムを選択
+            if (!selectedMatchingItem) {
+                // 他に選択中のアイテムがあれば処理を中断
+                if (document.querySelector('.matching-item.selected')) return;
+                selectedMatchingItem = target;
+                target.classList.add('selected');
+            } 
+            // 2つ目のアイテムを選択
             else {
-                if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
-                let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
+                // 同じアイテムや同じ種類（問題同士・答え同士）を選択した場合は選択を解除
+                if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) {
+                    selectedMatchingItem.classList.remove('selected');
+                    selectedMatchingItem = null;
+                    return;
+                }
                 
+                // questionとanswerの要素を特定
+                let questionEl, answerEl;
+                if (selectedMatchingItem.dataset.type === 'question') {
+                    questionEl = selectedMatchingItem;
+                    answerEl = target;
+                } else {
+                    questionEl = target;
+                    answerEl = selectedMatchingItem;
+                }
+                
+                // IDを比較して正解かどうかを判定
                 if (questionEl.dataset.id === answerEl.dataset.id) {
-                    matchingContainer.style.pointerEvents = 'none';
-                    questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
+                    // 正解の場合
+                    matchingContainer.style.pointerEvents = 'none'; // 連打防止
+                    questionEl.classList.add('matched');
+                    answerEl.classList.add('matched');
+                    selectedMatchingItem.classList.remove('selected');
+                    selectedMatchingItem = null;
                     
+                    // アニメーションが終わるのを待ってからDOMを更新
                     setTimeout(() => {
-                        const qIndex = Array.from(matchingQuestions.children).indexOf(questionEl.parentElement);
-                        const aIndex = Array.from(matchingAnswers.children).indexOf(answerEl.parentElement);
+                        // 【バグ修正】 表示されているリスト内での正しいインデックスを取得
+                        const qIndex = Array.from(matchingQuestions.children).indexOf(questionEl);
+                        const aIndex = Array.from(matchingAnswers.children).indexOf(answerEl);
                         
-                        if (matchingPool.length > 0) {
-                            const newItem = matchingPool.shift();
-                            questionSlots[qIndex] = newItem;
-                            answerSlots[aIndex] = newItem;
-                        } else {
-                            questionSlots[qIndex] = null;
-                            answerSlots[aIndex] = null;
-                        }
+                        // 【改善対応】 プールから新しい問題を取得
+                        const newItem = matchingPool.length > 0 ? matchingPool.shift() : null;
                         
-                        questionSlots = questionSlots.filter(Boolean);
-                        answerSlots = answerSlots.filter(Boolean);
-                        shuffleArray(answerSlots);
-
-                        while(questionSlots.length < MATCHING_VISIBLE_COUNT) questionSlots.push(null);
-                        while(answerSlots.length < MATCHING_VISIBLE_COUNT) answerSlots.push(null);
-
+                        // データスロットを新しいアイテムで置き換える
+                        // これで他のアイテムの位置は変わらない
+                        questionSlots[qIndex] = newItem;
+                        answerSlots[aIndex] = newItem;
+                        
+                        // DOMを再描画して変更を反映
                         renderMatchingGame();
                         matchingContainer.style.pointerEvents = 'auto';
                         
+                        // 全ての問題を解き終わったかチェック
                         if (questionSlots.every(q => q === null)) {
                             updateMatchingProgress();
-                            setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 500);
+                            setTimeout(() => {
+                                alert('全問正解！クリアです！');
+                                endMatchingMode();
+                            }, 500); // アニメーション後にアラート
                         }
-                    }, 400);
+                    }, 400); // .matchedのアニメーション時間
                 } else {
-                    questionEl.classList.add('incorrect-flash'); answerEl.classList.add('incorrect-flash');
-                    const prevSelectedItem = selectedMatchingItem; selectedMatchingItem = null;
-                    setTimeout(() => { questionEl.classList.remove('incorrect-flash', 'selected'); answerEl.classList.remove('incorrect-flash', 'selected'); prevSelectedItem.classList.remove('incorrect-flash', 'selected'); }, 500);
+                    // 不正解の場合
+                    questionEl.classList.add('incorrect-flash');
+                    answerEl.classList.add('incorrect-flash');
+                    const prevSelectedItem = selectedMatchingItem;
+                    selectedMatchingItem = null;
+                    // アニメーションが終わった後にクラスを削除
+                    setTimeout(() => {
+                        questionEl.classList.remove('incorrect-flash', 'selected');
+                        answerEl.classList.remove('incorrect-flash', 'selected');
+                        if (prevSelectedItem) prevSelectedItem.classList.remove('incorrect-flash', 'selected');
+                    }, 500);
                 }
             }
         };
+        // ▲▲▲▲▲ ここまで修正後のコード ▲▲▲▲▲
+
         const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const solvedCount = totalCount - (matchingPool.length + questionSlots.filter(Boolean).length); matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
         const endMatchingMode = () => { hideModal(matchingModal); };
         
