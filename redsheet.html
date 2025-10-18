@@ -64,6 +64,7 @@
         .modal-header h3 { margin: 0; font-size: 18px; }
         .modal-body { padding: 25px; overflow-y: auto; flex-grow: 1; }
         .modal-footer { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-top: 1px solid var(--border-color); text-align: center; }
+        
         .focus-body .answer-area { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: var(--answer-color); visibility: hidden; }
         .focus-body .answer-area.visible { visibility: visible; }
         .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
@@ -76,13 +77,15 @@
         .quiz-option-button:disabled { opacity: 0.8; cursor: not-allowed; }
         .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
+        
         .matching-container { display: flex; justify-content: space-between; }
         .matching-list { list-style: none; padding: 0; width: 48%; }
-        .matching-item { padding: 10px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.4s, transform 0.4s; word-wrap: break-word; }
+        .matching-item { padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.4s, transform 0.4s; word-wrap: break-word; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
         .file-input { display: none; }
         .toast-notification { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.75); color: white; padding: 12px 20px; border-radius: 25px; font-size: 15px; z-index: 2000; transition: bottom 0.5s ease-in-out; }
         .toast-notification.show { bottom: 30px; }
@@ -201,7 +204,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="matching-reset-button">リセット</button>
+                <button id="matching-reset-button" class="button-secondary">リセット</button>
                 <button id="matching-close-button" class="button-secondary">モードを終了 (Esc)</button>
             </div>
         </div>
@@ -248,7 +251,7 @@
         const sanitizeHTML = str => str.replace(/\n/g, '<br>');
         const levenshteinDistance = (str1 = '', str2 = '') => { const track = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null)); for (let i = 0; i <= str1.length; i += 1) { track[0][i] = i; } for (let j = 0; j <= str2.length; j += 1) { track[j][0] = j; } for (let j = 1; j <= str2.length; j += 1) { for (let i = 1; i <= str1.length; i += 1) { const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1; track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator); } } return track[str2.length][str1.length]; };
         
-        const updateButtonsState = () => { const count = questions.length; const hasQuestions = count > 0; const canStartQuiz = count >= 4; const canStartMatching = count >= 5; shuffleButton.disabled = toggleAllButton.disabled = startFocusModeButton.disabled = !hasQuestions; startQuizModeButton.disabled = !canStartQuiz; quizModeNotice.style.display = canStartQuiz ? 'none' : 'block'; startMatchingModeButton.disabled = !canStartMatching; matchingModeNotice.style.display = canStartMatching ? 'none' : 'block'; if(hasQuestions) matchingCountInput.max = count; generateUrlButton.disabled = exportJsonButton.disabled = printButton.disabled = !hasQuestions; };
+        const updateButtonsState = () => { const count = questions.length; const hasQuestions = count > 0; const canStartQuiz = count >= 4; const canStartMatching = count >= MATCHING_VISIBLE_COUNT; shuffleButton.disabled = toggleAllButton.disabled = startFocusModeButton.disabled = !hasQuestions; startQuizModeButton.disabled = !canStartQuiz; quizModeNotice.style.display = canStartQuiz ? 'none' : 'block'; startMatchingModeButton.disabled = !canStartMatching; matchingModeNotice.style.display = canStartMatching ? 'none' : `block`; matchingModeNotice.textContent = `（${MATCHING_VISIBLE_COUNT}問以上で利用可）`; if(hasQuestions) matchingCountInput.max = count; generateUrlButton.disabled = exportJsonButton.disabled = printButton.disabled = !hasQuestions; };
         
         const renderQuestions = () => {
             questionList.innerHTML = ''; questionCount.textContent = questions.length; updateButtonsState();
@@ -327,28 +330,16 @@
                 if (questionObj && questionObj.answer === answerEl.dataset.answerText) {
                     questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
                     setTimeout(() => {
-                        const questionNode = qa(`.matching-item[data-id='${questionObj.id}'][data-type='question']`);
-                        const answerNode = Array.from(matchingAnswers.querySelectorAll('.matching-item')).find(el => el.dataset.answerText === questionObj.answer && !el.classList.contains('matched'));
-                        if(answerNode) answerNode.classList.add('matched');
-
                         matchingActiveSet = matchingActiveSet.filter(q => q.id != questionObj.id);
                         if (matchingPool.length > 0) {
                             const newItem = matchingPool.shift();
                             matchingActiveSet.push(newItem);
-                            const newQ = document.createElement('li'); newQ.className = 'matching-item'; newQ.innerHTML = sanitizeHTML(newItem.question); newQ.dataset.id = newItem.id; newQ.dataset.type = 'question';
-                            const newA = document.createElement('li'); newA.className = 'matching-item'; newA.innerHTML = sanitizeHTML(newItem.answer); newA.dataset.id = newItem.id; newA.dataset.type = 'answer'; newA.dataset.answerText = newItem.answer;
-                            
-                            const qParent = questionNode.parentElement;
-                            const aParent = answerNode.parentElement;
-
-                            qParent.insertBefore(newQ, qParent.children[Math.floor(Math.random() * qParent.children.length)]);
-                            aParent.insertBefore(newA, aParent.children[Math.floor(Math.random() * aParent.children.length)]);
                         }
-                        questionNode.remove();
-                        answerNode.remove();
-
-                        updateMatchingProgress();
-                        if (matchingActiveSet.length === 0) { setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 400); }
+                        renderMatchingGame();
+                        if (matchingActiveSet.length === 0) {
+                            updateMatchingProgress();
+                            setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 400);
+                        }
                     }, 400);
                 } else {
                     questionEl.classList.add('incorrect-flash'); answerEl.classList.add('incorrect-flash');
@@ -374,7 +365,7 @@
         focusNextButton.addEventListener('click', () => { if (!focusNextButton.disabled) { currentFocusIndex++; renderFocusQuestion(); } });
         focusPrevButton.addEventListener('click', () => { if (!focusPrevButton.disabled) { currentFocusIndex--; renderFocusQuestion(); } });
         quizCloseButton.addEventListener('click', endQuizMode); quizNextButton.addEventListener('click', () => { if (!quizNextButton.disabled) { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } } });
-        matchingResetButton.addEventListener('click', startMatchingMode); // リセットはモードを最初からやり直す
+        matchingResetButton.addEventListener('click', startMatchingMode);
         matchingCloseButton.addEventListener('click', endMatchingMode); matchingModal.addEventListener('click', handleMatchingClick);
         generateUrlButton.addEventListener('click', generateShareUrl); exportJsonButton.addEventListener('click', exportToJson); importJsonInput.addEventListener('change', importFromJson); printButton.addEventListener('click', () => window.print());
 
