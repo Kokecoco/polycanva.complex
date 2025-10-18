@@ -11,7 +11,7 @@
             --primary-color: #1E90FF; --primary-dark-color: #1C86EE; --secondary-color: #f4f7fa;
             --border-color: #e1e5eb; --text-color: #333; --light-text-color: #777;
             --card-bg-color: #ffffff; --answer-color: #d32f2f; --correct-color: #28a745;
-            --incorrect-color: #dc3545; --selected-color: #a5d6a7; --matched-color: #e0e0e0;
+            --incorrect-color: #dc3545; --selected-color: #a5d6a7;
         }
         *, *::before, *::after { box-sizing: border-box; }
         body {
@@ -78,7 +78,7 @@
         #quiz-next-button { display: none; }
         .matching-container { display: flex; justify-content: space-between; }
         .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; }
-        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; }
+        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; will-change: transform, opacity; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
@@ -318,16 +318,35 @@
             renderMatchingGame(); showModal(matchingModal);
         };
         const renderMatchingGame = () => {
-            selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
+            selectedMatchingItem = null;
+            matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
             const answerSlots = shuffleArray([...matchingSlots]);
-            const createItem = (item, type) => {
-                const li = document.createElement('li'); li.className = 'matching-item';
-                li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
-                li.dataset.id = item.id; li.dataset.type = type;
-                return li;
-            };
-            matchingSlots.forEach(q => matchingQuestions.appendChild(createItem(q, 'question')));
-            answerSlots.forEach(a => matchingAnswers.appendChild(createItem(a, 'answer')));
+            
+            for (let i = 0; i < MATCHING_VISIBLE_COUNT; i++) {
+                // スロットのコンテナを作成
+                const qSlot = document.createElement('li');
+                const aSlot = document.createElement('li');
+                matchingQuestions.appendChild(qSlot);
+                matchingAnswers.appendChild(aSlot);
+
+                // スロットにデータがあれば要素を作成して挿入
+                if (matchingSlots[i]) {
+                    const qItem = document.createElement('div');
+                    qItem.className = 'matching-item';
+                    qItem.innerHTML = sanitizeHTML(matchingSlots[i].question);
+                    qItem.dataset.id = matchingSlots[i].id;
+                    qItem.dataset.type = 'question';
+                    qSlot.appendChild(qItem);
+                }
+                if (answerSlots[i]) {
+                    const aItem = document.createElement('div');
+                    aItem.className = 'matching-item';
+                    aItem.innerHTML = sanitizeHTML(answerSlots[i].answer);
+                    aItem.dataset.id = answerSlots[i].id;
+                    aItem.dataset.type = 'answer';
+                    aSlot.appendChild(aItem);
+                }
+            }
             updateMatchingProgress();
         };
         const handleMatchingClick = e => {
@@ -336,26 +355,27 @@
             else {
                 if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
                 let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
-                const questionInSlot = matchingSlots.find(q => q.id == questionEl.dataset.id);
-
+                const questionInSlot = matchingSlots.find(q => q && q.id == questionEl.dataset.id);
                 if (questionInSlot && questionInSlot.answer === answerEl.textContent) {
-                    matchingContainer.style.pointerEvents = 'none'; // 操作を一時無効化
+                    matchingContainer.style.pointerEvents = 'none';
                     questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
                     
                     setTimeout(() => {
-                        const slotIndex = matchingSlots.findIndex(q => q.id == questionInSlot.id);
-                        if (matchingPool.length > 0) {
-                            matchingSlots[slotIndex] = matchingPool.shift();
-                        } else {
-                            matchingSlots.splice(slotIndex, 1);
+                        const slotIndex = matchingSlots.findIndex(q => q && q.id == questionInSlot.id);
+                        if (slotIndex !== -1) {
+                            if (matchingPool.length > 0) {
+                                matchingSlots[slotIndex] = matchingPool.shift();
+                            } else {
+                                matchingSlots.splice(slotIndex, 1);
+                            }
                         }
                         
                         renderMatchingGame();
-                        matchingContainer.style.pointerEvents = 'auto'; // 操作を有効化
+                        matchingContainer.style.pointerEvents = 'auto';
                         
                         if (matchingSlots.length === 0) {
                             updateMatchingProgress();
-                            setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 400);
+                            setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 500);
                         }
                     }, 400);
                 } else {
