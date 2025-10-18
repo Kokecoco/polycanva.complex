@@ -220,7 +220,7 @@
         const focusToggleAnswerButton = qa('#focus-toggle-answer-button'), focusPrevButton = qa('#focus-prev-button'), focusNextButton = qa('#focus-next-button'), focusCloseButton = qa('#focus-close-button');
         const quizModal = qa('#quiz-mode-modal'), quizCounter = qa('#quiz-counter'), quizQuestion = qa('#quiz-question'), quizOptions = qa('#quiz-options');
         const quizNextButton = qa('#quiz-next-button'), quizCloseButton = qa('#quiz-close-button');
-        const matchingModal = qa('#matching-mode-modal'), matchingQuestions = qa('#matching-questions'), matchingAnswers = qa('#matching-answers'), matchingProgress = qa('#matching-progress');
+        const matchingModal = qa('#matching-mode-modal'), matchingContainer = qa('#matching-container'), matchingQuestions = qa('#matching-questions'), matchingAnswers = qa('#matching-answers'), matchingProgress = qa('#matching-progress');
         const matchingResetButton = qa('#matching-reset-button'), matchingCloseButton = qa('#matching-close-button');
         const toast = qa('#toast-notification');
         
@@ -308,7 +308,7 @@
         const handleQuizCompletion = () => { const total = quizQuestions.length; const mistakesCount = quizMistakes.length; const correctCount = total - mistakesCount; let message = mistakesCount === 0 ? '全問正解です！素晴らしい！' : `${total}問中、${correctCount}問正解でした。`; setTimeout(() => { alert(message); if (mistakesCount > 0 && confirm('間違えた問題に再挑戦しますか？')) { quizQuestions = shuffleArray([...quizMistakes]); quizMistakes = []; currentQuizIndex = 0; renderQuizQuestion(); } else { endQuizMode(); } }, 200); };
         const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
         const endQuizMode = () => { hideModal(quizModal); };
-
+        
         // ★★★★★ 最終修正版マッチングモード ★★★★★
         const startMatchingMode = () => {
             const count = parseInt(matchingCountInput.value, 10);
@@ -337,16 +337,22 @@
                 if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
                 let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
                 const questionInSlot = matchingSlots.find(q => q.id == questionEl.dataset.id);
+
                 if (questionInSlot && questionInSlot.answer === answerEl.textContent) {
+                    matchingContainer.style.pointerEvents = 'none'; // 操作を一時無効化
                     questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
+                    
                     setTimeout(() => {
-                        const questionIndex = matchingSlots.findIndex(q => q.id == questionObj.id);
+                        const slotIndex = matchingSlots.findIndex(q => q.id == questionInSlot.id);
                         if (matchingPool.length > 0) {
-                            matchingSlots[questionIndex] = matchingPool.shift();
+                            matchingSlots[slotIndex] = matchingPool.shift();
                         } else {
-                            matchingSlots.splice(questionIndex, 1);
+                            matchingSlots.splice(slotIndex, 1);
                         }
+                        
                         renderMatchingGame();
+                        matchingContainer.style.pointerEvents = 'auto'; // 操作を有効化
+                        
                         if (matchingSlots.length === 0) {
                             updateMatchingProgress();
                             setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 400);
