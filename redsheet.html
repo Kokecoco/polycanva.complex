@@ -78,7 +78,7 @@
         #quiz-next-button { display: none; }
         .matching-container { display: flex; justify-content: space-between; }
         .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; }
-        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; will-change: transform, opacity; }
+        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; will-change: transform, opacity; min-height: 50px; display: flex; align-items: center; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
@@ -226,7 +226,7 @@
         
         let questions = []; let allAnswersVisible = false; let currentFocusIndex = 0;
         let currentQuizIndex = 0; let quizQuestions = []; let quizMistakes = [];
-        let selectedMatchingItem = null; let matchingPool = []; let matchingSlots = [];
+        let selectedMatchingItem = null; let matchingPool = []; let questionSlots = []; let answerSlots = [];
         const MATCHING_VISIBLE_COUNT = 5;
 
         const tabs = document.querySelectorAll('.tab-button');
@@ -314,66 +314,64 @@
             const count = parseInt(matchingCountInput.value, 10);
             if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; }
             matchingPool = shuffleArray([...questions]).slice(0, count);
-            matchingSlots = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT));
+            questionSlots = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT));
+            answerSlots = shuffleArray([...questionSlots]);
             renderMatchingGame(); showModal(matchingModal);
         };
         const renderMatchingGame = () => {
-            selectedMatchingItem = null;
-            matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
-            const answerSlots = shuffleArray([...matchingSlots]);
-            
-            for (let i = 0; i < MATCHING_VISIBLE_COUNT; i++) {
-                // スロットのコンテナを作成
-                const qSlot = document.createElement('li');
-                const aSlot = document.createElement('li');
-                matchingQuestions.appendChild(qSlot);
-                matchingAnswers.appendChild(aSlot);
-
-                // スロットにデータがあれば要素を作成して挿入
-                if (matchingSlots[i]) {
-                    const qItem = document.createElement('div');
-                    qItem.className = 'matching-item';
-                    qItem.innerHTML = sanitizeHTML(matchingSlots[i].question);
-                    qItem.dataset.id = matchingSlots[i].id;
-                    qItem.dataset.type = 'question';
-                    qSlot.appendChild(qItem);
+            selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
+            const createItem = (item, type) => {
+                const li = document.createElement('li'); li.className = 'matching-item';
+                if(item) {
+                    li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
+                    li.dataset.id = item.id;
+                } else {
+                    li.style.visibility = 'hidden'; // 空のスロット
                 }
-                if (answerSlots[i]) {
-                    const aItem = document.createElement('div');
-                    aItem.className = 'matching-item';
-                    aItem.innerHTML = sanitizeHTML(answerSlots[i].answer);
-                    aItem.dataset.id = answerSlots[i].id;
-                    aItem.dataset.type = 'answer';
-                    aSlot.appendChild(aItem);
-                }
+                li.dataset.type = type;
+                return li;
+            };
+            for(let i = 0; i < MATCHING_VISIBLE_COUNT; i++) {
+                matchingQuestions.appendChild(createItem(questionSlots[i], 'question'));
+                matchingAnswers.appendChild(createItem(answerSlots[i], 'answer'));
             }
             updateMatchingProgress();
         };
         const handleMatchingClick = e => {
-            const target = e.target.closest('.matching-item'); if (!target || target.classList.contains('matched')) return;
+            const target = e.target.closest('.matching-item'); if (!target || target.classList.contains('matched') || !target.dataset.id) return;
             if (!selectedMatchingItem) { if (document.querySelector('.matching-item.selected')) return; selectedMatchingItem = target; target.classList.add('selected'); }
             else {
                 if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
                 let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
-                const questionInSlot = matchingSlots.find(q => q && q.id == questionEl.dataset.id);
-                if (questionInSlot && questionInSlot.answer === answerEl.textContent) {
+                
+                if (questionEl.dataset.id === answerEl.dataset.id) {
                     matchingContainer.style.pointerEvents = 'none';
                     questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
                     
                     setTimeout(() => {
-                        const slotIndex = matchingSlots.findIndex(q => q && q.id == questionInSlot.id);
-                        if (slotIndex !== -1) {
-                            if (matchingPool.length > 0) {
-                                matchingSlots[slotIndex] = matchingPool.shift();
-                            } else {
-                                matchingSlots.splice(slotIndex, 1);
-                            }
+                        const qIndex = Array.from(matchingQuestions.children).indexOf(questionEl.parentElement);
+                        const aIndex = Array.from(matchingAnswers.children).indexOf(answerEl.parentElement);
+                        
+                        if (matchingPool.length > 0) {
+                            const newItem = matchingPool.shift();
+                            questionSlots[qIndex] = newItem;
+                            answerSlots[aIndex] = newItem;
+                        } else {
+                            questionSlots[qIndex] = null;
+                            answerSlots[aIndex] = null;
                         }
                         
+                        questionSlots = questionSlots.filter(Boolean);
+                        answerSlots = answerSlots.filter(Boolean);
+                        shuffleArray(answerSlots);
+
+                        while(questionSlots.length < MATCHING_VISIBLE_COUNT) questionSlots.push(null);
+                        while(answerSlots.length < MATCHING_VISIBLE_COUNT) answerSlots.push(null);
+
                         renderMatchingGame();
                         matchingContainer.style.pointerEvents = 'auto';
                         
-                        if (matchingSlots.length === 0) {
+                        if (questionSlots.every(q => q === null)) {
                             updateMatchingProgress();
                             setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 500);
                         }
@@ -385,7 +383,7 @@
                 }
             }
         };
-        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const solvedCount = totalCount - (matchingPool.length + matchingSlots.length); matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
+        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const solvedCount = totalCount - (matchingPool.length + questionSlots.filter(Boolean).length); matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
         const endMatchingMode = () => { hideModal(matchingModal); };
         
         const generateShareUrl = () => { try { const jsonString = JSON.stringify(questions); const compressed = pako.deflate(jsonString, { to: 'string' }); const base64String = btoa(compressed); const url = `${location.origin}${location.pathname}#${base64String}`; navigator.clipboard.writeText(url).then(() => showToast('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
