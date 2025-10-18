@@ -77,7 +77,7 @@
         .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
         .matching-container { display: flex; justify-content: space-between; }
-        .matching-list { list-style: none; padding: 0; width: 48%; display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; }
         .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
         .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
@@ -226,7 +226,7 @@
         
         let questions = []; let allAnswersVisible = false; let currentFocusIndex = 0;
         let currentQuizIndex = 0; let quizQuestions = []; let quizMistakes = [];
-        let selectedMatchingItem = null; let matchingPool = []; let matchingActiveSet = [];
+        let selectedMatchingItem = null; let matchingPool = []; let matchingSlots = [];
         const MATCHING_VISIBLE_COUNT = 5;
 
         const tabs = document.querySelectorAll('.tab-button');
@@ -308,26 +308,26 @@
         const handleQuizCompletion = () => { const total = quizQuestions.length; const mistakesCount = quizMistakes.length; const correctCount = total - mistakesCount; let message = mistakesCount === 0 ? '全問正解です！素晴らしい！' : `${total}問中、${correctCount}問正解でした。`; setTimeout(() => { alert(message); if (mistakesCount > 0 && confirm('間違えた問題に再挑戦しますか？')) { quizQuestions = shuffleArray([...quizMistakes]); quizMistakes = []; currentQuizIndex = 0; renderQuizQuestion(); } else { endQuizMode(); } }, 200); };
         const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
         const endQuizMode = () => { hideModal(quizModal); };
-        
-        // ★★★★★ 修正されたマッチングモードのロジック ★★★★★
+
+        // ★★★★★ 最終修正版マッチングモード ★★★★★
         const startMatchingMode = () => {
             const count = parseInt(matchingCountInput.value, 10);
             if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; }
             matchingPool = shuffleArray([...questions]).slice(0, count);
-            matchingActiveSet = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT));
+            matchingSlots = matchingPool.splice(0, Math.min(count, MATCHING_VISIBLE_COUNT));
             renderMatchingGame(); showModal(matchingModal);
         };
         const renderMatchingGame = () => {
             selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
-            const answers = shuffleArray([...matchingActiveSet]);
+            const answerSlots = shuffleArray([...matchingSlots]);
             const createItem = (item, type) => {
                 const li = document.createElement('li'); li.className = 'matching-item';
                 li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
                 li.dataset.id = item.id; li.dataset.type = type;
                 return li;
             };
-            matchingActiveSet.forEach(q => matchingQuestions.appendChild(createItem(q, 'question')));
-            answers.forEach(a => matchingAnswers.appendChild(createItem(a, 'answer')));
+            matchingSlots.forEach(q => matchingQuestions.appendChild(createItem(q, 'question')));
+            answerSlots.forEach(a => matchingAnswers.appendChild(createItem(a, 'answer')));
             updateMatchingProgress();
         };
         const handleMatchingClick = e => {
@@ -336,16 +336,18 @@
             else {
                 if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) { selectedMatchingItem.classList.remove('selected'); selectedMatchingItem = null; return; }
                 let questionEl, answerEl; if (selectedMatchingItem.dataset.type === 'question') { questionEl = selectedMatchingItem; answerEl = target; } else { questionEl = target; answerEl = selectedMatchingItem; }
-                const questionObj = matchingActiveSet.find(q => q.id == questionEl.dataset.id);
-                if (questionObj && questionObj.answer === answerEl.textContent) {
+                const questionInSlot = matchingSlots.find(q => q.id == questionEl.dataset.id);
+                if (questionInSlot && questionInSlot.answer === answerEl.textContent) {
                     questionEl.classList.add('matched'); answerEl.classList.add('matched'); selectedMatchingItem = null;
                     setTimeout(() => {
-                        matchingActiveSet = matchingActiveSet.filter(q => q.id != questionObj.id);
+                        const questionIndex = matchingSlots.findIndex(q => q.id == questionObj.id);
                         if (matchingPool.length > 0) {
-                            matchingActiveSet.push(matchingPool.shift());
+                            matchingSlots[questionIndex] = matchingPool.shift();
+                        } else {
+                            matchingSlots.splice(questionIndex, 1);
                         }
                         renderMatchingGame();
-                        if (matchingActiveSet.length === 0) {
+                        if (matchingSlots.length === 0) {
                             updateMatchingProgress();
                             setTimeout(() => { alert('全問正解！クリアです！'); endMatchingMode(); }, 400);
                         }
@@ -357,7 +359,7 @@
                 }
             }
         };
-        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const remainingCount = matchingPool.length + matchingActiveSet.length; const solvedCount = totalCount - remainingCount; matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
+        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const solvedCount = totalCount - (matchingPool.length + matchingSlots.length); matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
         const endMatchingMode = () => { hideModal(matchingModal); };
         
         const generateShareUrl = () => { try { const jsonString = JSON.stringify(questions); const compressed = pako.deflate(jsonString, { to: 'string' }); const base64String = btoa(compressed); const url = `${location.origin}${location.pathname}#${base64String}`; navigator.clipboard.writeText(url).then(() => showToast('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
