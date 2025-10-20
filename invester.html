@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投資シミュレーター</title>
+    
+    <!-- CSSをここに埋め込み -->
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+
+        .container {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        h1, h2 {
+            color: #333;
+        }
+
+        form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            flex-grow: 1;
+        }
+
+        button {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            flex-grow: 1;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: right;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            text-align: center;
+        }
+
+        .plus {
+            color: green;
+        }
+
+        .minus {
+            color: red;
+        }
+
+        #summary {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .delete-btn {
+            background-color: #dc3545;
+        }
+        .delete-btn:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>投資シミュレーター</h1>
+        <p>Alpha Vantage APIを使用しています。APIの無料枠には呼び出し回数の制限がありますのでご注意ください。</p>
+    </div>
+
+    <div class="container">
+        <h2>ポートフォリオ追加</h2>
+        <form id="add-stock-form">
+            <input type="text" id="stock-code" placeholder="証券コード (例: 7203)" required>
+            <input type="number" id="stock-shares" placeholder="株数" required>
+            <input type="number" id="stock-price" placeholder="取得単価" required>
+            <button type="submit">追加</button>
+        </form>
+    </div>
+
+    <div class="container">
+        <h2>ポートフォリオ一覧</h2>
+        <div id="summary">
+            <p>合計評価額: <span id="total-value">0</span>円</p>
+            <p>合計損益: <span id="total-pl">0</span>円</p>
+        </div>
+        <table id="portfolio-table">
+            <thead>
+                <tr>
+                    <th>証券コード</th>
+                    <th>株数</th>
+                    <th>取得単価</th>
+                    <th>現在値 (前日終値)</th>
+                    <th>評価額</th>
+                    <th>損益</th>
+                    <th>削除</th>
+                </tr>
+            </thead>
+            <tbody id="portfolio-body">
+                <!-- JavaScriptによってここに銘柄が追加されます -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- JavaScriptをここに埋め込み -->
+    <script>
+        // =================================================================
+        // ▼▼▼ この部分をご自身のAPIキーに書き換えてください ▼▼▼
+        // =================================================================
+        const API_KEY = 'LRW25ZVQSRBXMVBP'; 
+
+        const addForm = document.getElementById('add-stock-form');
+        const portfolioBody = document.getElementById('portfolio-body');
+        const totalValueEl = document.getElementById('total-value');
+        const totalPlEl = document.getElementById('total-pl');
+
+        // ポートフォリオデータをlocalStorageから読み込むか、空の配列で初期化
+        let portfolio = JSON.parse(localStorage.getItem('portfolio')) || [];
+
+        // フォーム送信時の処理
+        addForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const code = document.getElementById('stock-code').value;
+            const shares = parseInt(document.getElementById('stock-shares').value);
+            const price = parseFloat(document.getElementById('stock-price').value);
+
+            // 新しい銘柄オブジェクトを作成
+            const newStock = {
+                code,
+                shares,
+                price
+            };
+
+            // ポートフォリオに追加
+            portfolio.push(newStock);
+            // localStorageに保存
+            savePortfolio();
+            // 表示を更新
+            renderPortfolio();
+            
+            addForm.reset();
+        });
+
+
+        // 株価を取得する関数 (Alpha Vantage API)
+        async function fetchStockPrice(code) {
+            // 日本株の場合、証券コードの末尾に「.T」を付ける必要があります
+            const symbol = `${code}.T`;
+            const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${API_KEY}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                // APIからのレスポンスをチェック
+                if (data['Error Message'] || !data['Time Series (Daily)']) {
+                    console.error('APIからエラーが返されました:', data);
+                    alert(`証券コード: ${code} の株価取得に失敗しました。APIの制限か、コードが間違っている可能性があります。`);
+                    return null;
+                }
+                
+                const timeSeries = data['Time Series (Daily)'];
+                const latestDate = Object.keys(timeSeries)[0];
+                const latestClosePrice = parseFloat(timeSeries[latestDate]['4. close']);
+                
+                return latestClosePrice;
+            } catch (error) {
+                console.error('APIリクエスト中にエラーが発生しました:', error);
+                return null;
+            }
+        }
+
+        // ポートフォリオを描画する関数
+        async function renderPortfolio() {
+            portfolioBody.innerHTML = '<tr><td colspan="7">データを読み込み中...</td></tr>'; // 読み込み中表示
+            let totalValue = 0;
+            let totalInvestment = 0;
+            let tableRows = '';
+
+            // APIの呼び出し回数制限を考慮し、一つずつ順に処理する
+            for (let i = 0; i < portfolio.length; i++) {
+                const stock = portfolio[i];
+                const currentPrice = await fetchStockPrice(stock.code);
+                
+                // 1分間に5回のAPI制限を避けるため、少し待機時間を入れる（必要であれば調整）
+                if (i > 0 && (i + 1) % 4 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 60000)); // 60秒待機
+                }
+                
+                const investment = stock.shares * stock.price;
+                const currentValue = currentPrice ? stock.shares * currentPrice : 0;
+                const profitLoss = currentValue - investment;
+
+                totalInvestment += investment;
+                totalValue += currentValue;
+                
+                tableRows += `
+                    <tr>
+                        <td>${stock.code}</td>
+                        <td>${stock.shares.toLocaleString()}株</td>
+                        <td>${stock.price.toLocaleString()}円</td>
+                        <td>${currentPrice ? currentPrice.toLocaleString() + '円' : '取得失敗'}</td>
+                        <td>${currentValue.toLocaleString()}円</td>
+                        <td class="${profitLoss >= 0 ? 'plus' : 'minus'}">${profitLoss.toLocaleString()}円</td>
+                        <td><button class="delete-btn" data-index="${i}">削除</button></td>
+                    </tr>
+                `;
+            }
+            
+            portfolioBody.innerHTML = tableRows || '<tr><td colspan="7">銘柄がありません。</td></tr>';
+            
+            // 合計の評価額と損益を更新
+            const totalProfitLoss = totalValue - totalInvestment;
+            totalValueEl.textContent = totalValue.toLocaleString();
+            totalPlEl.textContent = totalProfitLoss.toLocaleString();
+            totalPlEl.className = totalProfitLoss >= 0 ? 'plus' : 'minus';
+
+            // 削除ボタンにイベントリスナーを追加
+            addDeleteEventListeners();
+        }
+
+        // ポートフォリオをlocalStorageに保存する関数
+        function savePortfolio() {
+            localStorage.setItem('portfolio', JSON.stringify(portfolio));
+        }
+
+        // 削除ボタンにイベントを追加する関数
+        function addDeleteEventListeners() {
+            const deleteButtons = document.querySelectorAll('.delete-btn');
+            deleteButtons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const index = e.target.getAttribute('data-index');
+                    // ポートフォリオから該当の銘柄を削除
+                    portfolio.splice(index, 1);
+                    // 保存と再描画
+                    savePortfolio();
+                    renderPortfolio();
+                });
+            });
+        }
+
+        // ページ読み込み時にポートフォリオを描画
+        renderPortfolio();
+    </script>
+</body>
+</html>
