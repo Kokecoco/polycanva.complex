@@ -1,153 +1,94 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ブラウザAI名言ジェネレーター (GAS連携版)</title>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
-        h1 { font-size: 1.8em; }
-        button { font-size: 1em; padding: 10px 15px; cursor: pointer; }
-        button:disabled { cursor: not-allowed; opacity: 0.6; }
-        #result-container { margin-top: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
-        .result-box { margin-top: 10px; }
-        .result-box h3 { margin: 0 0 5px 0; font-size: 1em; color: #555; }
-        .result-box p { margin: 0; padding: 10px; background-color: #f4f4f4; border-radius: 3px; min-height: 1.2em;}
-    </style>
+  <meta charset="utf-8" />
+  <title>AI Cross-Language Misguided Quote Generator</title>
+  <style>
+    body { font-family: sans-serif; line-height: 1.6; padding: 2em; }
+    #status { color: #888; font-style: italic; }
+    #result-area { margin-top: 1em; padding: 1em; border: 1px solid #ccc; background-color: #f9f9f9; }
+    h3 { margin-bottom: 0.5em; }
+    p { margin-top: 0.2em; }
+  </style>
 </head>
 <body>
-    <h1>今日のAI名言</h1>
-    <button id="generate-button" type="button">新しい名言を生成する</button>
+  <h1>AIが英語で考え、日本語に翻訳する迷言ジェネレーター</h1>
+  <p>ボタンを押すと、AIが迷言を生成し、日本語に翻訳します。</p>
+  <p id="status">ステータス：待機中（初回クリック時はAIモデルのダウンロードに数分かかることがあります）</p>
 
-    <div id="result-container">
-        <div class="result-box">
-            <h3>原文 (English)</h3>
-            <p id="original-text">-</p>
-        </div>
-        <div class="result-box">
-            <h3>翻訳 (Japanese)</h3>
-            <p id="translated-text">ボタンを押して生成してください</p>
-        </div>
-    </div>
+  <button id="generate">迷言を生成する</button>
 
-    <!-- ▼▼▼ デバッグ用インスペクタ（ログ表示）のコード ▼▼▼ -->
-    <div id="dev-log-panel" style="position: fixed; bottom: 10px; right: 10px; width: 400px; height: 300px; background: rgba(0,0,0,0.8); color: white; border: 1px solid #ccc; overflow-y: scroll; padding: 10px; font-family: monospace; font-size: 12px; z-index: 9999; display: block;"><div style="padding-bottom: 5px; border-bottom: 1px solid #555; font-weight: bold;">デバッグログ</div><pre id="dev-log-content"></pre></div>
-    <script>
-      function logToPanel(message, isError = false) { const logContent = document.getElementById('dev-log-content'); if (logContent) { const coloredMessage = isError ? `<span style="color: #ff8a8a;">${message}</span>` : message; logContent.innerHTML += coloredMessage.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '\n\n'; const logPanel = document.getElementById('dev-log-panel'); logPanel.scrollTop = logPanel.scrollHeight; } }
-      window.onerror = function(message, source, lineno, colno, error) { logToPanel(`[JS Error]\n  メッセージ: ${message}\n  ファイル: ${source}\n  行: ${lineno}, 列: ${colno}`, true); }; window.onunhandledrejection = function(event) { logToPanel(`[JS Promise Error]\n  理由: ${event.reason}`, true); };
-      try { const observer = new PerformanceObserver((list) => { list.getEntries().forEach((entry) => { if (entry.initiatorType === 'fetch') {logToPanel(`[リソース監視]\n  ファイル: ${entry.name}\n  読込時間: ${entry.duration.toFixed(2)}ms`);} }); }); observer.observe({ type: "resource", buffered: true }); } catch(e) { console.warn("PerformanceObserver is not supported."); }
-      const originalFetch = window.fetch; window.fetch = function() { const [url, options] = arguments; logToPanel(`[Fetch APIリクエスト]\n  URL: ${url}\n  Method: ${options ? options.method || 'GET' : 'GET'}`); return originalFetch.apply(this, arguments).then(async (response) => { const resClone = response.clone(); logToPanel(`[Fetch APIレスポンス]\n  URL: ${resClone.url}\n  Status: ${resClone.status} ${resClone.statusText}`); return response; }).catch((error) => { logToPanel(`[Fetch APIエラー]\n  URL: ${url}\n  エラー: ${error}`, true); throw error; }); };
-    </script>
-    <!-- ▲▲▲ インスペクタ用のコード ▲▲▲ -->
+  <div id="result-area" style="display:none;">
+    <h3>生成された迷言（原文: 英語）</h3>
+    <p id="result-en"></p>
+    <h3>翻訳結果（日本語）</h3>
+    <p id="result-ja"></p>
+  </div>
 
-    <!-- ▼▼▼ アプリケーション本体のコード ▼▼▼ -->
-    <script type="module">
-        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+  <!-- Transformers.jsをCDNから読み込む -->
+  <script type="module">
+    // ES Module版のTransformers.jsをインポート
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
 
-        const originalTextElement = document.getElementById('original-text');
-        const translatedTextElement = document.getElementById('translated-text');
-        const generateButton = document.getElementById('generate-button');
+    // HTML要素の取得
+    const generateButton = document.getElementById('generate');
+    const statusBar = document.getElementById('status');
+    const resultArea = document.getElementById('result-area');
+    const resultEn = document.getElementById('result-en');
+    const resultJa = document.getElementById('result-ja');
 
-        // ★★★★★ 重要 ★★★★★
-        // 以下のURLを、あなたがデプロイしたGoogle Apps ScriptのURLに書き換えてください。
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbynue36OhjVX1uhdZr9iK1vq1oRwZV0V8N56tLrY7vMH66aesO04hTcg4rbr5QFR59L7Q/exec";
+    // 生成の元となる英語のプロンプト（命令文）リスト
+    const prompts = [
+      "Generate a profound but useless quote about life.",
+      "Generate a weirdly motivational quote about potatoes.",
+      "Generate a nonsensical quote that sounds like it's from a fantasy novel.",
+      "Generate a philosophical quote about the meaning of a semicolon in programming.",
+      "Generate a quote about finding true happiness in a pile of laundry.",
+    ];
 
-        /**
-         * GASの翻訳APIを呼び出し、英語のテキストを日本語に翻訳します。
-         * @param {string} englishText - 翻訳したい英語のテキスト。
-         * @returns {Promise<string>} - 翻訳された日本語のテキストを返します。
-         * @throws {Error} - APIからのレスポンスがエラーの場合や、ネットワークエラーが発生した場合にエラーをスローします。
-         */
-        async function translateEnglishToJapanese(englishText) {
-            // GASウェブアプリのURLが設定されているかチェック
-            if (GAS_API_URL === "GASのURLを指定してください。") {
-                throw new Error("GAS_API_URLが設定されていません。コード内のURLをあなたのウェブアプリのURLに書き換えてください。");
-            }
-            
-            // APIに渡すパラメータを組み立てる
-            const params = new URLSearchParams({
-                text: englishText,
-                source: 'en', // 翻訳元言語（英語）
-                target: 'ja', // 翻訳先言語（日本語）
-            });
+    generateButton.addEventListener('click', async () => {
+      // 処理中の表示
+      generateButton.disabled = true;
+      resultArea.style.display = 'none';
+      statusBar.textContent = 'ステータス：英語生成AIモデルを準備中です...（初回は時間がかかります）';
 
-            // GETリクエストを送信するURLを作成
-            const requestUrl = `${GAS_API_URL}?${params.toString()}`;
+      // --- ステップ1: 英語の迷言を生成 ---
+      // テキスト生成モデル（distilgpt2はGPT-2の小型版）のパイプラインを準備
+      const generator = await pipeline('text-generation', 'Xenova/distilgpt2');
+      
+      // プロンプトをランダムに選択
+      const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
+      statusBar.textContent = `ステータス：英語で迷言を生成中... (プロンプト: ${randomPrompt})`;
 
-            const response = await fetch(requestUrl);
+      // 英語のテキストを生成
+      const outputEn = await generator(randomPrompt, {
+        max_new_tokens: 50, // 新しく生成するトークン（単語のようなもの）の最大数
+        no_repeat_ngram_size: 2, // 同じフレーズの繰り返しを防ぐ
+      });
+      const generatedTextEn = outputEn[0].generated_text;
 
-            if (!response.ok) {
-                throw new Error(`ネットワークエラー: HTTPステータス ${response.status}`);
-            }
-            
-            const data = await response.json();
-            logToPanel(`[GAS APIレスポンスBody]\n  ${JSON.stringify(data, null, 2)}`); // レスポンス内容をログに出力
+      // 英語の結果を先に表示
+      resultEn.textContent = generatedTextEn;
+      resultArea.style.display = 'block';
 
-            if (data.code === 200) {
-                return data.text; // 成功した場合は翻訳結果のテキストを返す
-            } else {
-                throw new Error(`GAS APIからのエラー: ${data.text}`);
-            }
-        }
+      // --- ステップ2: 日本語に翻訳 ---
+      statusBar.textContent = 'ステータス：翻訳AIモデルを準備中です...';
 
+      // 英語→日本語の翻訳パイプラインを準備
+      const translator = await pipeline('translation', 'Xenova/opus-mt-en-jap');
+      
+      statusBar.textContent = 'ステータス：日本語に翻訳中...';
+      
+      // 翻訳を実行
+      const outputJa = await translator(generatedTextEn);
+      
+      // 翻訳結果を表示
+      resultJa.textContent = outputJa[0].translation_text;
 
-        // AIモデルの準備
-        async function initialize() {
-            try {
-                translatedTextElement.textContent = "AIの準備をしています... (初回は少し時間がかかります)";
-                const generator = await pipeline('text-generation', 'Xenova/gpt2');
-                translatedTextElement.textContent = "準備完了！ボタンを押してください";
-                // グローバルスコープで利用できるようにする
-                window.generator = generator;
-            } catch (error) {
-                translatedTextElement.textContent = `AIモデルの初期化に失敗しました。詳細は右下のログを確認してください。`;
-                console.error("詳細なエラー情報:", error);
-                logToPanel(`[AI初期化エラー] ${error.message}`, true);
-            }
-        }
-        
-        // ボタンがクリックされた時の処理
-        async function generateAndTranslate() {
-            if (!window.generator) {
-                translatedTextElement.textContent = `AIが準備できていません。ページを再読み込みしてください。`;
-                return;
-            }
-
-            generateButton.disabled = true;
-            originalTextElement.textContent = "-";
-            translatedTextElement.textContent = "英語で名言を考えています...";
-
-            try {
-                // Qwen1.5-Chatモデルに最適なプロンプト形式
-                const prompt = "Generate a single, deep, and witty quote about life:";
-
-                // AIにテキスト生成を命令
-                const englishResult = await window.generator(prompt, {
-                    max_new_tokens: 30, return_full_text: false, do_sample: true, temperature: 0.7,
-                });
-
-                let englishText = englishResult[0].generated_text.split('"')[0].trim();
-
-                originalTextElement.textContent = englishText;
-                translatedTextElement.textContent = "Google翻訳で日本語にしています...";
-
-                // 翻訳を実行
-                const japaneseText = await translateEnglishToJapanese(englishText);
-                translatedTextElement.textContent = japaneseText;
-
-            } catch (error) {
-                const errorMessage = `エラーが発生しました。詳細は右下のログを確認してください。`;
-                translatedTextElement.textContent = errorMessage;
-                console.error("生成・翻訳エラー詳細:", error);
-                logToPanel(`[処理エラー] ${error.message}`, true);
-            } finally {
-                generateButton.disabled = false;
-            }
-        }
-
-        // 初期化処理を実行
-        initialize();
-        // イベントリスナーを登録
-        generateButton.addEventListener('click', generateAndTranslate);
-    </script>
+      // 完了
+      statusBar.textContent = 'ステータス：生成完了！';
+      generateButton.disabled = false;
+    });
+  </script>
 </body>
 </html>
