@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>日経平均トレードゲーム</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: linear-gradient(120deg, #1b2735, #090a0f);
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+    }
+    h1 { color: #ffcc00; }
+    #price {
+      font-size: 2em;
+      margin: 20px 0;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1em;
+      cursor: pointer;
+      background: #0078ff;
+      color: #fff;
+      transition: background 0.2s;
+    }
+    button:hover { background: #005fcc; }
+    #balance, #holdings { font-size: 1.2em; margin: 10px; }
+    .log {
+      margin-top: 20px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px;
+      max-height: 300px;
+      overflow-y: auto;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <h1>📈 日経平均トレードゲーム</h1>
+  <div id="price">現在価格: 取得中...</div>
+
+  <!-- ✅ 初期残高を100万円に変更 -->
+  <div id="balance">残高: 1,000,000 円</div>
+
+  <div id="holdings">保有株数: 0 株</div>
+
+  <button id="buyBtn">買う</button>
+  <button id="sellBtn">売る</button>
+  <button id="refreshBtn">価格更新</button>
+  <div class="log" id="log"></div>
+
+  <script>
+    const API_KEY = "48584f0adfmsh0b16f34621e2ec5p10dce1jsn5bd220891dad"; // ←RapidAPIキーを入力
+    const API_HOST = "yahoo-finance15.p.rapidapi.com";
+
+    let balance = 1000000; // ✅ 初期残高：100万円
+    let holdings = 0;
+    let currentPrice = 0;
+
+    const priceEl = document.getElementById("price");
+    const balanceEl = document.getElementById("balance");
+    const holdingsEl = document.getElementById("holdings");
+    const logEl = document.getElementById("log");
+
+    async function fetchPrice() {
+      priceEl.textContent = "現在価格: 取得中...";
+      try {
+        const res = await fetch(`https://${API_HOST}/api/yahoo/ne/n225`, {
+          method: "GET",
+          headers: {
+            "x-rapidapi-key": API_KEY,
+            "x-rapidapi-host": API_HOST
+          }
+        });
+        const data = await res.json();
+        
+        if (data && data.price) {
+          currentPrice = parseFloat(data.price);
+          priceEl.textContent = `現在価格: ${currentPrice.toLocaleString()} 円`;
+          log(`💹 価格更新: ${currentPrice.toLocaleString()} 円`);
+        } else {
+          priceEl.textContent = "価格取得に失敗しました";
+        }
+      } catch (err) {
+        console.error(err);
+        priceEl.textContent = "エラー: 価格を取得できません";
+      }
+    }
+
+    function buy() {
+      if (currentPrice === 0) return alert("価格を取得してください！");
+      if (balance >= currentPrice) {
+        balance -= currentPrice;
+        holdings += 1;
+        updateDisplay();
+        log(`🟢 買い: ${currentPrice.toLocaleString()} 円`);
+      } else {
+        alert("残高が足りません！");
+      }
+    }
+
+    function sell() {
+      if (holdings > 0) {
+        balance += currentPrice;
+        holdings -= 1;
+        updateDisplay();
+        log(`🔴 売り: ${currentPrice.toLocaleString()} 円`);
+      } else {
+        alert("株を持っていません！");
+      }
+    }
+
+    function updateDisplay() {
+      balanceEl.textContent = `残高: ${balance.toLocaleString()} 円`;
+      holdingsEl.textContent = `保有株数: ${holdings} 株`;
+    }
+
+    function log(msg) {
+      const p = document.createElement("p");
+      const now = new Date().toLocaleTimeString("ja-JP");
+      p.textContent = `[${now}] ${msg}`;
+      logEl.prepend(p);
+    }
+
+    document.getElementById("buyBtn").addEventListener("click", buy);
+    document.getElementById("sellBtn").addEventListener("click", sell);
+    document.getElementById("refreshBtn").addEventListener("click", fetchPrice);
+
+    fetchPrice();
+  </script>
+</body>
+</html>
