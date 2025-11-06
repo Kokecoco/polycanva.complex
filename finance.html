@@ -1,138 +1,245 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>日経平均トレードゲーム</title>
-  <style>
-    body {
-      font-family: "Segoe UI", sans-serif;
-      background: linear-gradient(120deg, #1b2735, #090a0f);
-      color: #fff;
-      text-align: center;
-      padding: 20px;
-    }
-    h1 { color: #ffcc00; }
-    #price {
-      font-size: 2em;
-      margin: 20px 0;
-    }
-    button {
-      margin: 10px;
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 1em;
-      cursor: pointer;
-      background: #0078ff;
-      color: #fff;
-      transition: background 0.2s;
-    }
-    button:hover { background: #005fcc; }
-    #balance, #holdings { font-size: 1.2em; margin: 10px; }
-    .log {
-      margin-top: 20px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 10px;
-      padding: 10px;
-      max-height: 300px;
-      overflow-y: auto;
-      text-align: left;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>日経平均トレードゲーム（RapidAPI版）</title>
+<style>
+  :root { --bg:#0b1220; --card:#151e2e; --accent:#ffd54d; --ok:#16c784; --ng:#ea3943; --muted:#9fb0ce; }
+  body { margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif; background:var(--bg); color:#fff; }
+  .wrap { max-width:860px; margin:24px auto; padding:0 16px; }
+  h1 { color:var(--accent); margin:0 0 8px; }
+  .sub { color:var(--muted); margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap:16px; }
+  .card { background:var(--card); border-radius:14px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+  .price { font-size:28px; margin-top:6px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  button { background:#2a61ff; border:none; color:#fff; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:600; }
+  button:hover{ filter:brightness(1.05); }
+  input[type="number"]{ width:100px; padding:8px; border-radius:8px; border:1px solid #39507a; background:#0f1626; color:#fff; }
+  .stat { font-size:18px; }
+  .pnl-pos { color:var(--ok); } .pnl-neg { color:var(--ng); }
+  .log { max-height:220px; overflow:auto; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:#0f1626; border-radius:10px; padding:10px; }
+  .footer { margin-top:14px; font-size:12px; color:#88a; }
+  .err { color:#ff9c9c; }
+</style>
 </head>
 <body>
+<div class="wrap">
   <h1>📈 日経平均トレードゲーム</h1>
-  <div id="price">現在価格: 取得中...</div>
+  <div class="sub">データソース: RapidAPI / YH Finance (yahoo-finance15) · 1分ごと自動更新</div>
 
-  <!-- ✅ 初期残高を100万円に変更 -->
-  <div id="balance">残高: 1,000,000 円</div>
+  <div class="grid">
+    <div class="card">
+      <div class="muted">現在値（Nikkei 225 / ^N225）</div>
+      <div id="price" class="price">取得中…</div>
+      <div id="asof" class="muted">—</div>
+      <div class="row" style="margin-top:12px; gap:8px;">
+        <button id="refresh">手動で更新</button>
+        <span id="status" class="muted"></span>
+      </div>
+    </div>
 
-  <div id="holdings">保有株数: 0 株</div>
+    <div class="card">
+      <div class="muted">口座情報</div>
+      <div class="stat">残高: <span id="balance">1,000,000</span> 円</div>
+      <div class="stat">保有: <span id="units">0</span> 単位</div>
+      <div class="stat">平均取得単価: <span id="avg">-</span></div>
+      <div class="stat">評価損益: <span id="pnl">-</span></div>
+    </div>
 
-  <button id="buyBtn">買う</button>
-  <button id="sellBtn">売る</button>
-  <button id="refreshBtn">価格更新</button>
-  <div class="log" id="log"></div>
+    <div class="card">
+      <div class="muted">注文</div>
+      <div class="row">
+        数量 <input id="qty" type="number" min="1" value="1"/>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button id="buy">買う</button>
+        <button id="sell">売る</button>
+      </div>
+      <div class="footer">※ 1単位 = 指数の現在値をそのまま採用（学習用の簡易モデル）</div>
+    </div>
 
-  <script>
-    const API_KEY = "48584f0adfmsh0b16f34621e2ec5p10dce1jsn5bd220891dad"; // ←RapidAPIキーを入力
-    const API_HOST = "yahoo-finance15.p.rapidapi.com";
+    <div class="card">
+      <div class="muted">イベントログ</div>
+      <div id="log" class="log"></div>
+      <div class="footer">LocalStorageに自動保存されます（ブラウザごとに独立）。</div>
+    </div>
+  </div>
 
-    let balance = 1000000; // ✅ 初期残高：100万円
-    let holdings = 0;
-    let currentPrice = 0;
+  <div class="footer" style="margin-top:14px;">
+    取得に失敗する場合は <span class="err">APIキー</span> と <span class="err">エンドポイントURL</span> をご確認ください。
+  </div>
+</div>
 
-    const priceEl = document.getElementById("price");
-    const balanceEl = document.getElementById("balance");
-    const holdingsEl = document.getElementById("holdings");
-    const logEl = document.getElementById("log");
+<script>
+  // ====== 設定（必ず差し替え） ======
+  const API_KEY  = "48584f0adfmsh0b16f34621e2ec5p10dce1jsn5bd220891dad"; // ← RapidAPIのキーを入れる
+  const API_HOST = "yahoo-finance15.p.rapidapi.com";
+  // 正しいエンドポイント（^N225 = Nikkei 225）
+  const QUOTE_URL = `https://${API_HOST}/api/yahoo/qu/quote/%5EN225`;
 
-    async function fetchPrice() {
-      priceEl.textContent = "現在価格: 取得中...";
-      try {
-        const res = await fetch(`https://${API_HOST}/api/yahoo/ne/n225`, {
-          method: "GET",
-          headers: {
-            "x-rapidapi-key": API_KEY,
-            "x-rapidapi-host": API_HOST
-          }
-        });
-        const data = await res.json();
-        
-        if (data && data.price) {
-          currentPrice = parseFloat(data.price);
-          priceEl.textContent = `現在価格: ${currentPrice.toLocaleString()} 円`;
-          log(`💹 価格更新: ${currentPrice.toLocaleString()} 円`);
-        } else {
-          priceEl.textContent = "価格取得に失敗しました";
+  // ====== 状態 ======
+  const initialState = { balance: 1_000_000, units: 0, avgPrice: 0 };
+  let state = loadState();
+  let lastPrice = 0;
+
+  // ====== 要素 ======
+  const el = {
+    price:   document.getElementById('price'),
+    asof:    document.getElementById('asof'),
+    status:  document.getElementById('status'),
+    balance: document.getElementById('balance'),
+    units:   document.getElementById('units'),
+    avg:     document.getElementById('avg'),
+    pnl:     document.getElementById('pnl'),
+    qty:     document.getElementById('qty'),
+    buy:     document.getElementById('buy'),
+    sell:    document.getElementById('sell'),
+    refresh: document.getElementById('refresh'),
+    log:     document.getElementById('log'),
+  };
+
+  // ====== ユーティリティ ======
+  function saveState(){ localStorage.setItem('nikkeiGame', JSON.stringify(state)); }
+  function loadState(){
+    try { return JSON.parse(localStorage.getItem('nikkeiGame')) || {...initialState}; }
+    catch { return {...initialState}; }
+  }
+  function yen(x){ return (x ?? 0).toLocaleString('ja-JP'); }
+  function log(msg){
+    const p = document.createElement('div');
+    const t = new Date().toLocaleTimeString('ja-JP');
+    p.textContent = `[${t}] ${msg}`;
+    el.log.prepend(p);
+  }
+  function setStatus(text, isError=false){
+    el.status.textContent = text || '';
+    el.status.style.color = isError ? '#ff9c9c' : '#9fb0ce';
+  }
+
+  function render(){
+    el.balance.textContent = yen(Math.round(state.balance));
+    el.units.textContent   = state.units;
+    el.avg.textContent     = state.units ? yen(Math.round(state.avgPrice)) : '-';
+
+    if (lastPrice && state.units){
+      const pnl = (lastPrice - state.avgPrice) * state.units;
+      el.pnl.textContent = `${pnl >= 0 ? '+' : ''}${yen(Math.round(pnl))} 円`;
+      el.pnl.className = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    } else {
+      el.pnl.textContent = '-';
+      el.pnl.className = '';
+    }
+  }
+
+  // ====== 株価取得（RapidAPI / yahoo-finance15） ======
+  async function fetchPrice(){
+    setStatus('更新中…');
+    try{
+      const res = await fetch(QUOTE_URL, {
+        headers: {
+          'x-rapidapi-key': API_KEY,
+          'x-rapidapi-host': API_HOST
         }
-      } catch (err) {
-        console.error(err);
-        priceEl.textContent = "エラー: 価格を取得できません";
+      });
+
+      if (!res.ok){
+        const text = await res.text();
+        setStatus(`HTTP ${res.status}: ${text.slice(0,120)}…`, true);
+        log(`⚠️ 取得失敗（HTTP ${res.status})`);
+        return null;
       }
-    }
 
-    function buy() {
-      if (currentPrice === 0) return alert("価格を取得してください！");
-      if (balance >= currentPrice) {
-        balance -= currentPrice;
-        holdings += 1;
-        updateDisplay();
-        log(`🟢 買い: ${currentPrice.toLocaleString()} 円`);
-      } else {
-        alert("残高が足りません！");
+      const json = await res.json();
+      // 返却形はAPIのプランにより Object or Array のことがあるので両対応
+      const item = Array.isArray(json) ? json[0] : json;
+
+      // 主要フィールド候補
+      const price = Number(
+        item?.regularMarketPrice ??
+        item?.price ??
+        item?.ask ??
+        item?.bid ??
+        NaN
+      );
+
+      // タイムスタンプ候補
+      const tsSec = Number(
+        item?.regularMarketTime ??
+        item?.postMarketTime ??
+        item?.preMarketTime ??
+        item?.time ??
+        0
+      );
+      const ts = tsSec ? new Date(tsSec * 1000) : new Date();
+
+      if (!Number.isFinite(price)){
+        setStatus('データ形式エラー：価格が見つかりません', true);
+        log('❌ データ形式エラー（priceなし）');
+        return null;
       }
+
+      lastPrice = price;
+      el.price.textContent = `現在値: ${yen(price)} 円`;
+      el.asof.textContent  = `時刻: ${ts.toLocaleString('ja-JP')}`;
+      setStatus('更新完了');
+      log(`💹 価格更新: ${yen(price)} 円`);
+      render();
+      return price;
+
+    } catch(err){
+      setStatus('ネットワークエラー', true);
+      console.error(err);
+      log('❌ ネットワークエラー');
+      return null;
     }
+  }
 
-    function sell() {
-      if (holdings > 0) {
-        balance += currentPrice;
-        holdings -= 1;
-        updateDisplay();
-        log(`🔴 売り: ${currentPrice.toLocaleString()} 円`);
-      } else {
-        alert("株を持っていません！");
-      }
-    }
+  // ====== 売買 ======
+  async function ensurePrice(){ return lastPrice || await fetchPrice(); }
 
-    function updateDisplay() {
-      balanceEl.textContent = `残高: ${balance.toLocaleString()} 円`;
-      holdingsEl.textContent = `保有株数: ${holdings} 株`;
-    }
+  async function buy(){
+    const p = await ensurePrice();
+    if (!p) return alert('価格が取得できませんでした。もう一度お試しください。');
+    const q = Math.max(1, parseInt(el.qty.value||'1',10));
+    const cost = p * q;
+    if (cost > state.balance) return alert('残高不足です。');
 
-    function log(msg) {
-      const p = document.createElement("p");
-      const now = new Date().toLocaleTimeString("ja-JP");
-      p.textContent = `[${now}] ${msg}`;
-      logEl.prepend(p);
-    }
+    const totalBefore = state.avgPrice * state.units;
+    state.units += q;
+    state.avgPrice = state.units ? (totalBefore + cost) / state.units : 0;
+    state.balance -= cost;
 
-    document.getElementById("buyBtn").addEventListener("click", buy);
-    document.getElementById("sellBtn").addEventListener("click", sell);
-    document.getElementById("refreshBtn").addEventListener("click", fetchPrice);
+    saveState(); render();
+    log(`🟢 買い: 単価 ${yen(p)} 円 × ${q} → 支出 ${yen(cost)} 円`);
+  }
 
-    fetchPrice();
-  </script>
+  async function sell(){
+    const p = await ensurePrice();
+    if (!p) return alert('価格が取得できませんでした。もう一度お試しください。');
+    const q = Math.max(1, parseInt(el.qty.value||'1',10));
+    if (q > state.units) return alert('売却数量が保有数量を超えています。');
+
+    const revenue = p * q;
+    state.units -= q;
+    if (state.units === 0) state.avgPrice = 0;
+    state.balance += revenue;
+
+    saveState(); render();
+    log(`🔴 売り: 単価 ${yen(p)} 円 × ${q} → 収入 ${yen(revenue)} 円`);
+  }
+
+  // ====== イベント ======
+  el.refresh.addEventListener('click', fetchPrice);
+  el.buy.addEventListener('click', buy);
+  el.sell.addEventListener('click', sell);
+
+  // 初期描画 & 初回取得 & 1分ごと更新
+  render();
+  fetchPrice();
+  setInterval(fetchPrice, 60 * 1000);
+</script>
 </body>
 </html>
