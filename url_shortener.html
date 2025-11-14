@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自分たち専用 URL短縮ツール</title>
+    
+    <!-- CSSをここに埋め込み -->
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1, h2 {
+            color: #2c3e50;
+        }
+
+        .card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        input[type="text"], input[type="url"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        #messageArea {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            word-break: break-all; /* 長いURLがはみ出ないように */
+        }
+
+        th {
+            background-color: #ecf0f1;
+        }
+
+        .copy-button {
+            background-color: #95a5a6;
+            font-size: 12px;
+            padding: 5px 10px;
+            margin-left: 5px;
+        }
+        .copy-button:hover {
+            background-color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>URL Shortener</h1>
+        <div class="card">
+            <h2>新しいURLを登録</h2>
+            <input type="text" id="inputKey" placeholder="短いキー (例: mtg, doc)">
+            <input type="url" id="inputUrl" placeholder="元の長いURL (https://...)">
+            <button id="addButton">登録する</button>
+            <p id="messageArea"></p>
+        </div>
+
+        <div class="card">
+            <h2>登録済みURL一覧</h2>
+            <p id="loadingMessage">読み込み中...</p>
+            <table id="urlTable">
+                <thead>
+                    <tr>
+                        <th>キー</th>
+                        <th>短縮URL</th>
+                        <th>元のURL</th>
+                    </tr>
+                </thead>
+                <tbody id="urlListBody">
+                    <!-- データがここに挿入されます -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- JavaScriptをここに埋め込み -->
+    <script>
+        // ===================================================================
+        // 【最重要】ここにGASのウェブアプリURLを貼り付けてください
+        // ===================================================================
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzhbhL1GE03IUIIg1bDf7SX6qBlziOQp9TATY2xkMkpxmDV2u6Z1bQlshdb-d7mdR4x/exec';
+        // ===================================================================
+
+
+        // --- DOM要素の取得 ---
+        const inputKey = document.getElementById('inputKey');
+        const inputUrl = document.getElementById('inputUrl');
+        const addButton = document.getElementById('addButton');
+        const messageArea = document.getElementById('messageArea');
+        const urlListBody = document.getElementById('urlListBody');
+        const loadingMessage = document.getElementById('loadingMessage');
+
+        // --- イベントリスナー ---
+        // ページ読み込み完了時にURL一覧を取得
+        document.addEventListener('DOMContentLoaded', fetchUrls);
+        // 「登録する」ボタンクリック時にURLを追加
+        addButton.addEventListener('click', addNewUrl);
+
+
+        // --- 関数定義 ---
+
+        /**
+         * GASから登録済みのURL一覧を取得してテーブルを描画する
+         */
+        async function fetchUrls() {
+            loadingMessage.style.display = 'block';
+            urlListBody.innerHTML = '';
+
+            try {
+                const response = await fetch(`${GAS_URL}?action=getUrls`);
+                if (!response.ok) throw new Error('ネットワークの応答が正しくありませんでした。');
+                
+                const data = await response.json();
+                
+                // 新しいものが上にくるようにデータを逆順にする
+                data.reverse().forEach(row => {
+                    const tr = document.createElement('tr');
+                    
+                    const shortUrl = `${GAS_URL}?key=${row[0]}`;
+
+                    tr.innerHTML = `
+                        <td>${row[0]}</td>
+                        <td>
+                            <a href="${shortUrl}" target="_blank">${shortUrl}</a>
+                            <button class="copy-button" onclick="copyToClipboard('${shortUrl}')">コピー</button>
+                        </td>
+                        <td>
+                            <a href="${row[1]}" target="_blank">${row[1]}</a>
+                        </td>
+                    `;
+                    urlListBody.appendChild(tr);
+                });
+
+            } catch (error) {
+                messageArea.textContent = `エラー: ${error.message}`;
+                messageArea.style.color = 'red';
+            } finally {
+                loadingMessage.style.display = 'none';
+            }
+        }
+
+        /**
+         * 新しいURLをGASに送信して登録する
+         */
+        async function addNewUrl() {
+            const key = inputKey.value.trim();
+            const url = inputUrl.value.trim();
+
+            if (!key || !url) {
+                showMessage('キーとURLの両方を入力してください。', 'red');
+                return;
+            }
+
+            // 簡単なURL形式のチェック
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                showMessage('URLは http:// または https:// で始めてください。', 'red');
+                return;
+            }
+
+            try {
+                addButton.disabled = true;
+                addButton.textContent = '登録中...';
+                
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのPOSTではtext/plainが安定
+                    body: JSON.stringify({ key, url }),
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showMessage(`キー「${result.key}」を登録しました！`, 'green');
+                    inputKey.value = '';
+                    inputUrl.value = '';
+                    fetchUrls(); // 一覧を再読み込み
+                } else {
+                    showMessage(`エラー: ${result.message}`, 'red');
+                }
+
+            } catch (error) {
+                showMessage(`エラー: ${error.message}`, 'red');
+            } finally {
+                addButton.disabled = false;
+                addButton.textContent = '登録する';
+            }
+        }
+
+        /**
+         * クリップボードにテキストをコピーする
+         */
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showMessage('クリップボードにコピーしました！', 'blue');
+            }).catch(err => {
+                showMessage('コピーに失敗しました。', 'red');
+            });
+        }
+
+        /**
+         * ユーザーへのメッセージを表示する（3秒後に消える）
+         */
+        function showMessage(text, color) {
+            messageArea.textContent = text;
+            messageArea.style.color = color;
+            setTimeout(() => {
+                messageArea.textContent = '';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
