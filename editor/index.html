@@ -19,37 +19,44 @@
     <style>
         body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; font-family: sans-serif; background: #282c34; color: white; }
         
-        /* ヘッダー・ツールバー */
         header { padding: 8px 10px; background: #21252b; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #181a1f; }
         h1 { margin: 0; font-size: 1rem; margin-right: auto; color: #9da5b4; }
-        button { background: #404754; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 3px; font-size: 0.85rem; transition: background 0.2s; }
+        
+        /* キーボードショートカットのヒントを表示するツールチップ的スタイル */
+        button { 
+            background: #404754; color: white; border: none; padding: 6px 12px; 
+            cursor: pointer; border-radius: 3px; font-size: 0.85rem; 
+            transition: background 0.2s; position: relative;
+        }
         button:hover { background: #4d5565; }
         button:active { transform: translateY(1px); }
-
-        /* タブエリア */
-        #tabs-container { 
-            display: flex; 
-            background: #21252b; 
-            overflow-x: auto; 
-            border-bottom: 1px solid #181a1f; 
-            height: 35px;
+        button[title]:hover::after {
+            content: attr(title);
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #000;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            z-index: 10;
+            opacity: 0.8;
         }
-        /* スクロールバー非表示 (Chrome/Safari) */
+
+        #tabs-container { 
+            display: flex; background: #21252b; overflow-x: auto; 
+            border-bottom: 1px solid #181a1f; height: 35px;
+        }
         #tabs-container::-webkit-scrollbar { display: none; }
 
         .tab {
-            min-width: 120px;
-            max-width: 200px;
-            padding: 0 10px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: #2d313a;
-            color: #9da5b4;
-            font-size: 0.85rem;
-            cursor: pointer;
-            border-right: 1px solid #181a1f;
-            user-select: none;
+            min-width: 120px; max-width: 200px; padding: 0 10px;
+            display: flex; align-items: center; justify-content: space-between;
+            background: #2d313a; color: #9da5b4; font-size: 0.85rem;
+            cursor: pointer; border-right: 1px solid #181a1f; user-select: none;
         }
         .tab:hover { background: #3a404b; }
         .tab.active { background: #282c34; color: white; border-top: 2px solid #61afef; }
@@ -57,43 +64,38 @@
         .tab-close { font-size: 1rem; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; color: #9da5b4; }
         .tab-close:hover { background: #cc4444; color: white; }
 
-        /* エディタエリア */
         #editor-container { flex: 1; overflow: hidden; position: relative; }
         .CodeMirror { height: 100%; font-family: 'Consolas', 'Monaco', monospace; font-size: 15px; line-height: 1.5; }
         
-        /* フッター（ステータス） */
-        footer { background: #21252b; padding: 2px 10px; font-size: 0.75rem; color: #9da5b4; display: flex; justify-content: flex-end; }
+        footer { background: #21252b; padding: 2px 10px; font-size: 0.75rem; color: #9da5b4; display: flex; justify-content: space-between; }
+        #shortcuts-hint { opacity: 0.6; }
     </style>
 </head>
 <body>
 
 <header>
     <h1>Local Tab Editor</h1>
-    <button id="btnNew">新規</button>
-    <button id="btnOpen">開く</button>
-    <button id="btnSave">保存</button>
+    <button id="btnNew" title="新規タブ (Alt+N)">新規</button>
+    <button id="btnOpen" title="ファイルを開く (Ctrl+O)">開く</button>
+    <button id="btnSave" title="上書き保存 (Ctrl+S)">保存</button>
 </header>
 
-<div id="tabs-container">
-    <!-- タブはここに動的に追加されます -->
-</div>
+<div id="tabs-container"></div>
 
 <div id="editor-container">
     <textarea id="code-editor"></textarea>
 </div>
 
 <footer>
+    <span id="shortcuts-hint">Ctrl+S: 保存 | Ctrl+O: 開く | Alt+W: 閉じる | Alt+N: 新規 | Alt+←/→: タブ移動</span>
     <span id="status">Ready</span>
 </footer>
 
 <script>
-    // --- ステート管理 ---
-    // files = [{ id, handle, doc, name }]
     let files = [];
     let activeFileId = null;
     let fileIdCounter = 0;
 
-    // --- CodeMirror 初期化 ---
     const textarea = document.getElementById("code-editor");
     const editor = CodeMirror.fromTextArea(textarea, {
         lineNumbers: true,
@@ -104,17 +106,14 @@
         lineWrapping: true
     });
 
-    // ファイル拡張子とモードのマッピング
     const modeMap = {
         'js': 'javascript', 'json': 'javascript', 'ts': 'javascript',
         'html': 'htmlmixed', 'xml': 'xml',
-        'css': 'css', 'scss': 'css',
-        'md': 'markdown'
+        'css': 'css', 'scss': 'css', 'md': 'markdown'
     };
 
-    // --- タブ操作ロジック ---
+    // --- タブ操作 ---
 
-    // 新しいタブを作成（ファイルハンドルがある場合は読み込み、なければ空）
     async function createTab(fileHandle = null) {
         let content = "";
         let name = "Untitled";
@@ -128,9 +127,7 @@
             mode = modeMap[ext] || 'htmlmixed';
         }
 
-        // CodeMirrorのDocオブジェクトを作成（これで履歴が個別に管理される）
         const doc = CodeMirror.Doc(content, mode);
-        
         const id = ++fileIdCounter;
         const newFile = { id, handle: fileHandle, doc, name };
         files.push(newFile);
@@ -139,42 +136,30 @@
         switchTab(id);
     }
 
-    // タブを切り替える
     function switchTab(id) {
         const file = files.find(f => f.id === id);
         if (!file) return;
-
         activeFileId = id;
-        // エディタの中身をこのタブのDocに差し替える
         editor.swapDoc(file.doc);
-        
         renderTabs();
         updateStatus(file.handle ? `編集中: ${file.name}` : '新規ファイル');
-        
-        // フォーカスを合わせる
         editor.focus();
     }
 
-    // タブを閉じる
     function closeTab(id, event) {
-        if(event) event.stopPropagation(); // タブ切り替えイベントの発火を防ぐ
-
+        if(event) event.stopPropagation();
+        
         const index = files.findIndex(f => f.id === id);
         if (index === -1) return;
 
-        // 未保存チェック（簡易的：確認を入れる場合）
-        // if (!confirm('タブを閉じてもよろしいですか？')) return;
-
         files.splice(index, 1);
 
-        // 全部のタブがなくなったら新規タブを作る
         if (files.length === 0) {
             activeFileId = null;
             createTab();
             return;
         }
 
-        // アクティブなタブを閉じた場合、隣のタブに移動
         if (activeFileId === id) {
             const nextFile = files[index] || files[index - 1];
             switchTab(nextFile.id);
@@ -183,22 +168,18 @@
         }
     }
 
-    // UI描画：タブ一覧
     function renderTabs() {
         const container = document.getElementById('tabs-container');
         container.innerHTML = '';
-
         files.forEach(file => {
             const el = document.createElement('div');
             el.className = `tab ${file.id === activeFileId ? 'active' : ''}`;
             el.onclick = () => switchTab(file.id);
             
-            // ファイル名
             const nameSpan = document.createElement('span');
             nameSpan.className = 'tab-name';
             nameSpan.textContent = file.name;
             
-            // 閉じるボタン
             const closeBtn = document.createElement('span');
             closeBtn.className = 'tab-close';
             closeBtn.innerHTML = '&times;';
@@ -214,16 +195,12 @@
         document.getElementById('status').textContent = msg;
     }
 
-
     // --- ボタンイベント ---
 
-    // 新規作成
     document.getElementById('btnNew').addEventListener('click', () => createTab(null));
 
-    // ファイルを開く
     document.getElementById('btnOpen').addEventListener('click', async () => {
         try {
-            // 複数ファイル選択を許可
             const handles = await window.showOpenFilePicker({
                 multiple: true,
                 types: [{
@@ -231,30 +208,22 @@
                     accept: {'text/plain': ['.txt', '.js', '.html', '.css', '.json', '.md']}
                 }]
             });
-
             for (const handle of handles) {
-                // 既に開いているファイルかチェック（簡易チェック：名前比較）
-                // 本来は isSameEntry を使うが非同期のため簡易実装
                 const isOpened = files.some(f => f.name === handle.name); 
-                if(!isOpened) {
-                    await createTab(handle);
-                }
+                if(!isOpened) await createTab(handle);
             }
         } catch (err) {
             if (err.name !== 'AbortError') console.error(err);
         }
     });
 
-    // 保存
     document.getElementById('btnSave').addEventListener('click', async () => {
         const activeFile = files.find(f => f.id === activeFileId);
         if (!activeFile) return;
-
         if (!activeFile.handle) {
-            saveAs(activeFile); // 新規ファイルの場合は「名前を付けて保存」
+            saveAs(activeFile);
             return;
         }
-
         try {
             const writable = await activeFile.handle.createWritable();
             await writable.write(activeFile.doc.getValue());
@@ -266,7 +235,6 @@
         }
     });
 
-    // 名前を付けて保存（実質、現在のタブへのハンドル割り当て）
     async function saveAs(fileObj) {
         try {
             const handle = await window.showSaveFilePicker({
@@ -275,18 +243,14 @@
                     accept: {'text/plain': ['.txt', '.js', '.html', '.css']}
                 }]
             });
-            
-            // ハンドルと名前を更新
             fileObj.handle = handle;
             const fileData = await handle.getFile();
             fileObj.name = fileData.name;
-
-            // ファイルタイプに合わせてシンタックスハイライトを更新
+            
             const ext = fileObj.name.split('.').pop();
             const mode = modeMap[ext] || 'htmlmixed';
-            editor.setOption('mode', mode); // 現在アクティブなエディタ設定を変更
+            editor.setOption('mode', mode);
 
-            // 書き込み
             const writable = await fileObj.handle.createWritable();
             await writable.write(fileObj.doc.getValue());
             await writable.close();
@@ -298,18 +262,80 @@
         }
     }
 
-    // ショートカット (Ctrl+S)
+    // --- ショートカットキー登録 ---
+    
     document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        const isCtrl = e.ctrlKey || e.metaKey; // MacはCmd, WinはCtrl
+        const isAlt = e.altKey;
+
+        // 保存: Ctrl + S
+        if (isCtrl && !e.shiftKey && e.key === 's') {
             e.preventDefault();
             document.getElementById('btnSave').click();
+            return;
+        }
+
+        // 名前を付けて保存: Ctrl + Shift + S
+        if (isCtrl && e.shiftKey && e.key === 's') {
+            e.preventDefault();
+            const activeFile = files.find(f => f.id === activeFileId);
+            if(activeFile) saveAs(activeFile);
+            return;
+        }
+
+        // 開く: Ctrl + O
+        if (isCtrl && e.key === 'o') {
+            e.preventDefault();
+            document.getElementById('btnOpen').click();
+            return;
+        }
+
+        // 新規タブ: Alt + N
+        // (Ctrl+Nは新しいウィンドウが開くためブラウザ標準動作を優先させないのが難しい)
+        if (isAlt && e.key === 'n') {
+            e.preventDefault();
+            document.getElementById('btnNew').click();
+            return;
+        }
+
+        // タブを閉じる: Alt + W
+        // (Ctrl+Wはブラウザタブを閉じてしまうため上書き不可なことが多い)
+        if (isAlt && e.key === 'w') {
+            e.preventDefault();
+            if (activeFileId) closeTab(activeFileId);
+            return;
+        }
+
+        // タブ切り替え（右）: Alt + 右矢印 or Ctrl + ]
+        if ((isAlt && e.key === 'ArrowRight') || (isCtrl && e.key === ']')) {
+            e.preventDefault();
+            moveTab(1);
+            return;
+        }
+
+        // タブ切り替え（左）: Alt + 左矢印 or Ctrl + [
+        if ((isAlt && e.key === 'ArrowLeft') || (isCtrl && e.key === '[')) {
+            e.preventDefault();
+            moveTab(-1);
+            return;
         }
     });
 
-    // 初期化：空のタブを一つ開く
+    // タブを前後に移動するヘルパー関数
+    function moveTab(direction) {
+        if (files.length <= 1) return;
+        const currentIndex = files.findIndex(f => f.id === activeFileId);
+        let nextIndex = currentIndex + direction;
+
+        // ループさせる
+        if (nextIndex >= files.length) nextIndex = 0;
+        if (nextIndex < 0) nextIndex = files.length - 1;
+
+        switchTab(files[nextIndex].id);
+    }
+
     createTab(null);
 
-    // Service Worker
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js');
     }
