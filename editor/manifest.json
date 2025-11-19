@@ -1,0 +1,20 @@
+{
+  "name": "Local Text Editor",
+  "short_name": "CodeEditor",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#282c34",
+  "theme_color": "#282c34",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192/404754/ffffff?text=ED",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512/404754/ffffff?text=EDITOR",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
