@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web動画編集スタジオ（デバッグコンソール付き）</title>
+    <!-- FFmpeg.wasmの読み込み -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --bg: #f3f4f6;
+            --text: #1f2937;
+            --console-bg: #1e1e1e;
+            --console-text: #d4d4d4;
+        }
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: var(--bg);
+            color: var(--text);
+        }
+        
+        /* コンテナ */
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        h1 { text-align: center; margin-top: 0; color: var(--primary); }
+
+        /* レイアウト */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+        /* アップロードエリア */
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.3s;
+            background: #fafafa;
+        }
+        .drop-zone:hover { border-color: var(--primary); background: #eef2ff; }
+        
+        /* プレビュー動画 */
+        video {
+            width: 100%;
+            border-radius: 6px;
+            background: #000;
+            display: none;
+            max-height: 400px;
+        }
+
+        /* タブ UI */
+        .tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 2px solid #e5e7eb; }
+        .tab {
+            padding: 10px 15px; cursor: pointer; font-weight: bold; color: #6b7280;
+            border-bottom: 2px solid transparent; margin-bottom: -2px;
+            transition: 0.2s;
+        }
+        .tab.active { color: var(--primary); border-color: var(--primary); }
+        .tab:hover:not(.active) { color: #374151; background: #f9fafb; }
+
+        /* 設定エリア */
+        .settings-group { display: none; padding: 10px 0; }
+        .settings-group.active { display: block; }
+        
+        label { display: block; font-size: 0.9rem; font-weight: bold; margin-bottom: 5px; color: #374151; }
+        input, select {
+            width: 100%; padding: 10px; border: 1px solid #d1d5db;
+            border-radius: 6px; box-sizing: border-box; margin-bottom: 15px;
+        }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+
+        /* ボタン */
+        .btn-primary {
+            width: 100%; padding: 14px; background: var(--primary); color: white;
+            border: none; border-radius: 6px; font-size: 16px; cursor: pointer;
+            transition: 0.2s; font-weight: bold; margin-top: 10px;
+        }
+        .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+        .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+
+        /* 進捗バー */
+        .progress-container { margin-top: 20px; display: none; }
+        progress { width: 100%; height: 20px; border-radius: 10px; }
+        .progress-text { text-align: center; font-size: 0.9rem; margin-top: 5px; font-weight: bold; }
+
+        /* ダウンロードボタン */
+        .download-btn {
+            display: block; text-align: center; margin-top: 20px; padding: 14px;
+            background: #10b981; color: white; text-decoration: none;
+            border-radius: 6px; font-weight: bold; display: none;
+        }
+
+        /* ==============================
+           画面内コンソール (DevTools代替)
+           ============================== */
+        .console-wrapper {
+            margin-top: 30px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 20px;
+        }
+        .console-header {
+            font-size: 0.85rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+        .clear-log {
+            cursor: pointer; color: var(--primary); text-decoration: underline;
+        }
+        #console-log {
+            background-color: var(--console-bg);
+            color: var(--console-text);
+            font-family: "Consolas", "Monaco", "Courier New", monospace;
+            font-size: 12px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            line-height: 1.4;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.5);
+        }
+        /* ログの色分け */
+        .log-info { color: #60a5fa; } /* 青系 */
+        .log-success { color: #4ade80; } /* 緑系 */
+        .log-warn { color: #fbbf24; } /* 黄色系 */
+        .log-error { color: #f87171; font-weight: bold; } /* 赤系 */
+        .log-system { color: #9ca3af; } /* グレー */
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Web動画編集スタジオ</h1>
+
+        <!-- ファイル選択エリア -->
+        <div class="drop-zone" id="drop-zone">
+            <div style="font-size: 32px; margin-bottom: 10px;">📂</div>
+            <p>ここに動画ファイルをドラッグ＆ドロップ<br><small>またはクリックして選択</small></p>
+            <input type="file" id="file-input" accept="video/*" style="display: none;">
+        </div>
+
+        <div class="grid">
+            <!-- 左カラム：プレビュー -->
+            <div>
+                <video id="preview" controls playsinline></video>
+                <div id="file-info" style="font-size: 0.85rem; color: #666; margin-top: 10px;"></div>
+            </div>
+
+            <!-- 右カラム：操作パネル -->
+            <div>
+                <div class="tabs">
+                    <div class="tab active" data-target="trim">時間カット</div>
+                    <div class="tab" data-target="crop">画面切抜</div>
+                    <div class="tab" data-target="convert">変換・他</div>
+                </div>
+
+                <!-- 1. 時間トリミング -->
+                <div id="trim" class="settings-group active">
+                    <p style="font-size:0.85rem; color:#666;">動画の前後を指定して切り出します。</p>
+                    <div class="row">
+                        <div>
+                            <label>開始位置 (秒)</label>
+                            <input type="number" id="trim-start" value="0" step="0.1" min="0">
+                        </div>
+                        <div>
+                            <label>終了位置 (秒)</label>
+                            <input type="number" id="trim-end" value="10" step="0.1" min="0">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 画面クロップ -->
+                <div id="crop" class="settings-group">
+                    <p style="font-size:0.85rem; color:#666;">画面の一部を切り取ります。</p>
+                    <label>プリセット</label>
+                    <select id="crop-preset">
+                        <option value="custom">カスタム数値入力</option>
+                        <option value="center-square">中央スクエア (1:1)</option>
+                        <option value="center-43">中央 (4:3)</option>
+                        <option value="center-169">中央 (16:9)</option>
+                    </select>
+                    
+                    <div class="row">
+                        <div><label>幅 (W)</label><input type="number" id="crop-w" value="0"></div>
+                        <div><label>高さ (H)</label><input type="number" id="crop-h" value="0"></div>
+                    </div>
+                    <div class="row">
+                        <div><label>X (左)</label><input type="number" id="crop-x" value="0"></div>
+                        <div><label>Y (上)</label><input type="number" id="crop-y" value="0"></div>
+                    </div>
+                </div>
+
+                <!-- 3. 変換・その他 -->
+                <div id="convert" class="settings-group">
+                    <label>機能選択</label>
+                    <select id="convert-mode">
+                        <option value="gif">GIFアニメに変換 (5fps/480px)</option>
+                        <option value="mp3">音声のみ抽出 (MP3)</option>
+                        <option value="compress">軽量化リサイズ (720p)</option>
+                        <option value="mute">音声を消去</option>
+                    </select>
+                    <p style="font-size:0.8rem; color:#ef4444;">※GIF変換は処理が重いため、短い動画で試してください。</p>
+                </div>
+
+                <!-- 実行ボタン -->
+                <button id="run-btn" class="btn-primary" disabled>動画を選択してください</button>
+                
+                <!-- 進捗表示 -->
+                <div class="progress-container" id="progress-wrap">
+                    <progress id="progress-bar" value="0" max="100"></progress>
+                    <div class="progress-text" id="progress-text">待機中...</div>
+                </div>
+
+                <!-- ダウンロード -->
+                <a id="download-link" class="download-btn">保存する</a>
+            </div>
+        </div>
+
+        <!-- 画面内デバッグコンソール -->
+        <div class="console-wrapper">
+            <div class="console-header">
+                <span>システムログ / エラー出力</span>
+                <span class="clear-log" onclick="clearLog()">ログ消去</span>
+            </div>
+            <div id="console-log"></div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. 画面内コンソールログの実装 (最優先)
+        // ==========================================
+        const consoleLogDiv = document.getElementById('console-log');
+
+        function getTimestamp() {
+            const now = new Date();
+            return now.toTimeString().split(' ')[0]; // HH:MM:SS
+        }
+
+        function logToPage(message, type = 'system') {
+            const p = document.createElement('div');
+            p.className = `log-${type}`;
+            p.textContent = `[${getTimestamp()}] ${message}`;
+            consoleLogDiv.appendChild(p);
+            // 常に一番下までスクロール
+            consoleLogDiv.scrollTop = consoleLogDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            consoleLogDiv.innerHTML = '';
+            logToPage('ログをクリアしました。', 'system');
+        }
+
+        // ブラウザ標準のconsole.log/errorも画面に出すように上書き
+        const originalLog = console.log;
+        const originalError = console.error;
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            // オブジェクトが含まれる場合は文字列化を試みる
+            const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' ');
+            logToPage(msg, 'info');
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' ');
+            logToPage(msg, 'error');
+        };
+
+        // 初期ログ
+        logToPage('システム初期化中...', 'system');
+        logToPage('User Agent: ' + navigator.userAgent, 'system');
+
+
+        // ==========================================
+        // 2. FFmpeg のセットアップ
+        // ==========================================
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        let ffmpeg = null;
+        let videoFile = null;
+        let videoDuration = 0;
+
+        const initFFmpeg = async () => {
+            try {
+                // corePathを明示的に指定 (CDN)
+                ffmpeg = createFFmpeg({
+                    corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+                    log: true, // コンソールに内部ログを出す
+                    logger: ({ type, message }) => {
+                        // FFmpeg内部ログのハンドリング
+                        if (type === 'fferr') {
+                            // 進捗ログの解析 (time=XX:XX:XX.XX)
+                            const match = message.match(/time=([0-9:.]+)/);
+                            if (match && videoDuration > 0) {
+                                const t = match[1].split(':');
+                                const currentTime = parseFloat(t[0]) * 3600 + parseFloat(t[1]) * 60 + parseFloat(t[2]);
+                                const percent = Math.min((currentTime / videoDuration) * 100, 100);
+                                updateProgress(percent);
+                            }
+                            // 全てのエラーログを画面に出すと多すぎるので、重要なものだけ出すか、
+                            // ここではあえて全てsystemログとして出す（デバッグ用）
+                            // logToPage(`[FFmpeg] ${message}`, 'system'); 
+                        }
+                    }
+                });
+
+                logToPage('FFmpegエンジンのロードを開始...', 'info');
+                await ffmpeg.load();
+                logToPage('FFmpegエンジンのロード完了！準備OK', 'success');
+
+            } catch (e) {
+                console.error('FFmpeg起動エラー:', e);
+                logToPage('【重要】起動に失敗しました。ブラウザのセキュリティ設定やネットワークを確認してください。', 'error');
+            }
+        };
+
+        window.addEventListener('load', initFFmpeg);
+
+
+        // ==========================================
+        // 3. UI操作ロジック
+        // ==========================================
+        const els = {
+            drop: document.getElementById('drop-zone'),
+            input: document.getElementById('file-input'),
+            video: document.getElementById('preview'),
+            fileInfo: document.getElementById('file-info'),
+            tabs: document.querySelectorAll('.tab'),
+            groups: document.querySelectorAll('.settings-group'),
+            btn: document.getElementById('run-btn'),
+            dl: document.getElementById('download-link'),
+            progressWrap: document.getElementById('progress-wrap'),
+            progressBar: document.getElementById('progress-bar'),
+            progressText: document.getElementById('progress-text'),
+            // Inputs
+            trimStart: document.getElementById('trim-start'),
+            trimEnd: document.getElementById('trim-end'),
+            cropPreset: document.getElementById('crop-preset'),
+            cropW: document.getElementById('crop-w'),
+            cropH: document.getElementById('crop-h'),
+            cropX: document.getElementById('crop-x'),
+            cropY: document.getElementById('crop-y'),
+            convertMode: document.getElementById('convert-mode')
+        };
+
+        // ファイル読込
+        const handleFile = (file) => {
+            if (!file) return;
+            logToPage(`ファイル読込: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
+            
+            videoFile = file;
+            const url = URL.createObjectURL(file);
+            els.video.src = url;
+            els.video.style.display = 'block';
+            els.drop.style.display = 'none';
+            els.dl.style.display = 'none';
+            els.btn.disabled = false;
+            els.btn.textContent = '処理を実行';
+
+            els.video.onloadedmetadata = () => {
+                videoDuration = els.video.duration;
+                els.trimEnd.value = videoDuration.toFixed(1);
+                els.fileInfo.textContent = `サイズ: ${els.video.videoWidth}x${els.video.videoHeight} / 長さ: ${videoDuration.toFixed(1)}秒`;
+                
+                // クロップ初期値
+                els.cropW.value = els.video.videoWidth;
+                els.cropH.value = els.video.videoHeight;
+                els.cropX.value = 0;
+                els.cropY.value = 0;
+
+                logToPage(`メタデータ取得完了: ${els.video.videoWidth}x${els.video.videoHeight}, ${videoDuration.toFixed(2)}s`, 'success');
+            };
+
+            els.video.onerror = () => {
+                logToPage('動画のプレビュー読み込みに失敗しました。形式がサポートされていない可能性があります。', 'error');
+            };
+        };
+
+        els.drop.addEventListener('click', () => els.input.click());
+        els.input.addEventListener('change', (e) => handleFile(e.target.files[0]));
+        els.drop.addEventListener('dragover', (e) => e.preventDefault());
+        els.drop.addEventListener('drop', (e) => {
+            e.preventDefault();
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        // タブ切り替え
+        els.tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                els.tabs.forEach(t => t.classList.remove('active'));
+                els.groups.forEach(g => g.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.target).classList.add('active');
+                logToPage(`モード変更: ${tab.textContent}`, 'system');
+            });
+        });
+
+        // クロッププリセット
+        els.cropPreset.addEventListener('change', (e) => {
+            const w = els.video.videoWidth;
+            const h = els.video.videoHeight;
+            if (!w || !h) return;
+
+            let newW = w, newH = h, newX = 0, newY = 0;
+
+            switch(e.target.value) {
+                case 'center-square':
+                    const size = Math.min(w, h);
+                    newW = size; newH = size;
+                    newX = (w - size) / 2; newY = (h - size) / 2;
+                    break;
+                case 'center-43': // 4:3
+                    if (w / h > 4 / 3) {
+                        newH = h; newW = h * 4 / 3;
+                    } else {
+                        newW = w; newH = w * 3 / 4;
+                    }
+                    newX = (w - newW) / 2; newY = (h - newH) / 2;
+                    break;
+                case 'center-169': // 16:9
+                    if (w / h > 16 / 9) {
+                        newH = h; newW = h * 16 / 9;
+                    } else {
+                        newW = w; newH = w * 9 / 16;
+                    }
+                    newX = (w - newW) / 2; newY = (h - newH) / 2;
+                    break;
+            }
+            
+            els.cropW.value = Math.round(newW);
+            els.cropH.value = Math.round(newH);
+            els.cropX.value = Math.round(newX);
+            els.cropY.value = Math.round(newY);
+            
+            if (e.target.value !== 'custom') {
+                logToPage(`クロッププリセット適用: ${e.target.value} -> W:${Math.round(newW)} H:${Math.round(newH)}`, 'info');
+            }
+        });
+
+
+        // ==========================================
+        // 4. 実行ロジック
+        // ==========================================
+        const updateProgress = (percent) => {
+            els.progressBar.value = percent;
+            els.progressText.textContent = `処理中... ${Math.round(percent)}%`;
+        };
+
+        els.btn.addEventListener('click', async () => {
+            if (!ffmpeg || !ffmpeg.isLoaded()) {
+                logToPage('FFmpegがまだ準備できていません。ロード完了までお待ちください。', 'warn');
+                return;
+            }
+            if (!videoFile) {
+                logToPage('動画ファイルが選択されていません。', 'warn');
+                return;
+            }
+
+            const activeTab = document.querySelector('.tab.active').dataset.target;
+            
+            els.btn.disabled = true;
+            els.progressWrap.style.display = 'block';
+            els.dl.style.display = 'none';
+            updateProgress(0);
+            logToPage('=== 処理プロセス開始 ===', 'info');
+
+            const inName = 'input_video'; // 拡張子なしで書き込み、後で自動判定させるのも手だが、一旦固定
+            // ブラウザが認識したタイプから拡張子推測（簡易）
+            const ext = videoFile.name.split('.').pop();
+            const inFileName = `input.${ext}`;
+            
+            let outFileName = 'output.mp4';
+            let mimeType = 'video/mp4';
+            let args = [];
+
+            try {
+                // 1. ファイルの書き込み
+                logToPage('仮想ファイルシステムへ書き込み中...', 'system');
+                ffmpeg.FS('writeFile', inFileName, await fetchFile(videoFile));
+
+                // 2. コマンド構築
+                if (activeTab === 'trim') {
+                    const start = els.trimStart.value;
+                    const end = els.trimEnd.value;
+                    const duration = end - start;
+                    
+                    if (duration <= 0) throw new Error('終了時間は開始時間より後である必要があります。');
+
+                    logToPage(`トリミング実行: ${start}秒 ~ ${end}秒 (長さ: ${duration}秒)`, 'info');
+                    // -ss (seek) は入力の前におくことで高速化
+                    args = [
+                        '-ss', start,
+                        '-i', inFileName,
+                        '-t', String(duration),
+                        '-c:v', 'libx264', // H.264エンコード
+                        '-preset', 'ultrafast', // 速度優先
+                        '-c:a', 'aac',     // 音声再エンコード
+                        outFileName
+                    ];
+
+                } else if (activeTab === 'crop') {
+                    const w = els.cropW.value;
+                    const h = els.cropH.value;
+                    const x = els.cropX.value;
+                    const y = els.cropY.value;
+
+                    logToPage(`クロップ実行: ${w}x${h} (x:${x}, y:${y})`, 'info');
+                    args = [
+                        '-i', inFileName,
+                        '-vf', `crop=${w}:${h}:${x}:${y}`,
+                        '-c:v', 'libx264',
+                        '-preset', 'ultrafast',
+                        '-c:a', 'copy', // 音声はコピー
+                        outFileName
+                    ];
+
+                } else if (activeTab === 'convert') {
+                    const mode = els.convertMode.value;
+                    logToPage(`変換モード実行: ${mode}`, 'info');
+
+                    if (mode === 'gif') {
+                        outFileName = 'output.gif';
+                        mimeType = 'image/gif';
+                        // FPS:5, 幅:480px に制限してパレット生成で画質確保
+                        args = [
+                            '-i', inFileName,
+                            '-vf', 'fps=5,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+                            outFileName
+                        ];
+                    } else if (mode === 'mp3') {
+                        outFileName = 'output.mp3';
+                        mimeType = 'audio/mpeg';
+                        args = ['-i', inFileName, '-q:a', '0', '-map', 'a', outFileName];
+                    } else if (mode === 'compress') {
+                        // 720p, CRF 28 (少し画質落とす), ultrafast
+                        args = [
+                            '-i', inFileName,
+                            '-vf', 'scale=-1:720',
+                            '-c:v', 'libx264',
+                            '-crf', '28',
+                            '-preset', 'ultrafast',
+                            '-c:a', 'aac',
+                            outFileName
+                        ];
+                    } else if (mode === 'mute') {
+                        // 音声削除 (-an)
+                        args = ['-i', inFileName, '-an', '-c:v', 'copy', outFileName];
+                    }
+                }
+
+                // 3. 実行
+                logToPage(`コマンド実行: ffmpeg ${args.join(' ')}`, 'system');
+                await ffmpeg.run(...args);
+
+                logToPage('FFmpeg処理完了。ファイル生成中...', 'success');
+
+                // 4. 結果取得
+                const data = ffmpeg.FS('readFile', outFileName);
+                const blob = new Blob([data.buffer], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+
+                els.dl.href = url;
+                els.dl.download = `edited_${activeTab}_${getTimestamp().replace(/:/g,'')}.${outFileName.split('.').pop()}`;
+                els.dl.style.display = 'block';
+                els.dl.textContent = '完成ファイルを保存する';
+                
+                updateProgress(100);
+                els.progressText.textContent = '完了！';
+                logToPage('すべての処理が正常に終了しました。', 'success');
+
+            } catch (err) {
+                console.error(err);
+                logToPage(`エラー発生: ${err.message}`, 'error');
+                els.progressText.textContent = 'エラー';
+            } finally {
+                els.btn.disabled = false;
+                // メモリ掃除（エラー時も実行）
+                try {
+                    if (ffmpeg.FS('readdir', '/').includes(inFileName)) ffmpeg.FS('unlink', inFileName);
+                    if (ffmpeg.FS('readdir', '/').includes(outFileName)) ffmpeg.FS('unlink', outFileName);
+                } catch(cleanupErr) {
+                    // 無視
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
