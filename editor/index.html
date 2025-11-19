@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Code Editor PWA</title>
+    <title>Local Tab Editor PWA</title>
     <meta name="theme-color" content="#282c34">
     <link rel="manifest" href="manifest.json">
     
-    <!-- CodeMirror (シンタックスハイライト用ライブラリ) -->
+    <!-- CodeMirror libraries -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
@@ -18,92 +18,256 @@
 
     <style>
         body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; font-family: sans-serif; background: #282c34; color: white; }
-        header { padding: 10px; background: #21252b; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #181a1f; }
-        h1 { margin: 0; font-size: 1.2rem; margin-right: auto; }
-        button { background: #404754; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 0.9rem; }
+        
+        /* ヘッダー・ツールバー */
+        header { padding: 8px 10px; background: #21252b; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #181a1f; }
+        h1 { margin: 0; font-size: 1rem; margin-right: auto; color: #9da5b4; }
+        button { background: #404754; color: white; border: none; padding: 6px 12px; cursor: pointer; border-radius: 3px; font-size: 0.85rem; transition: background 0.2s; }
         button:hover { background: #4d5565; }
+        button:active { transform: translateY(1px); }
+
+        /* タブエリア */
+        #tabs-container { 
+            display: flex; 
+            background: #21252b; 
+            overflow-x: auto; 
+            border-bottom: 1px solid #181a1f; 
+            height: 35px;
+        }
+        /* スクロールバー非表示 (Chrome/Safari) */
+        #tabs-container::-webkit-scrollbar { display: none; }
+
+        .tab {
+            min-width: 120px;
+            max-width: 200px;
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #2d313a;
+            color: #9da5b4;
+            font-size: 0.85rem;
+            cursor: pointer;
+            border-right: 1px solid #181a1f;
+            user-select: none;
+        }
+        .tab:hover { background: #3a404b; }
+        .tab.active { background: #282c34; color: white; border-top: 2px solid #61afef; }
+        .tab-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 8px; }
+        .tab-close { font-size: 1rem; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; color: #9da5b4; }
+        .tab-close:hover { background: #cc4444; color: white; }
+
+        /* エディタエリア */
         #editor-container { flex: 1; overflow: hidden; position: relative; }
-        .CodeMirror { height: 100%; font-family: 'Consolas', 'Monaco', monospace; font-size: 16px; }
-        #status { font-size: 0.8rem; color: #aaa; margin-left: 10px; }
+        .CodeMirror { height: 100%; font-family: 'Consolas', 'Monaco', monospace; font-size: 15px; line-height: 1.5; }
+        
+        /* フッター（ステータス） */
+        footer { background: #21252b; padding: 2px 10px; font-size: 0.75rem; color: #9da5b4; display: flex; justify-content: flex-end; }
     </style>
 </head>
 <body>
 
 <header>
-    <h1>Local Editor</h1>
-    <span id="status">未保存</span>
+    <h1>Local Tab Editor</h1>
+    <button id="btnNew">新規</button>
     <button id="btnOpen">開く</button>
     <button id="btnSave">保存</button>
-    <button id="btnSaveAs">名前を付けて保存</button>
 </header>
+
+<div id="tabs-container">
+    <!-- タブはここに動的に追加されます -->
+</div>
 
 <div id="editor-container">
     <textarea id="code-editor"></textarea>
 </div>
 
-<script>
-    let fileHandle = null;
+<footer>
+    <span id="status">Ready</span>
+</footer>
 
-    // CodeMirrorの初期化
-    const editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+<script>
+    // --- ステート管理 ---
+    // files = [{ id, handle, doc, name }]
+    let files = [];
+    let activeFileId = null;
+    let fileIdCounter = 0;
+
+    // --- CodeMirror 初期化 ---
+    const textarea = document.getElementById("code-editor");
+    const editor = CodeMirror.fromTextArea(textarea, {
         lineNumbers: true,
         theme: "dracula",
-        mode: "htmlmixed", // デフォルト
+        mode: "htmlmixed",
         tabSize: 4,
         indentUnit: 4,
         lineWrapping: true
     });
 
-    // モード自動判定用の簡易マップ
+    // ファイル拡張子とモードのマッピング
     const modeMap = {
-        'js': 'javascript',
-        'json': 'javascript',
-        'html': 'htmlmixed',
-        'css': 'css'
+        'js': 'javascript', 'json': 'javascript', 'ts': 'javascript',
+        'html': 'htmlmixed', 'xml': 'xml',
+        'css': 'css', 'scss': 'css',
+        'md': 'markdown'
     };
+
+    // --- タブ操作ロジック ---
+
+    // 新しいタブを作成（ファイルハンドルがある場合は読み込み、なければ空）
+    async function createTab(fileHandle = null) {
+        let content = "";
+        let name = "Untitled";
+        let mode = "htmlmixed";
+
+        if (fileHandle) {
+            const file = await fileHandle.getFile();
+            content = await file.text();
+            name = file.name;
+            const ext = name.split('.').pop();
+            mode = modeMap[ext] || 'htmlmixed';
+        }
+
+        // CodeMirrorのDocオブジェクトを作成（これで履歴が個別に管理される）
+        const doc = CodeMirror.Doc(content, mode);
+        
+        const id = ++fileIdCounter;
+        const newFile = { id, handle: fileHandle, doc, name };
+        files.push(newFile);
+
+        renderTabs();
+        switchTab(id);
+    }
+
+    // タブを切り替える
+    function switchTab(id) {
+        const file = files.find(f => f.id === id);
+        if (!file) return;
+
+        activeFileId = id;
+        // エディタの中身をこのタブのDocに差し替える
+        editor.swapDoc(file.doc);
+        
+        renderTabs();
+        updateStatus(file.handle ? `編集中: ${file.name}` : '新規ファイル');
+        
+        // フォーカスを合わせる
+        editor.focus();
+    }
+
+    // タブを閉じる
+    function closeTab(id, event) {
+        if(event) event.stopPropagation(); // タブ切り替えイベントの発火を防ぐ
+
+        const index = files.findIndex(f => f.id === id);
+        if (index === -1) return;
+
+        // 未保存チェック（簡易的：確認を入れる場合）
+        // if (!confirm('タブを閉じてもよろしいですか？')) return;
+
+        files.splice(index, 1);
+
+        // 全部のタブがなくなったら新規タブを作る
+        if (files.length === 0) {
+            activeFileId = null;
+            createTab();
+            return;
+        }
+
+        // アクティブなタブを閉じた場合、隣のタブに移動
+        if (activeFileId === id) {
+            const nextFile = files[index] || files[index - 1];
+            switchTab(nextFile.id);
+        } else {
+            renderTabs();
+        }
+    }
+
+    // UI描画：タブ一覧
+    function renderTabs() {
+        const container = document.getElementById('tabs-container');
+        container.innerHTML = '';
+
+        files.forEach(file => {
+            const el = document.createElement('div');
+            el.className = `tab ${file.id === activeFileId ? 'active' : ''}`;
+            el.onclick = () => switchTab(file.id);
+            
+            // ファイル名
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tab-name';
+            nameSpan.textContent = file.name;
+            
+            // 閉じるボタン
+            const closeBtn = document.createElement('span');
+            closeBtn.className = 'tab-close';
+            closeBtn.innerHTML = '&times;';
+            closeBtn.onclick = (e) => closeTab(file.id, e);
+
+            el.appendChild(nameSpan);
+            el.appendChild(closeBtn);
+            container.appendChild(el);
+        });
+    }
+
+    function updateStatus(msg) {
+        document.getElementById('status').textContent = msg;
+    }
+
+
+    // --- ボタンイベント ---
+
+    // 新規作成
+    document.getElementById('btnNew').addEventListener('click', () => createTab(null));
 
     // ファイルを開く
     document.getElementById('btnOpen').addEventListener('click', async () => {
         try {
-            [fileHandle] = await window.showOpenFilePicker({
+            // 複数ファイル選択を許可
+            const handles = await window.showOpenFilePicker({
+                multiple: true,
                 types: [{
-                    description: 'Text Files',
+                    description: 'Code Files',
                     accept: {'text/plain': ['.txt', '.js', '.html', '.css', '.json', '.md']}
                 }]
             });
-            const file = await fileHandle.getFile();
-            const contents = await file.text();
-            
-            // 拡張子からシンタックスハイライトを切り替え
-            const ext = file.name.split('.').pop();
-            const mode = modeMap[ext] || 'htmlmixed';
-            editor.setOption('mode', mode);
 
-            editor.setValue(contents);
-            document.getElementById('status').textContent = `編集中: ${file.name}`;
+            for (const handle of handles) {
+                // 既に開いているファイルかチェック（簡易チェック：名前比較）
+                // 本来は isSameEntry を使うが非同期のため簡易実装
+                const isOpened = files.some(f => f.name === handle.name); 
+                if(!isOpened) {
+                    await createTab(handle);
+                }
+            }
         } catch (err) {
             if (err.name !== 'AbortError') console.error(err);
         }
     });
 
-    // 上書き保存
+    // 保存
     document.getElementById('btnSave').addEventListener('click', async () => {
-        if (!fileHandle) {
-            return saveFileAs(); // ファイルハンドルがなければ「名前を付けて保存」へ
+        const activeFile = files.find(f => f.id === activeFileId);
+        if (!activeFile) return;
+
+        if (!activeFile.handle) {
+            saveAs(activeFile); // 新規ファイルの場合は「名前を付けて保存」
+            return;
         }
+
         try {
-            const writable = await fileHandle.createWritable();
-            await writable.write(editor.getValue());
+            const writable = await activeFile.handle.createWritable();
+            await writable.write(activeFile.doc.getValue());
             await writable.close();
-            document.getElementById('status').textContent = `保存完了: ${new Date().toLocaleTimeString()}`;
+            updateStatus(`保存完了: ${new Date().toLocaleTimeString()}`);
         } catch (err) {
             console.error(err);
-            alert('保存に失敗しました');
+            alert('保存できませんでした');
         }
     });
 
-    // 名前を付けて保存
-    async function saveFileAs() {
+    // 名前を付けて保存（実質、現在のタブへのハンドル割り当て）
+    async function saveAs(fileObj) {
         try {
             const handle = await window.showSaveFilePicker({
                 types: [{
@@ -111,19 +275,30 @@
                     accept: {'text/plain': ['.txt', '.js', '.html', '.css']}
                 }]
             });
-            fileHandle = handle;
-            const writable = await fileHandle.createWritable();
-            await writable.write(editor.getValue());
+            
+            // ハンドルと名前を更新
+            fileObj.handle = handle;
+            const fileData = await handle.getFile();
+            fileObj.name = fileData.name;
+
+            // ファイルタイプに合わせてシンタックスハイライトを更新
+            const ext = fileObj.name.split('.').pop();
+            const mode = modeMap[ext] || 'htmlmixed';
+            editor.setOption('mode', mode); // 現在アクティブなエディタ設定を変更
+
+            // 書き込み
+            const writable = await fileObj.handle.createWritable();
+            await writable.write(fileObj.doc.getValue());
             await writable.close();
-            const file = await fileHandle.getFile();
-            document.getElementById('status').textContent = `保存完了: ${file.name}`;
+
+            renderTabs();
+            updateStatus(`保存完了: ${fileObj.name}`);
         } catch (err) {
             if (err.name !== 'AbortError') console.error(err);
         }
     }
-    document.getElementById('btnSaveAs').addEventListener('click', saveFileAs);
 
-    // キーボードショートカット (Ctrl+S / Cmd+S)
+    // ショートカット (Ctrl+S)
     document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
@@ -131,7 +306,10 @@
         }
     });
 
-    // Service Workerの登録
+    // 初期化：空のタブを一つ開く
+    createTab(null);
+
+    // Service Worker
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js');
     }
