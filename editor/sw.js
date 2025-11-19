@@ -1,4 +1,4 @@
-const CACHE_NAME = 'local-editor-v1';
+const CACHE_NAME = 'local-editor-v2';
 const urlsToCache = [
   './',
   './index.html',
