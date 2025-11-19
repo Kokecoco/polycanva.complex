@@ -3,888 +3,461 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web動画編集スタジオ Pro (完全版)</title>
-    
-    <!-- 
-      【重要】セキュリティ制限(SharedArrayBuffer)を回避するためのServiceWorker読み込み 
-      必ず同じ階層に coi-serviceworker.js を置いてください。
-    -->
+    <title>Web動画編集スタジオ WYSIWYG</title>
     <script src="coi-serviceworker.js"></script>
-    
-    <!-- FFmpeg.wasmの読み込み -->
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     
     <style>
-        /* カラーパレット定義 */
         :root {
-            --primary-color: #4f46e5;       /* メインカラー：紫系 */
-            --primary-hover: #4338ca;       /* ホバー時 */
-            --background-color: #f3f4f6;    /* 背景色 */
-            --text-color: #1f2937;          /* 文字色 */
-            --panel-bg: #ffffff;            /* パネル背景 */
-            --border-color: #e5e7eb;        /* 枠線 */
-            
-            --console-bg: #1e1e1e;          /* コンソール背景（黒） */
-            --console-text: #d4d4d4;        /* コンソール文字（グレー） */
+            --bg-dark: #121212; --panel-bg: #1e1e1e; --sidebar-bg: #252525;
+            --accent: #00e5ff; /* シアン系に変更 */
+            --accent-hover: #00b8d4;
+            --text: #e0e0e0; --border: #444;
         }
-
-        body {
-            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif;
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: var(--background-color);
-            color: var(--text-color);
-            line-height: 1.6;
-        }
+        body { margin:0; font-family: sans-serif; background: var(--bg-dark); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        /* メインコンテナ */
-        .container {
-            background: var(--panel-bg);
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-        }
-
-        h1 {
-            text-align: center;
-            margin-top: 0;
-            margin-bottom: 30px;
-            color: var(--primary-color);
-            font-size: 1.8rem;
-        }
+        /* レイアウト */
+        header { background: var(--panel-bg); padding: 0 20px; height: 50px; display: flex; align-items: center; border-bottom: 1px solid var(--border); justify-content: space-between; }
+        h1 { font-size: 1.1rem; display: flex; align-items: center; gap: 10px; margin: 0; color: var(--accent); }
+        .main { display: flex; flex: 1; overflow: hidden; }
+        .sidebar { width: 60px; background: var(--sidebar-bg); display: flex; flex-direction: column; align-items: center; padding-top: 10px; border-right: 1px solid var(--border); }
+        .tool-btn { width: 40px; height: 40px; border: none; background: none; color: #888; cursor: pointer; margin-bottom: 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .tool-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .tool-btn.active { background: var(--accent); color: #000; }
         
-        .subtitle {
-            font-size: 0.9rem;
-            color: #6b7280;
-            font-weight: normal;
-            margin-left: 10px;
-        }
-
-        /* グリッドレイアウト（左右2分割） */
-        .grid-layout {
-            display: grid;
-            grid-template-columns: 1fr 1fr; /* 1:1の比率 */
-            gap: 30px;
-            margin-top: 20px;
-        }
+        .workspace { flex: 1; display: flex; flex-direction: column; padding: 20px; gap: 15px; min-width: 0; }
         
-        /* スマホ・タブレット向けレスポンシブ対応 */
-        @media (max-width: 800px) {
-            .grid-layout {
-                grid-template-columns: 1fr; /* 縦並びにする */
-            }
+        /* プレビューエリア (Crop UI含む) */
+        .preview-container { 
+            flex: 1; background: #000; border: 1px solid var(--border); border-radius: 8px; 
+            position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;
+            user-select: none;
         }
-
-        /* ファイルアップロードエリア */
-        .drop-zone {
-            border: 3px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 40px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            background-color: #f8fafc;
-        }
-        .drop-zone:hover {
-            border-color: var(--primary-color);
-            background-color: #eef2ff;
-            transform: translateY(-2px);
-        }
-        .drop-icon {
-            font-size: 48px;
-            margin-bottom: 15px;
-            display: block;
-        }
+        /* 動画とオーバーレイのラッパー */
+        .video-wrapper { position: relative; display: inline-block; line-height: 0; }
+        video { max-width: 100%; max-height: 60vh; pointer-events: none; display: block; }
         
-        /* プレビュー動画 */
-        video {
-            width: 100%;
-            border-radius: 8px;
-            background: #000;
-            display: none; /* ファイル読込まで非表示 */
-            max-height: 400px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        /* クロップオーバーレイ */
+        #crop-overlay {
+            position: absolute; top: 0; left: 0; border: 2px solid var(--accent);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); /* 周りを暗くする */
+            cursor: move; display: none; box-sizing: border-box;
         }
-        
-        /* ファイル情報表示 */
-        .file-info {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin-top: 10px;
-            padding: 10px;
-            background: #f1f5f9;
-            border-radius: 6px;
-            display: none;
+        /* リサイズハンドル */
+        .resize-handle {
+            width: 12px; height: 12px; background: var(--accent); position: absolute;
+            bottom: -6px; right: -6px; cursor: nwse-resize; border-radius: 50%;
+        }
+        .crop-dim-text {
+            position: absolute; top: -25px; left: 0; background: var(--accent); color: black;
+            font-size: 10px; padding: 2px 5px; border-radius: 2px; pointer-events: none; font-weight: bold;
         }
 
-        /* タブメニュー */
-        .tabs-header {
-            display: flex;
-            gap: 5px;
-            margin-bottom: 20px;
-            border-bottom: 2px solid var(--border-color);
-            flex-wrap: wrap;
+        /* タイムラインエリア */
+        .timeline-area { height: 80px; background: var(--panel-bg); border-radius: 8px; padding: 10px 20px; display: flex; flex-direction: column; justify-content: center; border: 1px solid var(--border); }
+        .timeline-track { position: relative; height: 8px; background: #444; border-radius: 4px; margin-top: 15px; cursor: pointer; }
+        .timeline-fill { position: absolute; height: 100%; background: var(--accent); opacity: 0.5; top: 0; }
+        .timeline-handle { 
+            position: absolute; top: -8px; width: 4px; height: 24px; background: #fff; 
+            cursor: ew-resize; border-radius: 2px; z-index: 2; 
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
         }
-        .tab-button {
-            padding: 10px 15px;
-            cursor: pointer;
-            font-weight: bold;
-            color: #6b7280;
-            border-bottom: 3px solid transparent;
-            margin-bottom: -2px;
-            transition: all 0.2s;
-            background: none;
-            border-top: none;
-            border-left: none;
-            border-right: none;
-            font-size: 0.95rem;
-        }
-        .tab-button:hover {
-            color: #374151;
-            background-color: #f9fafb;
-        }
-        .tab-button.active {
-            color: var(--primary-color);
-            border-bottom-color: var(--primary-color);
-        }
+        .timeline-handle::after { content:''; position:absolute; top:-15px; left:-10px; width:24px; height:15px; /* hit area */ }
+        #handle-start { background: #81c784; }
+        #handle-end { background: #e57373; }
+        .time-labels { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 5px; }
 
-        /* 設定パネルグループ */
-        .settings-panel {
-            display: none;
-            padding: 10px 5px;
-            animation: fadeIn 0.3s ease;
-        }
-        .settings-panel.active {
-            display: block;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        /* フォーム要素 */
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            font-size: 0.9rem;
-            font-weight: bold;
-            margin-bottom: 6px;
-            color: #374151;
-        }
-        input[type="number"],
-        select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            box-sizing: border-box;
-            font-size: 1rem;
-            transition: border 0.2s;
-        }
-        input[type="number"]:focus,
-        select:focus {
-            border-color: var(--primary-color);
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-        }
-        
-        .input-row {
-            display: flex;
-            gap: 15px;
-        }
-        .input-row > div {
-            flex: 1;
-        }
-        
-        .description-text {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin-bottom: 15px;
-            line-height: 1.4;
-        }
+        /* 右パネル */
+        .properties-panel { width: 280px; background: var(--panel-bg); border-left: 1px solid var(--border); padding: 20px; overflow-y: auto; }
+        .panel-section { display: none; }
+        .panel-section.active { display: block; animation: fade 0.3s; }
+        @keyframes fade { from{opacity:0; transform:translateY(5px);} to{opacity:1;} }
 
-        /* アクションボタン */
-        .btn-primary {
-            width: 100%;
-            padding: 16px;
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-top: 20px;
-            transition: background-color 0.2s, transform 0.1s;
-            box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
-        }
-        .btn-primary:hover:not(:disabled) {
-            background-color: var(--primary-hover);
-            transform: translateY(-1px);
-        }
-        .btn-primary:active:not(:disabled) {
-            transform: translateY(0);
-        }
-        .btn-primary:disabled {
-            background-color: #9ca3af;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
+        h3 { margin: 0 0 15px 0; font-size: 1rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-size: 12px; color: #aaa; margin-bottom: 5px; }
+        input, select { width: 100%; background: #333; border: 1px solid #555; color: white; padding: 8px; border-radius: 4px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; background: var(--accent); color: #000; margin-top: 20px; }
+        .btn:disabled { background: #444; color: #888; cursor: not-allowed; }
 
-        /* 進捗バー */
-        .progress-area {
-            margin-top: 25px;
-            display: none;
-            background: #f8fafc;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-        }
-        progress {
-            width: 100%;
-            height: 24px;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        .progress-label {
-            text-align: center;
-            font-size: 0.95rem;
-            margin-top: 8px;
-            font-weight: bold;
-            color: var(--primary-color);
-        }
-
-        /* ダウンロードボタン */
-        .download-link {
-            display: block;
-            text-align: center;
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #10b981; /* 緑色 */
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 1.1rem;
-            display: none;
-            transition: background 0.2s;
-        }
-        .download-link:hover {
-            background-color: #059669;
-        }
-
-        /* デバッグコンソール */
-        .console-wrapper {
-            margin-top: 40px;
-            border-top: 2px solid var(--border-color);
-            padding-top: 20px;
-        }
-        .console-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .console-title {
-            font-size: 0.9rem;
-            font-weight: bold;
-            color: #64748b;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-        .console-clear {
-            font-size: 0.8rem;
-            color: var(--primary-color);
-            cursor: pointer;
-            text-decoration: underline;
-        }
-        #console-log {
-            background-color: var(--console-bg);
-            color: var(--console-text);
-            font-family: "Consolas", "Monaco", "Courier New", monospace;
-            font-size: 12px;
-            padding: 15px;
-            height: 250px;
-            overflow-y: auto;
-            border-radius: 8px;
-            white-space: pre-wrap;
-            line-height: 1.5;
-            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
-        }
-        
-        /* コンソールログの色分け */
-        .log-info { color: #60a5fa; }    /* 情報: 青 */
-        .log-success { color: #4ade80; } /* 成功: 緑 */
-        .log-warn { color: #fbbf24; }    /* 警告: 黄 */
-        .log-error { color: #f87171; font-weight: bold; } /* エラー: 赤 */
-        .log-system { color: #9ca3af; }  /* システム: グレー */
-
+        /* Console */
+        .console-drawer { height: 120px; background: #000; border-top: 1px solid var(--border); padding: 10px; font-family: monospace; font-size: 11px; color: #888; overflow-y: auto; white-space: pre-wrap; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h1>Web動画編集スタジオ <span class="subtitle">Professional</span></h1>
+    <header>
+        <h1><span class="material-icons-round">video_settings</span> Studio WYSIWYG</h1>
+        <button onclick="location.reload()" style="background:none; border:1px solid #444; color:#fff; padding:5px 10px; cursor:pointer;">Reset</button>
+    </header>
 
-        <!-- ファイルアップロードエリア -->
-        <div class="drop-zone" id="drop-zone">
-            <span class="drop-icon">📂</span>
-            <p style="font-size:1.2rem; font-weight:bold;">ここに動画ファイルをドラッグ＆ドロップ</p>
-            <p style="color:#64748b;">またはクリックしてファイルを選択</p>
-            <input type="file" id="file-input" accept="video/*" style="display: none;">
+    <div class="main">
+        <!-- 左ツールバー -->
+        <div class="sidebar">
+            <button class="tool-btn active" data-target="p-trim" title="トリミング"><span class="material-icons-round">content_cut</span></button>
+            <button class="tool-btn" data-target="p-crop" title="クロップ"><span class="material-icons-round">crop</span></button>
+            <button class="tool-btn" data-target="p-convert" title="変換"><span class="material-icons-round">transform</span></button>
         </div>
 
-        <div class="grid-layout">
-            <!-- 左カラム：プレビューと情報 -->
-            <div class="left-column">
-                <video id="preview" controls playsinline></video>
-                <div id="file-info" class="file-info"></div>
-            </div>
-
-            <!-- 右カラム：操作パネル -->
-            <div class="right-column">
-                <!-- タブヘッダー -->
-                <div class="tabs-header">
-                    <button class="tab-button active" data-target="panel-trim">時間カット</button>
-                    <button class="tab-button" data-target="panel-crop">画面切抜</button>
-                    <button class="tab-button" data-target="panel-speed">速度変更</button>
-                    <button class="tab-button" data-target="panel-convert">変換・他</button>
+        <!-- メインエリア -->
+        <div class="workspace">
+            <!-- プレビュー画面 -->
+            <div class="preview-container" id="drop-zone">
+                <div id="upload-msg" style="color:#666; text-align:center;">
+                    <span class="material-icons-round" style="font-size:48px">cloud_upload</span><br>ドラッグ＆ドロップ
                 </div>
-
-                <!-- 1. 時間トリミングパネル -->
-                <div id="panel-trim" class="settings-panel active">
-                    <p class="description-text">動画の開始時間と終了時間を指定して、必要な部分だけを切り出します。</p>
-                    <div class="input-row">
-                        <div class="form-group">
-                            <label>開始位置 (秒)</label>
-                            <input type="number" id="trim-start" value="0" step="0.1" min="0">
-                        </div>
-                        <div class="form-group">
-                            <label>終了位置 (秒)</label>
-                            <input type="number" id="trim-end" value="10" step="0.1" min="0">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 2. 画面クロップパネル -->
-                <div id="panel-crop" class="settings-panel">
-                    <p class="description-text">画面の余分な部分を切り取ります。</p>
-                    
-                    <div class="form-group">
-                        <label>プリセット選択</label>
-                        <select id="crop-preset">
-                            <option value="custom">カスタム (数値を手入力)</option>
-                            <option value="center-square">中央を正方形に (1:1)</option>
-                            <option value="center-43">中央を4:3に</option>
-                            <option value="center-169">中央を16:9に</option>
-                        </select>
-                    </div>
-                    
-                    <div class="input-row">
-                        <div class="form-group">
-                            <label>幅 (Width)</label>
-                            <input type="number" id="crop-w" value="0">
-                        </div>
-                        <div class="form-group">
-                            <label>高さ (Height)</label>
-                            <input type="number" id="crop-h" value="0">
-                        </div>
-                    </div>
-                    <div class="input-row">
-                        <div class="form-group">
-                            <label>X座標 (左端)</label>
-                            <input type="number" id="crop-x" value="0">
-                        </div>
-                        <div class="form-group">
-                            <label>Y座標 (上端)</label>
-                            <input type="number" id="crop-y" value="0">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. 速度変更パネル (復刻版) -->
-                <div id="panel-speed" class="settings-panel">
-                    <p class="description-text">動画の再生速度を変更します。映像と音声の両方を調整します。</p>
-                    <div class="form-group">
-                        <label>再生スピード</label>
-                        <select id="speed-value">
-                            <option value="0.5">0.5倍 (スロー再生)</option>
-                            <option value="1.25">1.25倍</option>
-                            <option value="1.5">1.5倍</option>
-                            <option value="2.0">2.0倍 (倍速)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- 4. 変換・その他パネル -->
-                <div id="panel-convert" class="settings-panel">
-                    <p class="description-text">ファイル形式の変換や、特別な処理を行います。</p>
-                    <div class="form-group">
-                        <label>モード選択</label>
-                        <select id="convert-mode">
-                            <option value="gif">GIFアニメーション作成 (5fps/480px)</option>
-                            <option value="mp3">音声のみ抽出 (.mp3)</option>
-                            <option value="compress">軽量化リサイズ (720p)</option>
-                            <option value="mute">音声を削除 (ミュート)</option>
-                        </select>
-                    </div>
-                    <p style="font-size:0.8rem; color:#ef4444; margin-top:10px;">
-                        ※GIF変換は非常に重い処理です。10秒以内の動画での使用を推奨します。
-                    </p>
-                </div>
-
-                <!-- 実行ボタン -->
-                <button id="run-btn" class="btn-primary" disabled>
-                    動画ファイルを読み込んでください
-                </button>
                 
-                <!-- 進捗表示エリア -->
-                <div class="progress-area" id="progress-wrap">
-                    <progress id="progress-bar" value="0" max="100"></progress>
-                    <div class="progress-label" id="progress-text">準備中...</div>
+                <!-- ビデオとクロップ枠のラッパー -->
+                <div class="video-wrapper" id="video-wrapper" style="display:none;">
+                    <video id="preview" playsinline></video>
+                    
+                    <!-- クロップ用オーバーレイ -->
+                    <div id="crop-overlay">
+                        <div class="crop-dim-text" id="crop-dim-text">0x0</div>
+                        <div class="resize-handle" id="resize-handle"></div>
+                    </div>
                 </div>
+                <input type="file" id="file-input" hidden accept="video/*">
+            </div>
 
-                <!-- ダウンロードリンク -->
-                <a id="download-link" class="download-link">完成したファイルを保存</a>
+            <!-- タイムライン -->
+            <div class="timeline-area">
+                <div class="time-labels">
+                    <span id="lbl-start">0.0s</span>
+                    <span id="lbl-current" style="color:var(--accent);">0.0s</span>
+                    <span id="lbl-end">0.0s</span>
+                </div>
+                <div class="timeline-track" id="timeline-track">
+                    <div class="timeline-fill" id="timeline-fill"></div>
+                    <div class="timeline-handle" id="handle-start" style="left:0%"></div>
+                    <div class="timeline-handle" id="handle-end" style="left:100%"></div>
+                </div>
             </div>
         </div>
 
-        <!-- デバッグコンソール -->
-        <div class="console-wrapper">
-            <div class="console-header">
-                <div class="console-title">🖥️ システムログ / エラー出力</div>
-                <div class="console-clear" onclick="clearLog()">ログを消去</div>
+        <!-- 右プロパティパネル -->
+        <div class="properties-panel">
+            <!-- トリミング設定 -->
+            <div id="p-trim" class="panel-section active">
+                <h3>カット編集</h3>
+                <div class="form-group"><label>開始時間 (秒)</label><input type="number" id="val-trim-start" value="0" step="0.1"></div>
+                <div class="form-group"><label>終了時間 (秒)</label><input type="number" id="val-trim-end" value="0" step="0.1"></div>
+                <p style="font-size:11px; color:#888;">下のタイムラインバーを操作しても変更できます。</p>
             </div>
-            <div id="console-log"></div>
+
+            <!-- クロップ設定 -->
+            <div id="p-crop" class="panel-section">
+                <h3>画面切り抜き</h3>
+                <div class="form-group">
+                    <label>プリセット</label>
+                    <select id="crop-preset">
+                        <option value="custom">カスタム (マウス操作)</option>
+                        <option value="1:1">正方形 (1:1)</option>
+                        <option value="16:9">ワイド (16:9)</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:5px;">
+                    <div class="form-group"><label>幅</label><input type="number" id="val-crop-w" readonly></div>
+                    <div class="form-group"><label>高さ</label><input type="number" id="val-crop-h" readonly></div>
+                </div>
+                <div style="display:flex; gap:5px;">
+                    <div class="form-group"><label>X</label><input type="number" id="val-crop-x" readonly></div>
+                    <div class="form-group"><label>Y</label><input type="number" id="val-crop-y" readonly></div>
+                </div>
+                <p style="font-size:11px; color:#888;">プレビュー上の青い枠を操作してください。</p>
+            </div>
+
+            <!-- 変換設定 -->
+            <div id="p-convert" class="panel-section">
+                <h3>出力・変換</h3>
+                <div class="form-group">
+                    <label>モード</label>
+                    <select id="convert-mode">
+                        <option value="mp4">通常出力 (MP4)</option>
+                        <option value="gif">GIFアニメ (5fps)</option>
+                        <option value="mp3">音声のみ (MP3)</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="run-btn" class="btn" disabled>処理を実行</button>
+            <div id="progress-text" style="text-align:center; margin-top:10px; font-size:12px; color:#aaa;"></div>
+            <a id="dl-link" class="btn" style="background:#00c853; color:white; text-decoration:none; display:none; text-align:center;">ダウンロード</a>
         </div>
     </div>
+    
+    <div class="console-drawer" id="console-log">System Ready.</div>
 
     <script>
-        /* =========================================
-           1. ログシステムの実装 (DevTools代替)
-           ========================================= */
-        const consoleLogDiv = document.getElementById('console-log');
-
-        function getTimestamp() {
-            const now = new Date();
-            return now.toTimeString().split(' ')[0]; // "HH:MM:SS"
+        const log = (msg) => {
+            const d = document.getElementById('console-log');
+            d.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+            d.scrollTop = d.scrollHeight;
         }
-
-        function logToPage(message, type = 'system') {
-            const line = document.createElement('div');
-            line.className = `log-${type}`;
-            line.textContent = `[${getTimestamp()}] ${message}`;
-            consoleLogDiv.appendChild(line);
-            // 常に一番下へスクロール
-            consoleLogDiv.scrollTop = consoleLogDiv.scrollHeight;
-        }
-
-        function clearLog() {
-            consoleLogDiv.innerHTML = '';
-            logToPage('ログをクリアしました。', 'system');
-        }
-
-        // ブラウザ標準の console.log / console.error をオーバーライドして画面に表示
-        const originalLog = console.log;
-        const originalError = console.error;
-
-        console.log = function(...args) {
-            originalLog.apply(console, args);
-            const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : arg)).join(' ');
-            logToPage(msg, 'info');
-        };
-
-        console.error = function(...args) {
-            originalError.apply(console, args);
-            const msg = args.map(arg => (typeof arg === 'object' ? (arg.message || JSON.stringify(arg)) : arg)).join(' ');
-            logToPage(msg, 'error');
-        };
-
-        logToPage('システム初期化中...', 'system');
-
-
-        /* =========================================
-           2. FFmpeg.wasm の初期化処理
-           ========================================= */
         const { createFFmpeg, fetchFile } = FFmpeg;
         let ffmpeg = null;
         let videoFile = null;
-        let videoDuration = 0;
+        let meta = { dur: 0, w: 0, h: 0 };
+        let activeTab = 'p-trim';
 
-        const initFFmpeg = async () => {
-            try {
-                logToPage('環境チェック中...', 'system');
-                
-                // SharedArrayBuffer のチェック (セキュリティ制限の確認)
-                if (typeof SharedArrayBuffer === 'undefined') {
-                    logToPage('【警告】SharedArrayBuffer が無効です。coi-serviceworker.js がロードされていないか、HTTPS/ローカルサーバー以外で実行されています。処理が失敗する可能性があります。', 'warn');
-                } else {
-                    logToPage('SharedArrayBuffer は有効です。', 'success');
-                }
-
-                logToPage('FFmpegエンジンのロードを開始...', 'info');
-
-                ffmpeg = createFFmpeg({
-                    corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
-                    log: true, // 内部ログをコンソールに出す
-                    logger: ({ type, message }) => {
-                        // 内部エラーログ
-                        if (type === 'fferr') {
-                            // タイムスタンプから進捗率を計算 (例: time=00:00:05.20)
-                            const match = message.match(/time=([0-9:.]+)/);
-                            if (match && videoDuration > 0) {
-                                const t = match[1].split(':');
-                                const currentTime = parseFloat(t[0]) * 3600 + parseFloat(t[1]) * 60 + parseFloat(t[2]);
-                                const percent = Math.min((currentTime / videoDuration) * 100, 100);
-                                updateProgress(percent);
-                            }
-                        }
-                    }
-                });
-
-                await ffmpeg.load();
-                logToPage('✅ FFmpegエンジンの起動に成功しました！', 'success');
-
-            } catch (error) {
-                console.error('FFmpeg起動エラー詳細:', error);
-                logToPage('【致命的エラー】FFmpegの起動に失敗しました。GitHub Pagesにアップロードし、coi-serviceworker.js が配置されているか確認してください。', 'error');
-            }
-        };
-
-        // ページ読み込み時に初期化
-        window.addEventListener('load', initFFmpeg);
-
-
-        /* =========================================
-           3. UI操作とイベントリスナー
-           ========================================= */
+        // UI Elements
         const els = {
-            drop: document.getElementById('drop-zone'),
-            input: document.getElementById('file-input'),
             video: document.getElementById('preview'),
-            fileInfo: document.getElementById('file-info'),
-            tabs: document.querySelectorAll('.tab-button'),
-            panels: document.querySelectorAll('.settings-panel'),
-            btn: document.getElementById('run-btn'),
-            dlLink: document.getElementById('download-link'),
-            progressWrap: document.getElementById('progress-wrap'),
-            progressBar: document.getElementById('progress-bar'),
-            progressText: document.getElementById('progress-text'),
+            videoWrapper: document.getElementById('video-wrapper'),
+            cropOverlay: document.getElementById('crop-overlay'),
+            resizeHandle: document.getElementById('resize-handle'),
+            cropDimText: document.getElementById('crop-dim-text'),
+            
+            // Timeline
+            track: document.getElementById('timeline-track'),
+            fill: document.getElementById('timeline-fill'),
+            hStart: document.getElementById('handle-start'),
+            hEnd: document.getElementById('handle-end'),
             
             // Inputs
-            trimStart: document.getElementById('trim-start'),
-            trimEnd: document.getElementById('trim-end'),
-            
-            cropPreset: document.getElementById('crop-preset'),
-            cropW: document.getElementById('crop-w'),
-            cropH: document.getElementById('crop-h'),
-            cropX: document.getElementById('crop-x'),
-            cropY: document.getElementById('crop-y'),
-            
-            speedValue: document.getElementById('speed-value'),
-            convertMode: document.getElementById('convert-mode')
+            inTrimStart: document.getElementById('val-trim-start'),
+            inTrimEnd: document.getElementById('val-trim-end'),
+            inCropW: document.getElementById('val-crop-w'),
+            inCropH: document.getElementById('val-crop-h'),
+            inCropX: document.getElementById('val-crop-x'),
+            inCropY: document.getElementById('val-crop-y'),
         };
 
-        // ファイル選択処理
-        const handleFile = (file) => {
-            if (!file) return;
-            logToPage(`ファイル読込開始: ${file.name} (サイズ: ${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
-            
-            videoFile = file;
-            const url = URL.createObjectURL(file);
-            els.video.src = url;
-            els.video.style.display = 'block';
-            els.fileInfo.style.display = 'block';
-            els.drop.style.display = 'none';
-            els.dlLink.style.display = 'none';
-            els.btn.disabled = false;
-            els.btn.textContent = '処理を実行する';
-
-            // 動画メタデータ読み込み完了時
-            els.video.onloadedmetadata = () => {
-                videoDuration = els.video.duration;
-                
-                // 終了時間の初期値を動画の長さに設定
-                els.trimEnd.value = videoDuration.toFixed(1);
-                
-                // クロップ入力の初期値を動画サイズに設定
-                els.cropW.value = els.video.videoWidth;
-                els.cropH.value = els.video.videoHeight;
-                els.cropX.value = 0;
-                els.cropY.value = 0;
-
-                els.fileInfo.innerHTML = `
-                    <strong>読み込み成功</strong><br>
-                    解像度: ${els.video.videoWidth} x ${els.video.videoHeight}<br>
-                    長さ: ${videoDuration.toFixed(2)} 秒
-                `;
-                logToPage(`メタデータ取得完了: ${els.video.videoWidth}x${els.video.videoHeight}, ${videoDuration.toFixed(2)}s`, 'success');
-            };
-
-            els.video.onerror = () => {
-                logToPage('動画のプレビュー生成に失敗しました。対応していない形式の可能性があります。', 'error');
-            };
-        };
-
-        // ドラッグ＆ドロップイベント
-        els.drop.addEventListener('click', () => els.input.click());
-        els.input.addEventListener('change', (e) => handleFile(e.target.files[0]));
-        els.drop.addEventListener('dragover', (e) => e.preventDefault());
-        els.drop.addEventListener('drop', (e) => {
-            e.preventDefault();
-            handleFile(e.dataTransfer.files[0]);
+        /* ================= 1. 初期化 & ファイル読込 ================= */
+        window.addEventListener('load', async () => {
+            if(typeof SharedArrayBuffer === 'undefined') log("WARN: SharedArrayBuffer missing. Check coi-serviceworker.js");
+            ffmpeg = createFFmpeg({ corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js', log: false });
+            ffmpeg.setLogger(({ type, message }) => {
+                if(type==='fferr' && message.includes('time=')) {
+                    const m = message.match(/time=([0-9:.]+)/);
+                    if(m) document.getElementById('progress-text').textContent = `Processing: ${m[1]}`;
+                }
+            });
+            await ffmpeg.load();
+            log("FFmpeg Loaded.");
         });
 
-        // タブ切り替え処理
-        els.tabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                // アクティブクラスの付け替え
-                els.tabs.forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-
-                // パネルの表示切り替え
-                const targetId = tab.dataset.target;
-                els.panels.forEach(panel => panel.classList.remove('active'));
-                document.getElementById(targetId).classList.add('active');
+        const loadFile = (file) => {
+            if(!file) return;
+            videoFile = file;
+            els.video.src = URL.createObjectURL(file);
+            document.getElementById('upload-msg').style.display = 'none';
+            els.videoWrapper.style.display = 'inline-block';
+            document.getElementById('run-btn').disabled = false;
+            
+            els.video.onloadedmetadata = () => {
+                meta = { dur: els.video.duration, w: els.video.videoWidth, h: els.video.videoHeight };
+                // Init Trim
+                els.inTrimEnd.value = meta.dur.toFixed(1);
+                updateTimelineUI();
                 
-                logToPage(`モード変更: ${tab.textContent}`, 'system');
+                // Init Crop (Reset to full)
+                cropState = { x:0, y:0, w:meta.w, h:meta.h };
+                updateCropOverlay();
+                
+                log(`Loaded: ${meta.w}x${meta.h}, ${meta.dur.toFixed(1)}s`);
+            };
+        };
+
+        document.getElementById('drop-zone').addEventListener('click', e => {
+            if(e.target.id !== 'resize-handle' && e.target.id !== 'crop-overlay') document.getElementById('file-input').click();
+        });
+        document.getElementById('file-input').addEventListener('change', e => loadFile(e.target.files[0]));
+        document.getElementById('drop-zone').addEventListener('dragover', e=>e.preventDefault());
+        document.getElementById('drop-zone').addEventListener('drop', e=>{e.preventDefault(); loadFile(e.dataTransfer.files[0])});
+
+        /* ================= 2. タブ切り替え ================= */
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tool-btn').forEach(b=>b.classList.remove('active'));
+                document.querySelectorAll('.panel-section').forEach(p=>p.classList.remove('active'));
+                btn.classList.add('active');
+                activeTab = btn.dataset.target;
+                document.getElementById(activeTab).classList.add('active');
+                
+                // Show/Hide Crop Overlay
+                els.cropOverlay.style.display = (activeTab === 'p-crop') ? 'block' : 'none';
             });
         });
 
-        // クロッププリセットの連動
-        els.cropPreset.addEventListener('change', (e) => {
-            const w = els.video.videoWidth;
-            const h = els.video.videoHeight;
-            if (!w || !h) return;
+        /* ================= 3. タイムラインロジック ================= */
+        let isDraggingTimeline = false;
+        let activeHandle = null;
 
-            let newW = w, newH = h, newX = 0, newY = 0;
-            const val = e.target.value;
-
-            if (val === 'center-square') {
-                const size = Math.min(w, h);
-                newW = size; newH = size;
-                newX = (w - size) / 2;
-                newY = (h - size) / 2;
-            } else if (val === 'center-43') {
-                if (w / h > 4 / 3) {
-                    newH = h; newW = h * 4 / 3;
-                } else {
-                    newW = w; newH = w * 3 / 4;
-                }
-                newX = (w - newW) / 2;
-                newY = (h - newH) / 2;
-            } else if (val === 'center-169') {
-                if (w / h > 16 / 9) {
-                    newH = h; newW = h * 16 / 9;
-                } else {
-                    newW = w; newH = w * 9 / 16;
-                }
-                newX = (w - newW) / 2;
-                newY = (h - newH) / 2;
-            }
+        const updateTimelineUI = () => {
+            const start = parseFloat(els.inTrimStart.value);
+            const end = parseFloat(els.inTrimEnd.value);
+            const pctStart = (start / meta.dur) * 100;
+            const pctEnd = (end / meta.dur) * 100;
             
-            if (val !== 'custom') {
-                els.cropW.value = Math.round(newW);
-                els.cropH.value = Math.round(newH);
-                els.cropX.value = Math.round(newX);
-                els.cropY.value = Math.round(newY);
-                logToPage(`クロッププリセット適用: ${val}`, 'info');
+            els.hStart.style.left = `${pctStart}%`;
+            els.hEnd.style.left = `${pctEnd}%`;
+            els.fill.style.left = `${pctStart}%`;
+            els.fill.style.width = `${pctEnd - pctStart}%`;
+            
+            document.getElementById('lbl-start').textContent = start.toFixed(1) + 's';
+            document.getElementById('lbl-end').textContent = end.toFixed(1) + 's';
+        };
+
+        const handleTimelineMove = (e) => {
+            if(!isDraggingTimeline || !meta.dur) return;
+            const rect = els.track.getBoundingClientRect();
+            let pct = (e.clientX - rect.left) / rect.width;
+            pct = Math.max(0, Math.min(1, pct));
+            const time = pct * meta.dur;
+            
+            if(activeHandle === 'start') {
+                const curEnd = parseFloat(els.inTrimEnd.value);
+                if(time < curEnd) els.inTrimStart.value = time.toFixed(1);
+                els.video.currentTime = time;
+            } else {
+                const curStart = parseFloat(els.inTrimStart.value);
+                if(time > curStart) els.inTrimEnd.value = time.toFixed(1);
+                els.video.currentTime = time;
+            }
+            updateTimelineUI();
+        };
+
+        els.hStart.addEventListener('mousedown', () => { isDraggingTimeline=true; activeHandle='start'; });
+        els.hEnd.addEventListener('mousedown', () => { isDraggingTimeline=true; activeHandle='end'; });
+        document.addEventListener('mousemove', handleTimelineMove);
+        document.addEventListener('mouseup', () => isDraggingTimeline = false);
+        
+        // Manual Input Sync
+        els.inTrimStart.addEventListener('change', updateTimelineUI);
+        els.inTrimEnd.addEventListener('change', updateTimelineUI);
+
+
+        /* ================= 4. クロップロジック (WYSIWYG) ================= */
+        let cropState = { x:0, y:0, w:0, h:0 };
+        let isDraggingCrop = false;
+        let isResizingCrop = false;
+        let dragStart = { x:0, y:0 };
+        let initCropState = {};
+
+        const getScale = () => els.video.clientWidth / meta.w;
+
+        const updateCropOverlay = () => {
+            const scale = getScale();
+            if(!scale) return;
+            
+            // State to UI (px)
+            els.cropOverlay.style.left = `${cropState.x * scale}px`;
+            els.cropOverlay.style.top = `${cropState.y * scale}px`;
+            els.cropOverlay.style.width = `${cropState.w * scale}px`;
+            els.cropOverlay.style.height = `${cropState.h * scale}px`;
+            
+            els.cropDimText.textContent = `${Math.round(cropState.w)} x ${Math.round(cropState.h)}`;
+
+            // Update Inputs
+            els.inCropW.value = Math.round(cropState.w);
+            els.inCropH.value = Math.round(cropState.h);
+            els.inCropX.value = Math.round(cropState.x);
+            els.inCropY.value = Math.round(cropState.y);
+        };
+
+        // Resize Handle (Bottom Right)
+        els.resizeHandle.addEventListener('mousedown', (e) => {
+            isResizingCrop = true;
+            dragStart = { x: e.clientX, y: e.clientY };
+            initCropState = { ...cropState };
+            e.stopPropagation(); // Prevent drag
+        });
+
+        // Drag Box
+        els.cropOverlay.addEventListener('mousedown', (e) => {
+            isDraggingCrop = true;
+            dragStart = { x: e.clientX, y: e.clientY };
+            initCropState = { ...cropState };
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            const scale = getScale();
+            if(!scale) return;
+
+            if(isResizingCrop) {
+                const dx = (e.clientX - dragStart.x) / scale;
+                const dy = (e.clientY - dragStart.y) / scale;
+                cropState.w = Math.max(10, Math.min(meta.w - initCropState.x, initCropState.w + dx));
+                cropState.h = Math.max(10, Math.min(meta.h - initCropState.y, initCropState.h + dy));
+                updateCropOverlay();
+            } else if(isDraggingCrop) {
+                const dx = (e.clientX - dragStart.x) / scale;
+                const dy = (e.clientY - dragStart.y) / scale;
+                cropState.x = Math.max(0, Math.min(meta.w - initCropState.w, initCropState.x + dx));
+                cropState.y = Math.max(0, Math.min(meta.h - initCropState.h, initCropState.y + dy));
+                updateCropOverlay();
             }
         });
 
-
-        /* =========================================
-           4. 実行ロジック (FFmpegコマンド生成)
-           ========================================= */
-        const updateProgress = (percent) => {
-            els.progressBar.value = percent;
-            els.progressText.textContent = `処理中... ${Math.round(percent)}%`;
-        };
-
-        els.btn.addEventListener('click', async () => {
-            // 安全チェック
-            if (!ffmpeg || !ffmpeg.isLoaded()) {
-                logToPage('エンジンがまだ準備できていません。少々お待ち下さい。', 'warn');
-                return;
+        document.addEventListener('mouseup', () => { isDraggingCrop=false; isResizingCrop=false; });
+        
+        // Preset Handler
+        document.getElementById('crop-preset').addEventListener('change', (e) => {
+            const val = e.target.value;
+            if(val === '1:1') {
+                const s = Math.min(meta.w, meta.h);
+                cropState = { w: s, h: s, x: (meta.w-s)/2, y: (meta.h-s)/2 };
+            } else if(val === '16:9') {
+                let w = meta.w, h = meta.w * 9/16;
+                if(h > meta.h) { h = meta.h; w = h * 16/9; }
+                cropState = { w: w, h: h, x: (meta.w-w)/2, y: (meta.h-h)/2 };
             }
-            if (!videoFile) {
-                logToPage('動画ファイルが選択されていません。', 'warn');
-                return;
-            }
+            updateCropOverlay();
+        });
+        
+        // Window Resize handling
+        window.addEventListener('resize', updateCropOverlay);
 
-            // UIロック
-            els.btn.disabled = true;
-            els.progressWrap.style.display = 'block';
-            els.dlLink.style.display = 'none';
-            updateProgress(0);
-            logToPage('=== 処理プロセス開始 ===', 'info');
 
-            // 現在のアクティブなタブを確認
-            const activePanelId = document.querySelector('.settings-panel.active').id;
-            
-            // ファイル名設定
-            const inFileName = 'input_video'; 
-            let outFileName = 'output.mp4';
-            let mimeType = 'video/mp4';
+        /* ================= 5. 実行ロジック ================= */
+        document.getElementById('run-btn').addEventListener('click', async () => {
+            if(!ffmpeg.isLoaded()) return;
+            const btn = document.getElementById('run-btn');
+            const dl = document.getElementById('dl-link');
+            btn.disabled = true; dl.style.display='none';
+            log("Processing Started...");
+
+            const inName = 'input.mp4';
+            const outName = 'output.mp4';
             let args = [];
 
             try {
-                // 1. 仮想ファイルシステムへ書き込み
-                logToPage('データをメモリに書き込み中...', 'system');
-                ffmpeg.FS('writeFile', inFileName, await fetchFile(videoFile));
+                ffmpeg.FS('writeFile', inName, await fetchFile(videoFile));
 
-                // 2. 各モードごとのコマンド生成
-                if (activePanelId === 'panel-trim') {
-                    /* --- トリミングモード --- */
-                    const start = els.trimStart.value;
-                    const end = els.trimEnd.value;
-                    const duration = end - start;
-                    
-                    if (duration <= 0) throw new Error('終了時間は開始時間より後ろに設定してください');
-                    
-                    logToPage(`トリミング実行: ${start}s ~ ${end}s (長さ:${duration}s)`, 'info');
-                    
-                    args = [
-                        '-ss', start,
-                        '-i', inFileName,
-                        '-t', String(duration),
-                        '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        '-c:a', 'aac',
-                        outFileName
-                    ];
-
-                } else if (activePanelId === 'panel-crop') {
-                    /* --- クロップモード --- */
-                    const w = els.cropW.value;
-                    const h = els.cropH.value;
-                    const x = els.cropX.value;
-                    const y = els.cropY.value;
-
-                    logToPage(`クロップ実行: ${w}x${h} (X:${x}, Y:${y})`, 'info');
-                    
-                    args = [
-                        '-i', inFileName,
-                        '-vf', `crop=${w}:${h}:${x}:${y}`,
-                        '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        '-c:a', 'copy', // 音声はコピーで高速化
-                        outFileName
-                    ];
-
-                } else if (activePanelId === 'panel-speed') {
-                    /* --- 速度変更モード (復刻) --- */
-                    const speed = parseFloat(els.speedValue.value);
-                    logToPage(`速度変更実行: ${speed}倍速`, 'info');
-                    
-                    // 映像(setpts)と音声(atempo)の両方を変更
-                    // setpts = 1/speed * PTS
-                    // atempo = speed
-                    args = [
-                        '-i', inFileName,
-                        '-filter_complex', `[0:v]setpts=${1/speed}*PTS[v];[0:a]atempo=${speed}[a]`,
-                        '-map', '[v]',
-                        '-map', '[a]',
-                        '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        outFileName
-                    ];
-
-                } else if (activePanelId === 'panel-convert') {
-                    /* --- 変換・その他モード --- */
-                    const mode = els.convertMode.value;
-                    logToPage(`変換モード実行: ${mode}`, 'info');
-
-                    if (mode === 'gif') {
-                        outFileName = 'output.gif';
-                        mimeType = 'image/gif';
-                        // 高画質パレット生成を含むGIF変換
-                        args = [
-                            '-i', inFileName,
-                            '-vf', 'fps=5,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
-                            outFileName
-                        ];
-                    } else if (mode === 'mp3') {
-                        outFileName = 'output.mp3';
-                        mimeType = 'audio/mpeg';
-                        args = [
-                            '-i', inFileName,
-                            '-q:a', '0',
-                            '-map', 'a',
-                            outFileName
-                        ];
-                    } else if (mode === 'compress') {
-                        // 720pリサイズ + CRF28で圧縮
-                        args = [
-                            '-i', inFileName,
-                            '-vf', 'scale=-1:720',
-                            '-c:v', 'libx264',
-                            '-crf', '28',
-                            '-preset', 'ultrafast',
-                            outFileName
-                        ];
-                    } else if (mode === 'mute') {
-                        // 音声削除 (-an)
-                        args = [
-                            '-i', inFileName,
-                            '-an',
-                            '-c:v', 'copy',
-                            outFileName
-                        ];
-                    }
+                if(activeTab === 'p-trim') {
+                    const dur = parseFloat(els.inTrimEnd.value) - parseFloat(els.inTrimStart.value);
+                    args = ['-ss', els.inTrimStart.value, '-i', inName, '-t', dur.toString(), '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', outName];
+                } else if(activeTab === 'p-crop') {
+                    const { w, h, x, y } = cropState;
+                    args = ['-i', inName, '-vf', `crop=${Math.round(w)}:${Math.round(h)}:${Math.round(x)}:${Math.round(y)}`, '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'copy', outName];
+                } else {
+                    const mode = document.getElementById('convert-mode').value;
+                    if(mode==='gif') args = ['-i', inName, '-vf', 'fps=5,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse', 'output.gif'];
+                    else if(mode==='mp3') args = ['-i', inName, '-q:a', '0', '-map', 'a', 'output.mp3'];
+                    else args = ['-i', inName, '-c:v', 'copy', '-c:a', 'copy', outName];
                 }
 
-                // 3. コマンド実行
-                logToPage(`コマンド実行: ffmpeg ${args.join(' ')}`, 'system');
                 await ffmpeg.run(...args);
-
-                logToPage('FFmpeg処理完了。出力ファイルを生成中...', 'success');
-
-                // 4. 結果ファイルの読み込みとBlob化
-                const data = ffmpeg.FS('readFile', outFileName);
-                const blob = new Blob([data.buffer], { type: mimeType });
-                const url = URL.createObjectURL(blob);
-
-                // ダウンロードリンク設定
-                els.dlLink.href = url;
-                // ファイル名に現在時刻を入れる
-                const timestamp = new Date().getTime();
-                const ext = outFileName.split('.').pop();
-                els.dlLink.download = `edited_${timestamp}.${ext}`;
                 
-                els.dlLink.style.display = 'block';
-                els.dlLink.textContent = '完成したファイルを保存する';
+                const outFn = (args.includes('output.gif')) ? 'output.gif' : (args.includes('output.mp3') ? 'output.mp3' : 'output.mp4');
+                const data = ffmpeg.FS('readFile', outFn);
+                const blob = new Blob([data.buffer], { type: outFn.endsWith('gif')?'image/gif':(outFn.endsWith('mp3')?'audio/mpeg':'video/mp4') });
                 
-                updateProgress(100);
-                els.progressText.textContent = 'すべての処理が完了しました！';
-                logToPage('処理成功！ダウンロードリンクを表示しました。', 'success');
+                dl.href = URL.createObjectURL(blob);
+                dl.download = `wysiwyg_${Date.now()}_${outFn}`;
+                dl.style.display = 'block';
+                log("Completed!");
 
-            } catch (error) {
-                console.error(error);
-                logToPage(`エラーが発生しました: ${error.message}`, 'error');
-                els.progressText.textContent = 'エラーが発生しました';
+            } catch(e) {
+                console.error(e);
+                log("Error: " + e.message);
             } finally {
-                els.btn.disabled = false;
-                // メモリ掃除 (try-catchで囲む)
-                try {
-                    // 入力ファイルの削除
-                    if (ffmpeg.FS('readdir', '/').includes(inFileName)) {
-                        ffmpeg.FS('unlink', inFileName);
-                    }
-                    // 出力ファイルの削除
-                    if (ffmpeg.FS('readdir', '/').includes(outFileName)) {
-                        ffmpeg.FS('unlink', outFileName);
-                    }
-                } catch(cleanupError) {
-                    // クリーンアップエラーは無視してよい
-                }
+                btn.disabled = false;
+                try { ffmpeg.FS('unlink', inName); ffmpeg.FS('unlink', outName); } catch(e){}
             }
         });
-
     </script>
 </body>
 </html>
