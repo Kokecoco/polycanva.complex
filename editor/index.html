@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Code Editor PWA</title>
+    <meta name="theme-color" content="#282c34">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- CodeMirror (シンタックスハイライト用ライブラリ) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/htmlmixed/htmlmixed.min.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; font-family: sans-serif; background: #282c34; color: white; }
+        header { padding: 10px; background: #21252b; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #181a1f; }
+        h1 { margin: 0; font-size: 1.2rem; margin-right: auto; }
+        button { background: #404754; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-size: 0.9rem; }
+        button:hover { background: #4d5565; }
+        #editor-container { flex: 1; overflow: hidden; position: relative; }
+        .CodeMirror { height: 100%; font-family: 'Consolas', 'Monaco', monospace; font-size: 16px; }
+        #status { font-size: 0.8rem; color: #aaa; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Local Editor</h1>
+    <span id="status">未保存</span>
+    <button id="btnOpen">開く</button>
+    <button id="btnSave">保存</button>
+    <button id="btnSaveAs">名前を付けて保存</button>
+</header>
+
+<div id="editor-container">
+    <textarea id="code-editor"></textarea>
+</div>
+
+<script>
+    let fileHandle = null;
+
+    // CodeMirrorの初期化
+    const editor = CodeMirror.fromTextArea(document.getElementById("code-editor"), {
+        lineNumbers: true,
+        theme: "dracula",
+        mode: "htmlmixed", // デフォルト
+        tabSize: 4,
+        indentUnit: 4,
+        lineWrapping: true
+    });
+
+    // モード自動判定用の簡易マップ
+    const modeMap = {
+        'js': 'javascript',
+        'json': 'javascript',
+        'html': 'htmlmixed',
+        'css': 'css'
+    };
+
+    // ファイルを開く
+    document.getElementById('btnOpen').addEventListener('click', async () => {
+        try {
+            [fileHandle] = await window.showOpenFilePicker({
+                types: [{
+                    description: 'Text Files',
+                    accept: {'text/plain': ['.txt', '.js', '.html', '.css', '.json', '.md']}
+                }]
+            });
+            const file = await fileHandle.getFile();
+            const contents = await file.text();
+            
+            // 拡張子からシンタックスハイライトを切り替え
+            const ext = file.name.split('.').pop();
+            const mode = modeMap[ext] || 'htmlmixed';
+            editor.setOption('mode', mode);
+
+            editor.setValue(contents);
+            document.getElementById('status').textContent = `編集中: ${file.name}`;
+        } catch (err) {
+            if (err.name !== 'AbortError') console.error(err);
+        }
+    });
+
+    // 上書き保存
+    document.getElementById('btnSave').addEventListener('click', async () => {
+        if (!fileHandle) {
+            return saveFileAs(); // ファイルハンドルがなければ「名前を付けて保存」へ
+        }
+        try {
+            const writable = await fileHandle.createWritable();
+            await writable.write(editor.getValue());
+            await writable.close();
+            document.getElementById('status').textContent = `保存完了: ${new Date().toLocaleTimeString()}`;
+        } catch (err) {
+            console.error(err);
+            alert('保存に失敗しました');
+        }
+    });
+
+    // 名前を付けて保存
+    async function saveFileAs() {
+        try {
+            const handle = await window.showSaveFilePicker({
+                types: [{
+                    description: 'Text Files',
+                    accept: {'text/plain': ['.txt', '.js', '.html', '.css']}
+                }]
+            });
+            fileHandle = handle;
+            const writable = await fileHandle.createWritable();
+            await writable.write(editor.getValue());
+            await writable.close();
+            const file = await fileHandle.getFile();
+            document.getElementById('status').textContent = `保存完了: ${file.name}`;
+        } catch (err) {
+            if (err.name !== 'AbortError') console.error(err);
+        }
+    }
+    document.getElementById('btnSaveAs').addEventListener('click', saveFileAs);
+
+    // キーボードショートカット (Ctrl+S / Cmd+S)
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            document.getElementById('btnSave').click();
+        }
+    });
+
+    // Service Workerの登録
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js');
+    }
+</script>
+
+</body>
+</html>
