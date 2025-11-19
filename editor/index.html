@@ -335,6 +335,30 @@
     }
 
     createTab(null);
+        if ('launchQueue' in window) {
+        window.launchQueue.setConsumer(async (launchParams) => {
+            if (launchParams.files.length > 0) {
+                
+                // 初期表示で作られた空の「Untitled」タブがあり、まだ編集されていない場合は削除する
+                if (files.length === 1 && !files[0].handle && files[0].doc.getValue() === "") {
+                    // 内部データから削除
+                    files = [];
+                    // UIクリア
+                    document.getElementById('tabs-container').innerHTML = '';
+                    activeFileId = null;
+                }
+
+                for (const handle of launchParams.files) {
+                    // 既に開いているかチェック
+                    const isOpened = files.some(f => f.name === handle.name);
+                    if (!isOpened) {
+                        await createTab(handle);
+                    }
+                }
+            }
+        });
+    }
+
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('./sw.js');
