@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RegEx PWA - 拡張正規表現ツール</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1e1e">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header Section -->
+        <header class="app-header">
+            <div class="logo">
+                <h1>RegEx PWA</h1>
+            </div>
+            <div class="actions">
+                <button id="btnOpen" class="btn secondary">📂 Open</button>
+                <button id="btnSave" class="btn secondary">💾 Save</button>
+                <button id="btnTheme" class="btn icon" aria-label="Toggle Theme">🌓</button>
+            </div>
+        </header>
+
+        <!-- Regex Control Section -->
+        <section class="regex-control">
+            <div class="input-group regex-input-wrapper">
+                <label>Pattern (Regex)</label>
+                <!-- ハイライト用のオーバーレイ構成 -->
+                <div class="editor-overlay-container">
+                    <pre id="regexHighlight" aria-hidden="true"></pre>
+                    <textarea id="inputPattern" placeholder="Regular Expression... (e.g. # comment \n \d+)" spellcheck="false"></textarea>
+                </div>
+            </div>
+            
+            <div class="flags-wrapper">
+                <label><input type="checkbox" id="flagG" checked> Global (g)</label>
+                <label><input type="checkbox" id="flagI"> IgnoreCase (i)</label>
+                <label><input type="checkbox" id="flagM" checked> Multiline (m)</label>
+                <label class="flag-x"><input type="checkbox" id="flagX" checked> <strong>Verbose (x)</strong></label>
+            </div>
+
+            <div class="input-group">
+                <label>Replacement</label>
+                <input type="text" id="inputReplace" placeholder="Replacement text... (e.g. Result: $<name>)" spellcheck="false">
+            </div>
+
+            <div class="control-actions">
+                <button id="btnExecute" class="btn primary">Run / Update</button>
+            </div>
+        </section>
+
+        <!-- Editor Area Section -->
+        <main class="editor-area">
+            <div class="editor-pane">
+                <div class="pane-header">Source Text</div>
+                <textarea id="textSource" placeholder="Paste or open text file here..." spellcheck="false"></textarea>
+            </div>
+            <div class="editor-pane">
+                <div class="pane-header">Result</div>
+                <textarea id="textResult" readonly placeholder="Output will appear here..."></textarea>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <span id="statusMsg">Ready</span>
+            <span id="statusStats">Matches: 0 | Time: 0ms</span>
+        </footer>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
