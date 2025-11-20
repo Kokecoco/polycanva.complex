@@ -1,3 +1,5 @@
+/* :root, body, app-container 等の既存スタイルは前回のまま維持しつつ、以下を追加・調整 */
+
 :root {
     --bg-color: #f4f4f9;
     --panel-bg: #ffffff;
@@ -5,6 +7,7 @@
     --border-color: #cccccc;
     --primary-color: #007bff;
     --accent-color: #e7f1ff;
+    --overlay-bg: rgba(0, 0, 0, 0.5);
     --code-font: 'Menlo', 'Monaco', 'Courier New', monospace;
 }
 
@@ -15,6 +18,7 @@
     --border-color: #444444;
     --primary-color: #4dabf7;
     --accent-color: #2d2d2d;
+    --overlay-bg: rgba(0, 0, 0, 0.7);
 }
 
 * { box-sizing: border-box; }
@@ -22,14 +26,14 @@
 body, html {
     margin: 0; padding: 0;
     height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
 }
 
 .app-container {
     display: grid;
-    grid-template-rows: auto auto 1fr auto; /* Header, Controls, Editors, Footer */
+    grid-template-rows: auto auto 1fr auto; 
     height: 100vh;
     max-width: 100vw;
 }
@@ -43,7 +47,7 @@ body, html {
     justify-content: space-between;
     align-items: center;
 }
-.app-header h1 { margin: 0; font-size: 1.2rem; }
+.app-header h1 { margin: 0; font-size: 1.2rem; font-weight: bold; }
 
 /* Buttons */
 .btn {
@@ -53,11 +57,11 @@ body, html {
     color: var(--text-color);
     cursor: pointer;
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
 }
 .btn:hover { background-color: var(--accent-color); }
 .btn.primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
-.btn.icon { border: none; background: transparent; font-size: 1.2rem; }
+.btn.icon { border: none; background: transparent; font-size: 1.2rem; padding: 0 0.5rem; }
 
 /* Regex Control */
 .regex-control {
@@ -74,16 +78,17 @@ body, html {
 
 .flags-wrapper {
     display: flex;
+    flex-wrap: wrap;
     gap: 1rem;
     font-size: 0.9rem;
     align-items: center;
 }
-.flag-x { color: var(--primary-color); }
+.flag-x { color: var(--primary-color); border-bottom: 1px dotted var(--primary-color); cursor: help; }
 
-/* Regex Overlay Editor (簡易ハイライト用) */
+/* Editor Overlay (Regex Input) */
 .editor-overlay-container {
     position: relative;
-    height: 80px; /* regex input height */
+    height: 100px; /* 少し広げました */
 }
 #inputPattern, #regexHighlight {
     position: absolute;
@@ -94,7 +99,7 @@ body, html {
     border-radius: 4px;
     font-family: var(--code-font);
     font-size: 14px;
-    line-height: 1.4;
+    line-height: 1.5;
     background: transparent;
     white-space: pre-wrap;
     overflow-y: auto;
@@ -103,16 +108,16 @@ body, html {
 #inputPattern {
     z-index: 2;
     color: var(--text-color);
-    background: transparent; /* transparent to show highlight behind */
+    background: transparent;
 }
 #regexHighlight {
     z-index: 1;
-    color: transparent; /* hide text but keep formatting */
+    color: transparent;
     background-color: var(--panel-bg);
     border-color: transparent;
     pointer-events: none;
 }
-/* Highlight span colors */
+
 .hl-comment { color: #6a9955; }
 .hl-group { color: #b5cea8; font-weight: bold; }
 .hl-class { color: #ce9178; }
@@ -124,6 +129,7 @@ body, html {
     background: var(--panel-bg);
     color: var(--text-color);
     font-family: var(--code-font);
+    font-size: 14px;
 }
 
 /* Editor Area */
@@ -131,17 +137,19 @@ body, html {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1px;
-    background-color: var(--border-color); /* Separator line */
+    background-color: var(--border-color);
     overflow: hidden;
 }
 .editor-pane {
     background-color: var(--panel-bg);
     display: flex;
     flex-direction: column;
+    min-width: 0; /* Grid overflow fix */
 }
 .pane-header {
-    padding: 4px 8px;
+    padding: 6px 10px;
     font-size: 0.8rem;
+    font-weight: bold;
     background: var(--accent-color);
     border-bottom: 1px solid var(--border-color);
 }
@@ -166,10 +174,59 @@ textarea:focus { outline: none; }
     font-size: 0.8rem;
     display: flex;
     justify-content: space-between;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
+/* Dialog (Help Modal) */
+dialog {
+    border: none;
+    border-radius: 8px;
+    padding: 0;
+    background: var(--panel-bg);
+    color: var(--text-color);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    max-width: 600px;
+    width: 90%;
+}
+dialog::backdrop {
+    background: var(--overlay-bg);
+}
+.dialog-content header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.dialog-content header h2 { margin: 0; font-size: 1.2rem; }
+.dialog-body {
+    padding: 1.5rem;
+    line-height: 1.6;
+    font-size: 0.95rem;
+}
+.dialog-body h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+    border-bottom: 2px solid var(--primary-color);
+    display: inline-block;
+}
+.dialog-body h3:first-child { margin-top: 0; }
+.code-example {
+    background: var(--accent-color);
+    padding: 1rem;
+    border-radius: 4px;
+    font-family: var(--code-font);
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+    border: 1px solid var(--border-color);
+}
+.code-example pre { margin: 0; white-space: pre-wrap; color: var(--text-color); }
 
 /* Responsive */
 @media (max-width: 768px) {
     .editor-area { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-    .editor-overlay-container { height: 100px; }
+    .actions button span { display: none; } /* アイコンのみにする等の調整が必要なら */
 }

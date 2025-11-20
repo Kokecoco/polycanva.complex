@@ -11,6 +11,9 @@ const els = {
     btnOpen: document.getElementById('btnOpen'),
     btnSave: document.getElementById('btnSave'),
     btnTheme: document.getElementById('btnTheme'),
+    btnHelp: document.getElementById('btnHelp'), // 追加
+    btnCloseHelp: document.getElementById('btnCloseHelp'), // 追加
+    helpDialog: document.getElementById('helpDialog'), // 追加
     statusMsg: document.getElementById('statusMsg'),
     statusStats: document.getElementById('statusStats'),
     flags: {
@@ -28,19 +31,18 @@ let lastRequestId = 0;
 worker.onmessage = (e) => {
     const { id, result, matchCount, time, error } = e.data;
     
-    // 古いリクエストの結果なら無視 (Race condition防止)
     if (id !== lastRequestId) return;
 
     if (error) {
-        els.statusMsg.textContent = `Error: ${error}`;
+        els.statusMsg.textContent = `エラー: ${error}`;
         els.statusMsg.style.color = '#ff6b6b';
         return;
     }
 
     els.textResult.value = result;
-    els.statusMsg.textContent = 'Done';
+    els.statusMsg.textContent = '完了';
     els.statusMsg.style.color = 'inherit';
-    els.statusStats.textContent = `Matches: ${matchCount} | Time: ${time}ms`;
+    els.statusStats.textContent = `マッチ数: ${matchCount}件 | 処理時間: ${time}ms`;
 };
 
 // --- Logic ---
@@ -50,7 +52,6 @@ function getFlags() {
     if (els.flags.g.checked) f += 'g';
     if (els.flags.i.checked) f += 'i';
     if (els.flags.m.checked) f += 'm';
-    // xフラグはworkerに別途渡す
     return f;
 }
 
@@ -61,9 +62,12 @@ function triggerExecution() {
     const isVerbose = els.flags.x.checked;
     const flags = getFlags();
 
-    if (!pattern) return;
+    if (!pattern) {
+        els.statusMsg.textContent = '正規表現パターンを入力してください';
+        return;
+    }
 
-    els.statusMsg.textContent = 'Processing...';
+    els.statusMsg.textContent = '処理中...';
     lastRequestId++;
     
     worker.postMessage({
@@ -78,24 +82,18 @@ function triggerExecution() {
     updateHighlight();
 }
 
-// 簡易ハイライト機能
 function updateHighlight() {
     let code = els.inputPattern.value;
-    // 安全のためにHTMLエスケープ
     code = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     
-    // 簡易的な色付け (Verboseモード前提)
     if (els.flags.x.checked) {
-        // コメント
         code = code.replace(/(#.*)/g, '<span class="hl-comment">$1</span>');
-        // 文字クラス
         code = code.replace(/(\[.*?\])/g, '<span class="hl-class">$1</span>');
     }
     
-    els.regexHighlight.innerHTML = code + '<br>'; // 末尾改行対応
+    els.regexHighlight.innerHTML = code + '<br>';
 }
 
-// debounce function
 function debounce(func, wait) {
     let timeout;
     return function(...args) {
@@ -104,15 +102,26 @@ function debounce(func, wait) {
     };
 }
 
-// 50KB以下ならリアルタイム、それ以上はボタン実行のみにする制御も可能だが
-// 今回はWorkerを使っているので300ms debounceで常に実行させてみる
 const debouncedExec = debounce(() => {
     if (els.textSource.value.length < 50000) {
         triggerExecution();
+    } else {
+        els.statusMsg.textContent = 'テキストサイズが大きいため、自動更新を停止しました。「実行」ボタンを押してください。';
     }
 }, 300);
 
 // --- Event Listeners ---
+
+// Help Modal
+els.btnHelp.addEventListener('click', () => {
+    els.helpDialog.showModal();
+});
+els.btnCloseHelp.addEventListener('click', () => {
+    els.helpDialog.close();
+});
+els.helpDialog.addEventListener('click', (e) => {
+    if (e.target === els.helpDialog) els.helpDialog.close(); // 背景クリックで閉じる
+});
 
 [els.inputPattern, els.inputReplace, els.textSource].forEach(el => {
     el.addEventListener('input', debouncedExec);
@@ -121,7 +130,7 @@ Object.values(els.flags).forEach(el => el.addEventListener('change', triggerExec
 
 els.btnExecute.addEventListener('click', triggerExecution);
 
-// Sync scroll for highlight overlay
+// Sync scroll
 els.inputPattern.addEventListener('scroll', () => {
     els.regexHighlight.scrollTop = els.inputPattern.scrollTop;
     els.regexHighlight.scrollLeft = els.inputPattern.scrollLeft;
@@ -133,7 +142,6 @@ els.btnTheme.addEventListener('click', () => {
     const next = current === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
 });
-// Default Dark Mode
 if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
     document.documentElement.setAttribute('data-theme', 'dark');
 }
@@ -142,7 +150,7 @@ if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').match
 
 els.btnOpen.addEventListener('click', async () => {
     if (!window.showOpenFilePicker) {
-        alert('このブラウザはFile System Access APIをサポートしていません。');
+        alert('このブラウザはファイルシステム操作をサポートしていません。\nChromeやEdgeなどのPC版ブラウザをご利用ください。');
         return;
     }
     try {
@@ -150,35 +158,39 @@ els.btnOpen.addEventListener('click', async () => {
         const file = await fileHandle.getFile();
         const text = await file.text();
         els.textSource.value = text;
+        els.statusMsg.textContent = `${file.name} を読み込みました`;
         triggerExecution();
     } catch (err) {
-        if (err.name !== 'AbortError') console.error(err);
+        if (err.name !== 'AbortError') {
+            console.error(err);
+            alert('ファイル読み込みエラーが発生しました');
+        }
     }
 });
 
 els.btnSave.addEventListener('click', async () => {
     if (!window.showSaveFilePicker) {
-        alert('このブラウザはFile System Access APIをサポートしていません。');
+        alert('このブラウザはファイルシステム操作をサポートしていません。');
         return;
     }
     try {
         const opts = {
             types: [{
                 description: 'Text file',
-                accept: {'text/plain': ['.txt', '.csv', '.log']},
+                accept: {'text/plain': ['.txt', '.csv', '.log', '.json']},
             }],
         };
         const handle = await window.showSaveFilePicker(opts);
         const writable = await handle.createWritable();
         await writable.write(els.textResult.value);
         await writable.close();
-        alert('保存しました');
+        els.statusMsg.textContent = 'ファイルを保存しました';
     } catch (err) {
         if (err.name !== 'AbortError') console.error(err);
     }
 });
 
-// Drag & Drop Support
+// Drag & Drop
 document.body.addEventListener('dragover', e => e.preventDefault());
 document.body.addEventListener('drop', async e => {
     e.preventDefault();
@@ -187,13 +199,14 @@ document.body.addEventListener('drop', async e => {
         if (item.kind === 'file') {
             const file = item.getAsFile();
             els.textSource.value = await file.text();
+            els.statusMsg.textContent = `${file.name} を読み込みました`;
             triggerExecution();
         }
     }
 });
 
-// --- PWA Service Worker Registration ---
+// Service Worker Registration
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js')
-        .then(() => console.log('Service Worker Registered'));
+        .catch(err => console.error('SW registration failed', err));
 }
