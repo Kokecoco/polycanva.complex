@@ -1,0 +1,175 @@
+:root {
+    --bg-color: #f4f4f9;
+    --panel-bg: #ffffff;
+    --text-color: #333333;
+    --border-color: #cccccc;
+    --primary-color: #007bff;
+    --accent-color: #e7f1ff;
+    --code-font: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+
+[data-theme="dark"] {
+    --bg-color: #121212;
+    --panel-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --border-color: #444444;
+    --primary-color: #4dabf7;
+    --accent-color: #2d2d2d;
+}
+
+* { box-sizing: border-box; }
+
+body, html {
+    margin: 0; padding: 0;
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+.app-container {
+    display: grid;
+    grid-template-rows: auto auto 1fr auto; /* Header, Controls, Editors, Footer */
+    height: 100vh;
+    max-width: 100vw;
+}
+
+/* Header */
+.app-header {
+    padding: 0.5rem 1rem;
+    background-color: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.app-header h1 { margin: 0; font-size: 1.2rem; }
+
+/* Buttons */
+.btn {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--border-color);
+    background: var(--panel-bg);
+    color: var(--text-color);
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+.btn:hover { background-color: var(--accent-color); }
+.btn.primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
+.btn.icon { border: none; background: transparent; font-size: 1.2rem; }
+
+/* Regex Control */
+.regex-control {
+    padding: 1rem;
+    background-color: var(--panel-bg);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.input-group { display: flex; flex-direction: column; gap: 0.3rem; }
+.input-group label { font-size: 0.85rem; font-weight: bold; }
+
+.flags-wrapper {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.9rem;
+    align-items: center;
+}
+.flag-x { color: var(--primary-color); }
+
+/* Regex Overlay Editor (簡易ハイライト用) */
+.editor-overlay-container {
+    position: relative;
+    height: 80px; /* regex input height */
+}
+#inputPattern, #regexHighlight {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    margin: 0; padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: var(--code-font);
+    font-size: 14px;
+    line-height: 1.4;
+    background: transparent;
+    white-space: pre-wrap;
+    overflow-y: auto;
+    resize: vertical;
+}
+#inputPattern {
+    z-index: 2;
+    color: var(--text-color);
+    background: transparent; /* transparent to show highlight behind */
+}
+#regexHighlight {
+    z-index: 1;
+    color: transparent; /* hide text but keep formatting */
+    background-color: var(--panel-bg);
+    border-color: transparent;
+    pointer-events: none;
+}
+/* Highlight span colors */
+.hl-comment { color: #6a9955; }
+.hl-group { color: #b5cea8; font-weight: bold; }
+.hl-class { color: #ce9178; }
+
+#inputReplace {
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--panel-bg);
+    color: var(--text-color);
+    font-family: var(--code-font);
+}
+
+/* Editor Area */
+.editor-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background-color: var(--border-color); /* Separator line */
+    overflow: hidden;
+}
+.editor-pane {
+    background-color: var(--panel-bg);
+    display: flex;
+    flex-direction: column;
+}
+.pane-header {
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    background: var(--accent-color);
+    border-bottom: 1px solid var(--border-color);
+}
+textarea {
+    flex: 1;
+    border: none;
+    padding: 1rem;
+    resize: none;
+    background: var(--panel-bg);
+    color: var(--text-color);
+    font-family: var(--code-font);
+    font-size: 14px;
+    line-height: 1.5;
+}
+textarea:focus { outline: none; }
+
+/* Status Bar */
+.status-bar {
+    padding: 4px 1rem;
+    background: var(--accent-color);
+    border-top: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .editor-area { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .editor-overlay-container { height: 100px; }
+}
