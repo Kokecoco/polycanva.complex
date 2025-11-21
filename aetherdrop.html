@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether Drop (Debug Mode)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 10px; background: #111; color: #eee; }
+        h2 { color: #00d2ff; text-align: center; margin: 5px 0; }
+        
+        /* デバッグコンソール（画面上にログを出す） */
+        #console-area {
+            background: #000; border: 1px solid #333; color: #0f0; font-family: monospace;
+            font-size: 10px; height: 120px; overflow-y: scroll; padding: 5px;
+            margin-bottom: 10px; border-radius: 4px;
+        }
+        .log-info { color: #0f0; }
+        .log-warn { color: #ff0; }
+        .log-error { color: #f00; font-weight: bold; }
+
+        /* UIコンテナ */
+        .container { max-width: 600px; margin: 0 auto; background: #222; padding: 15px; border-radius: 8px; }
+        .hidden { display: none !important; }
+        
+        /* ボタン */
+        .btn { width: 100%; padding: 12px; margin: 5px 0; font-size: 16px; font-weight: bold; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-blue { background: #007bff; color: white; }
+        .btn-green { background: #28a745; color: white; }
+        .btn-gray { background: #666; color: white; }
+        
+        /* QR・カメラ */
+        #qr-area { background: white; padding: 10px; display: inline-block; margin: 10px auto; border-radius: 5px; }
+        #video-wrapper { position: relative; width: 100%; max-width: 400px; margin: 0 auto; border: 2px solid #00d2ff; border-radius: 5px; overflow: hidden;}
+        video { width: 100%; display: block; }
+        
+        /* ガイドテキスト */
+        .guide { background: #333; padding: 10px; border-radius: 5px; margin-bottom: 10px; border-left: 4px solid #00d2ff; }
+        .step-title { font-weight: bold; color: #00d2ff; margin-bottom: 5px; display: block; }
+    </style>
+</head>
+<body>
+
+<!-- 画面上デバッグコンソール -->
+<div id="console-area"><div>[SYSTEM] Console Ready...</div></div>
+
+<div class="container">
+    <h2>Aether Drop ⚡</h2>
+
+    <!-- ステップ0: 役割選択 -->
+    <div id="step-role">
+        <div class="guide">
+            <span class="step-title">Step 0: 役割分担</span>
+            テザリング、または同じWi-Fiに接続してから選んでください。
+        </div>
+        <button class="btn btn-blue" onclick="initSender()">📤 送信側 (Sender)</button>
+        <button class="btn btn-green" onclick="initReceiver()">📥 受信側 (Receiver)</button>
+    </div>
+
+    <!-- 送信側エリア -->
+    <div id="sender-ui" class="hidden">
+        <!-- S1: 自分のQRを見せる -->
+        <div id="sender-step1">
+            <div class="guide">
+                <span class="step-title">Step 1: QRを見せる</span>
+                受信側のスマホで、このQRコードを読み取らせてください。
+            </div>
+            <div style="text-align:center;"><div id="sender-qr" id="qr-area"></div></div>
+            <button class="btn btn-gray" onclick="senderToStep2()">相手が読み取ったらここを押す ▼</button>
+        </div>
+
+        <!-- S2: 相手の返事を読む -->
+        <div id="sender-step2" class="hidden">
+            <div class="guide">
+                <span class="step-title">Step 2: 返事を読み取る</span>
+                受信側の画面に出てきたQRコードをスキャンしてください。
+            </div>
+            <div id="video-wrapper-s">
+                <video id="video-s" playsinline></video>
+            </div>
+            <textarea id="manual-input-s" placeholder="カメラが使えない場合はここにテキストを貼り付け" style="width:100%; height:40px; margin-top:5px;"></textarea>
+            <button class="btn btn-gray" onclick="manualPaste('sender')">手動で接続</button>
+        </div>
+    </div>
+
+    <!-- 受信側エリア -->
+    <div id="receiver-ui" class="hidden">
+        <!-- R1: 相手のQRを読む -->
+        <div id="receiver-step1">
+            <div class="guide">
+                <span class="step-title">Step 1: 送信側をスキャン</span>
+                送信側の画面に出ているQRコードを読み取ってください。
+            </div>
+            <div id="video-wrapper-r">
+                <video id="video-r" playsinline></video>
+            </div>
+             <textarea id="manual-input-r" placeholder="カメラが使えない場合はここにテキストを貼り付け" style="width:100%; height:40px; margin-top:5px;"></textarea>
+            <button class="btn btn-gray" onclick="manualPaste('receiver')">手動で接続</button>
+        </div>
+
+        <!-- R2: 自分の返事を見せる -->
+        <div id="receiver-step2" class="hidden">
+            <div class="guide">
+                <span class="step-title">Step 2: 返事を相手に見せる</span>
+                このQRコードを<b>送信側のカメラ</b>で読み取らせてください。
+            </div>
+            <div style="text-align:center; background:white; padding:10px; border-radius:5px;">
+                <div id="receiver-qr"></div>
+            </div>
+            <p style="text-align:center;">相手が読み取ると自動で接続されます...</p>
+        </div>
+    </div>
+
+    <!-- ファイル転送エリア (接続完了後) -->
+    <div id="transfer-ui" class="hidden">
+        <h3 style="text-align:center; color:#0f0;">✅ 接続完了</h3>
+        <div id="file-controls" class="hidden">
+            <input type="file" id="fileInput" style="color:white;">
+            <button class="btn btn-blue" onclick="sendFile()">ファイルを送信</button>
+        </div>
+        <div id="status-msg" style="margin-top:10px;">待機中...</div>
+        <div id="progress-area" style="width:100%; background:#333; height:20px; margin-top:5px; display:none;">
+            <div id="progress-bar" style="width:0%; background:#00d2ff; height:100%;"></div>
+        </div>
+        <div id="download-area"></div>
+    </div>
+
+</div>
+
+<script>
+    // --- 1. 画面上コンソール機能 (DevTools代替) ---
+    function log(msg, type = 'INFO') {
+        const consoleDiv = document.getElementById('console-area');
+        const line = document.createElement('div');
+        const time = new Date().toLocaleTimeString();
+        line.textContent = `[${time}] ${type}: ${msg}`;
+        
+        if (type === 'ERROR') line.className = 'log-error';
+        else if (type === 'WARN') line.className = 'log-warn';
+        else line.className = 'log-info';
+
+        consoleDiv.appendChild(line);
+        consoleDiv.scrollTop = consoleDiv.scrollHeight; // 最下部へスクロール
+        console.log(msg); // 本物のコンソールにも一応出す
+    }
+
+    window.onerror = function(msg, url, line) {
+        log(`${msg} (Line:${line})`, 'ERROR');
+    };
+
+    // --- 変数 ---
+    let pc;
+    let dc;
+    let role = '';
+    const config = { iceServers: [] }; // ローカル通信強制
+
+    // --- 初期化フロー ---
+    function initSender() {
+        role = 'sender';
+        document.getElementById('step-role').classList.add('hidden');
+        document.getElementById('sender-ui').classList.remove('hidden');
+        log("送信側として開始しました。");
+
+        pc = new RTCPeerConnection(config);
+        setupPC(pc);
+        
+        // データチャネル作成
+        dc = pc.createDataChannel("aether");
+        setupDC(dc);
+
+        pc.createOffer().then(offer => {
+            return pc.setLocalDescription(offer);
+        }).catch(e => log("Offer作成失敗: " + e, 'ERROR'));
+    }
+
+    function initReceiver() {
+        role = 'receiver';
+        document.getElementById('step-role').classList.add('hidden');
+        document.getElementById('receiver-ui').classList.remove('hidden');
+        log("受信側として開始しました。");
+        
+        pc = new RTCPeerConnection(config);
+        setupPC(pc);
+
+        // データチャネル受信待機
+        pc.ondatachannel = e => {
+            log("データチャネルを受信しました！");
+            setupDC(e.channel);
+        };
+
+        // いきなりカメラ起動
+        startScan('video-r', 'receiver');
+    }
+
+    // --- PC共通設定 ---
+    function setupPC(peer) {
+        peer.onicecandidate = e => {
+            if (e.candidate === null) {
+                log("ICE収集完了。SDPをQR化します。");
+                const sdp = JSON.stringify(peer.localDescription);
+                const compressed = LZString.compressToBase64(sdp);
+                
+                if (role === 'sender') {
+                    showQR('sender-qr', compressed);
+                } else {
+                    showQR('receiver-qr', compressed);
+                }
+            }
+        };
+
+        peer.onconnectionstatechange = () => {
+            log(`接続状態変更: ${peer.connectionState}`);
+            if (peer.connectionState === 'connected') {
+                log("★ P2P接続成功！");
+                document.getElementById('sender-ui').classList.add('hidden');
+                document.getElementById('receiver-ui').classList.add('hidden');
+                document.getElementById('transfer-ui').classList.remove('hidden');
+                if(role === 'sender') document.getElementById('file-controls').classList.remove('hidden');
+            }
+        };
+        
+        peer.oniceconnectionstatechange = () => {
+            log(`ICE状態: ${peer.iceConnectionState}`);
+        }
+    }
+
+    // --- データチャネル設定 ---
+    function setupDC(channel) {
+        dc = channel;
+        dc.onopen = () => log("チャネルオープン: データ送信可能");
+        dc.onmessage = handleMessage;
+    }
+
+    // --- Senderのステップ遷移 ---
+    function senderToStep2() {
+        document.getElementById('sender-step1').classList.add('hidden');
+        document.getElementById('sender-step2').classList.remove('hidden');
+        startScan('video-s', 'sender');
+    }
+
+    // --- QR表示 ---
+    function showQR(elemId, text) {
+        const el = document.getElementById(elemId);
+        el.innerHTML = "";
+        el.style.background = "white"; 
+        try {
+            new QRCode(el, { text: text, width: 200, height: 200 });
+            log(`${elemId} にQRを表示しました。文字数:${text.length}`);
+        } catch(e) {
+            log("QR生成エラー: " + e, 'ERROR');
+        }
+    }
+
+    // --- カメラ & スキャン ---
+    let videoStream = null;
+    
+    function startScan(videoId, mode) {
+        log(`${mode}用のカメラを起動します...`);
+        const video = document.getElementById(videoId);
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => {
+                videoStream = stream;
+                video.srcObject = stream;
+                video.play();
+                requestAnimationFrame(tick);
+            })
+            .catch(e => {
+                log("カメラ起動失敗: " + e.name + " " + e.message, 'ERROR');
+                alert("カメラが起動できません。HTTPS接続を確認してください。");
+            });
+
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.height = video.videoHeight;
+                canvas.width = video.videoWidth;
+                ctx.drawImage(video, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+
+                if (code) {
+                    log("QRコードを検出！");
+                    handleScannedData(code.data, mode);
+                    // 成功したらカメラ停止
+                    if(videoStream) videoStream.getTracks().forEach(t => t.stop());
+                    return;
+                }
+            }
+            if(videoStream && videoStream.active) requestAnimationFrame(tick);
+        }
+    }
+
+    // --- 読み取ったデータの処理 (Offer/Answer適用) ---
+    function handleScannedData(data, mode) {
+        try {
+            const sdpStr = LZString.decompressFromBase64(data);
+            if(!sdpStr) throw new Error("解凍失敗");
+            const desc = JSON.parse(sdpStr);
+            log(`${desc.type} を受け取りました。適用します。`);
+
+            pc.setRemoteDescription(desc).then(() => {
+                if (desc.type === 'offer') {
+                    // Receiver: Offerを受け取ったのでAnswerを作る
+                    log("Answerを作成中...");
+                    return pc.createAnswer().then(answer => pc.setLocalDescription(answer));
+                }
+            }).then(() => {
+                if (desc.type === 'offer') {
+                    // Receiver: Step1(カメラ) -> Step2(QR表示)へ
+                    document.getElementById('receiver-step1').classList.add('hidden');
+                    document.getElementById('receiver-step2').classList.remove('hidden');
+                    log("Answer生成完了。ICE収集中...");
+                } else {
+                    log("Answer適用完了。接続確立待ち...");
+                }
+            }).catch(e => log("SDP処理エラー: " + e, 'ERROR'));
+
+        } catch(e) {
+            log("データ読み取り失敗: " + e, 'ERROR');
+        }
+    }
+    
+    function manualPaste(mode) {
+        const id = mode === 'sender' ? 'manual-input-s' : 'manual-input-r';
+        const val = document.getElementById(id).value;
+        if(val) handleScannedData(val, mode);
+    }
+
+    // --- ファイル転送ロジック ---
+    let incomingInfo = null;
+    let incomingBuffer = [];
+    let receivedBytes = 0;
+
+    function sendFile() {
+        const file = document.getElementById('fileInput').files[0];
+        if (!file) return;
+        
+        log(`送信開始: ${file.name} (${file.size} bytes)`);
+        dc.send(JSON.stringify({ meta: true, name: file.name, size: file.size }));
+        
+        const chunkSize = 16384;
+        let offset = 0;
+        const reader = new FileReader();
+        
+        reader.onload = e => {
+            dc.send(e.target.result); // ArrayBuffer送信
+            offset += e.target.result.byteLength;
+            updateProgress(offset, file.size);
+            
+            if (offset < file.size) {
+                readSlice(offset);
+            } else {
+                log("送信完了！");
+            }
+        };
+
+        function readSlice(o) {
+            const slice = file.slice(o, o + chunkSize);
+            reader.readAsArrayBuffer(slice);
+        }
+        readSlice(0);
+    }
+
+    function handleMessage(event) {
+        const data = event.data;
+        if (typeof data === 'string') {
+            const msg = JSON.parse(data);
+            if (msg.meta) {
+                incomingInfo = msg;
+                incomingBuffer = [];
+                receivedBytes = 0;
+                log(`受信開始: ${msg.name}`);
+                document.getElementById('progress-area').style.display = 'block';
+            }
+        } else {
+            // ArrayBuffer受信
+            incomingBuffer.push(data);
+            receivedBytes += data.byteLength;
+            updateProgress(receivedBytes, incomingInfo.size);
+
+            if (receivedBytes >= incomingInfo.size) {
+                log("受信完了。結合中...");
+                const blob = new Blob(incomingBuffer);
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = incomingInfo.name;
+                link.textContent = `💾 ${incomingInfo.name} を保存`;
+                link.style = "display:block; margin-top:10px; color:#00d2ff; font-weight:bold;";
+                document.getElementById('download-area').appendChild(link);
+            }
+        }
+    }
+
+    function updateProgress(curr, total) {
+        const pct = (curr / total) * 100;
+        document.getElementById('progress-bar').style.width = pct + "%";
+        document.getElementById('status-msg').textContent = `${Math.round(pct)}%`;
+    }
+</script>
+</body>
+</html>
