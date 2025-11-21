@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniDrop</title>
+    <!-- 必要なライブラリを読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; padding: 10px; background: #fafafa; color: #333; text-align: center; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #007bff; }
+        
+        /* ボタンのデザイン */
+        .btn { padding: 12px 24px; font-size: 16px; margin: 8px; cursor: pointer; border: none; border-radius: 8px; transition: 0.2s; font-weight: bold; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn:active { transform: scale(0.98); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* エリア制御 */
+        .hidden { display: none !important; }
+        .step-box { border: 2px dashed #ccc; padding: 15px; margin: 15px 0; border-radius: 8px; background: #f9f9f9; }
+        
+        /* コンテンツ */
+        #guide-text { background: #e7f3ff; padding: 10px; border-radius: 5px; font-size: 0.9rem; text-align: left; margin-bottom: 15px;}
+        textarea { width: 100%; height: 60px; font-size: 10px; margin-top: 5px; border: 1px solid #ddd; }
+        
+        /* カメラ・QR */
+        #video-area { position: relative; width: 100%; max-width: 400px; margin: 0 auto; overflow: hidden; border-radius: 8px; }
+        video { width: 100%; background: black; }
+        canvas { display: none; }
+        #qr-display { display: flex; justify-content: center; margin: 10px 0; }
+        
+        /* プログレスバー */
+        #progress-container { width: 100%; background-color: #eee; height: 20px; border-radius: 10px; margin-top: 10px; overflow: hidden; display: none; }
+        #progress-bar { width: 0%; height: 100%; background-color: #28a745; transition: width 0.2s; }
+        
+        /* ファイルリスト */
+        .file-item { background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-top: 5px; text-align: left; }
+        .download-link { color: #007bff; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>OmniDrop</h2>
+
+    <!-- シーン選択 -->
+    <div id="scene-selection">
+        <p>現在の接続状況を選んでください</p>
+        <div style="display: flex; justify-content: center; gap: 10px;">
+            <button class="btn btn-secondary" onclick="selectScene('wifi')">🏠 同じWi-Fiにいる</button>
+            <button class="btn btn-secondary" onclick="selectScene('tethering')">📱 テザリング中</button>
+        </div>
+    </div>
+
+    <!-- ガイド表示 -->
+    <div id="guide-area" class="hidden">
+        <div id="guide-text"></div>
+        <hr>
+        <p>あなたの役割は？</p>
+        <button class="btn btn-primary" onclick="startAsSender()">📤 ファイルを送る</button>
+        <button class="btn btn-success" onclick="startAsReceiver()">📥 ファイルを受け取る</button>
+    </div>
+
+    <!-- ステータス表示 -->
+    <div id="status-area" class="hidden">
+        <p id="status-text" style="font-weight: bold;">準備中...</p>
+    </div>
+
+    <!-- Step 1: QR表示 (自分の情報を相手に見せる) -->
+    <div id="step-show-qr" class="step-box hidden">
+        <h3>Step 1: 相手に見せてください</h3>
+        <div id="qr-display"></div>
+        <p style="font-size:0.8rem; color:#666;">QRが読み取れない場合は、下の文字をコピーして送ってください</p>
+        <textarea id="local-sdp" readonly onclick="this.select()"></textarea>
+    </div>
+
+    <!-- Step 2: カメラ起動 (相手の情報を読む) -->
+    <div id="step-scan-qr" class="step-box hidden">
+        <h3>Step 2: 相手のQRを読み取る</h3>
+        <p id="scan-instruction">相手の画面に出てきたQRコードを映してください</p>
+        <button class="btn btn-secondary" onclick="startScan()">📷 カメラを起動</button>
+        <div id="video-area">
+            <video id="video" playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+        <details>
+            <summary>カメラが使えない場合</summary>
+            <textarea id="remote-sdp-input" placeholder="相手のテキストデータをここに貼り付け"></textarea>
+            <button class="btn btn-secondary" onclick="manualPaste()">接続</button>
+        </details>
+    </div>
+
+    <!-- ファイル転送画面 -->
+    <div id="transfer-ui" class="hidden">
+        <h3>📂 ファイル送受信</h3>
+        
+        <!-- 送信側UI -->
+        <div id="sender-controls" class="hidden">
+            <input type="file" id="fileInput">
+            <button class="btn btn-primary" onclick="sendFile()">送信開始</button>
+        </div>
+
+        <!-- 受信側UI -->
+        <div id="receiver-controls" class="hidden">
+            <p>相手からのファイルを待っています...</p>
+            <div id="received-files"></div>
+        </div>
+
+        <!-- 進捗バー -->
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 設定・変数 ---
+    let peerConnection;
+    let dataChannel;
+    let role = ''; // 'sender' or 'receiver'
+    
+    // ローカルP2Pのみ許可する設定 (STUNサーバーなし)
+    const rtcConfig = { 
+        iceServers: [] 
+    };
+
+    // --- UI制御 ---
+    function selectScene(type) {
+        const guideText = document.getElementById('guide-text');
+        const guideArea = document.getElementById('guide-area');
+        
+        if (type === 'wifi') {
+            guideText.innerHTML = `
+                <b>✅ Wi-Fiモード:</b><br>
+                両方のスマホが<b>「同じWi-Fiルーター」</b>に接続していることを確認してください。<br>
+                ※異なるWi-Fi（例: 2.4GHzと5GHzで隔離されている場合など）だと繋がらないことがあります。
+            `;
+        } else {
+            guideText.innerHTML = `
+                <b>✅ テザリングモード:</b><br>
+                片方のスマホで<b>「インターネット共有（テザリング）」</b>をONにし、<br>
+                もう片方が<b>そのWi-Fiに接続</b>してください。<br>
+                ※ギガを消費しないよう、親機は「モバイルデータ通信」をOFFにすることを推奨します。
+            `;
+        }
+        
+        document.getElementById('scene-selection').classList.add('hidden');
+        guideArea.classList.remove('hidden');
+    }
+
+    function showStatus(msg) {
+        document.getElementById('status-area').classList.remove('hidden');
+        document.getElementById('status-text').textContent = msg;
+    }
+
+    // --- WebRTC 初期化プロセス ---
+    function initPeerConnection() {
+        const pc = new RTCPeerConnection(rtcConfig);
+
+        // ICE Candidate（接続経路情報）が見つかったら
+        pc.onicecandidate = event => {
+            if (event.candidate === null) {
+                // 収集完了 -> SDPを圧縮してQR表示
+                const sdpData = JSON.stringify(pc.localDescription);
+                const compressed = LZString.compressToBase64(sdpData);
+                generateQRCode(compressed);
+                document.getElementById('local-sdp').value = compressed;
+                showStatus("接続情報を生成しました。相手に見せてください。");
+            }
+        };
+
+        // 接続状態の変化
+        pc.onconnectionstatechange = () => {
+            showStatus(`接続状態: ${pc.connectionState}`);
+            if (pc.connectionState === 'connected') {
+                document.getElementById('step-show-qr').classList.add('hidden');
+                document.getElementById('step-scan-qr').classList.add('hidden');
+                document.getElementById('status-area').classList.add('hidden');
+                document.getElementById('transfer-ui').classList.remove('hidden');
+            }
+        };
+
+        return pc;
+    }
+
+    // --- 送信側の開始フロー ---
+    async function startAsSender() {
+        role = 'sender';
+        document.getElementById('guide-area').classList.add('hidden');
+        document.getElementById('sender-controls').classList.remove('hidden');
+        document.getElementById('step-show-qr').classList.remove('hidden'); // まずQRを見せる
+        showStatus("接続経路を探しています...");
+
+        peerConnection = initPeerConnection();
+        
+        // データチャネル作成 (送信側のみ)
+        dataChannel = peerConnection.createDataChannel("fileTransfer");
+        setupDataChannelEvents(dataChannel);
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+    }
+
+    // --- 受信側の開始フロー ---
+    async function startAsReceiver() {
+        role = 'receiver';
+        document.getElementById('guide-area').classList.add('hidden');
+        document.getElementById('receiver-controls').classList.remove('hidden');
+        document.getElementById('step-scan-qr').classList.remove('hidden'); // まずスキャンする
+        showStatus("相手のQRコードを読み取ってください。");
+
+        peerConnection = initPeerConnection();
+        
+        // データチャネル受け取り待機
+        peerConnection.ondatachannel = event => {
+            setupDataChannelEvents(event.channel);
+        };
+    }
+
+    // --- データチャネル (送受信共通処理) ---
+    let incomingFileInfo = null;
+    let incomingFileBuffer = [];
+    let receivedSize = 0;
+
+    function setupDataChannelEvents(channel) {
+        dataChannel = channel;
+        dataChannel.onopen = () => {
+            showStatus("P2P接続完了！");
+            // ステップUIを完全に隠す
+            document.getElementById('step-show-qr').classList.add('hidden');
+            document.getElementById('step-scan-qr').classList.add('hidden');
+        };
+
+        dataChannel.onmessage = event => {
+            const data = event.data;
+            
+            if (typeof data === 'string') {
+                // メタデータ受信
+                incomingFileInfo = JSON.parse(data);
+                incomingFileBuffer = [];
+                receivedSize = 0;
+                document.getElementById('progress-container').style.display = 'block';
+                showStatus(`受信中: ${incomingFileInfo.name}`);
+            } else {
+                // ファイルデータ受信
+                incomingFileBuffer.push(data);
+                receivedSize += data.byteLength;
+                updateProgress(receivedSize, incomingFileInfo.size);
+
+                if (receivedSize >= incomingFileInfo.size) {
+                    // 完了
+                    const blob = new Blob(incomingFileBuffer);
+                    const url = URL.createObjectURL(blob);
+                    
+                    const div = document.createElement('div');
+                    div.className = 'file-item';
+                    div.innerHTML = `
+                        <div><b>${incomingFileInfo.name}</b> (${formatSize(incomingFileInfo.size)})</div>
+                        <a href="${url}" download="${incomingFileInfo.name}" class="download-link">💾 保存する</a>
+                    `;
+                    document.getElementById('received-files').appendChild(div);
+                    showStatus("受信完了");
+                    document.getElementById('progress-container').style.display = 'none';
+                }
+            }
+        };
+    }
+
+    // --- ファイル送信処理 ---
+    async function sendFile() {
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+        if (!file || dataChannel.readyState !== 'open') return;
+
+        // メタデータを送る
+        dataChannel.send(JSON.stringify({ name: file.name, size: file.size }));
+        
+        document.getElementById('progress-container').style.display = 'block';
+        const buffer = await file.arrayBuffer();
+        const CHUNK_SIZE = 16384; // 16KB
+        let offset = 0;
+
+        // バッファ溢れを防ぎながら送信
+        const sendLoop = setInterval(() => {
+            if (dataChannel.bufferedAmount > 1000000) return; // バッファがいっぱいなら待つ
+
+            if (offset >= buffer.byteLength) {
+                clearInterval(sendLoop);
+                showStatus("送信完了");
+                document.getElementById('progress-container').style.display = 'none';
+                return;
+            }
+
+            const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
+            dataChannel.send(chunk);
+            offset += CHUNK_SIZE;
+            updateProgress(offset, file.size);
+        }, 5); // 送信間隔
+    }
+
+    function updateProgress(current, total) {
+        const percent = Math.min((current / total) * 100, 100);
+        document.getElementById('progress-bar').style.width = percent + '%';
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        else return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    // --- QRコード生成 ---
+    function generateQRCode(text) {
+        const container = document.getElementById('qr-display');
+        container.innerHTML = "";
+        try {
+            new QRCode(container, {
+                text: text,
+                width: 250,
+                height: 250,
+                correctLevel: QRCode.CorrectLevel.L // データ量を減らすため低レベル補正
+            });
+        } catch(e) {
+            container.textContent = "データ量が多すぎてQRコード化できませんでした。下のテキストボックスを使ってください。";
+        }
+    }
+
+    // --- カメラ読み取り関連 ---
+    let video = document.getElementById('video');
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    let isScanning = false;
+
+    function startScan() {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => {
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true); // iOS対応
+                video.play();
+                isScanning = true;
+                requestAnimationFrame(scanTick);
+            })
+            .catch(err => {
+                alert("カメラを起動できませんでした。HTTPSで接続しているか確認してください。\n" + err.name);
+            });
+    }
+
+    function scanTick() {
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+
+            if (code) {
+                isScanning = false;
+                video.srcObject.getTracks().forEach(t => t.stop()); // カメラ停止
+                handleScannedData(code.data);
+                return;
+            }
+        }
+        if (isScanning) requestAnimationFrame(scanTick);
+    }
+
+    function manualPaste() {
+        const text = document.getElementById('remote-sdp-input').value;
+        if(text) handleScannedData(text);
+    }
+
+    // --- 読み取ったデータの処理フロー ---
+    function handleScannedData(compressedData) {
+        try {
+            const sdpStr = LZString.decompressFromBase64(compressedData);
+            if (!sdpStr) throw new Error("Decompress failed");
+            const desc = JSON.parse(sdpStr);
+            
+            processRemoteDescription(desc);
+        } catch(e) {
+            alert("データの読み取りに失敗しました。");
+        }
+    }
+
+    async function processRemoteDescription(desc) {
+        await peerConnection.setRemoteDescription(desc);
+
+        if (role === 'receiver' && desc.type === 'offer') {
+            // 受信側：Offerを受け取った -> Answerを生成 -> Stepを切り替え
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            // UI切り替え: スキャン画面を隠し、QR表示画面を出す
+            document.getElementById('step-scan-qr').classList.add('hidden');
+            document.getElementById('step-show-qr').classList.remove('hidden');
+            showStatus("返答用QRを生成中...しばらくお待ちください");
+            
+            // onicecandidate でQRが表示されるのを待つ
+            
+        } else if (role === 'sender' && desc.type === 'answer') {
+            // 送信側：Answerを受け取った -> 接続完了待ち
+            showStatus("相手の応答を確認しました。接続確立中...");
+        }
+    }
+</script>
+
+</body>
+</html>
