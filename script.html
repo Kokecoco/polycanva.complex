@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>専用台本暗記ツール</title>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: #1a1a1a; color: #e0e0e0; margin: 0; padding: 20px; line-height: 1.6; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; font-size: 22px; margin-bottom: 20px; color: #4db8ff; }
+        
+        /* 設定エリア */
+        .setup-area { background: #333; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        textarea { width: 100%; height: 150px; background: #222; color: #fff; border: 1px solid #555; padding: 10px; border-radius: 5px; font-size: 14px; box-sizing: border-box; font-family: monospace; }
+        .controls { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+        input[type="text"] { padding: 10px; border-radius: 5px; border: none; width: 200px; background: #fff; color: #000; }
+        button { padding: 10px 25px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; font-weight: bold; transition: 0.2s; }
+        button:hover { background-color: #0056b3; transform: scale(1.05); }
+        button.reset { background-color: #dc3545; font-size: 14px; padding: 5px 15px;}
+
+        /* 演習エリア */
+        #stage { display: flex; flex-direction: column; gap: 15px; padding-bottom: 100px; }
+        
+        /* セリフの箱 */
+        .line-box {
+            padding: 12px 18px;
+            border-radius: 8px;
+            background: #2d2d2d;
+            border-left: 4px solid #555;
+            position: relative;
+            max-width: 85%;
+        }
+
+        .role-name { font-size: 13px; color: #aaa; margin-bottom: 4px; font-weight: bold; }
+        .text-content { font-size: 18px; white-space: pre-wrap; font-family: "Georgia", serif; letter-spacing: 0.03em;}
+
+        /* ト書き（セリフ以外のアクション） */
+        .stage-direction {
+            align-self: center;
+            background: transparent;
+            border: 1px dashed #555;
+            color: #888;
+            font-size: 14px;
+            font-style: italic;
+            text-align: center;
+            width: 90%;
+            padding: 5px;
+        }
+
+        /* 自分の役 */
+        .my-line {
+            background: #102a3a;
+            border-left: 4px solid #4db8ff;
+            align-self: flex-end; /* 右側に配置 */
+            text-align: left; /* テキスト自体は左揃えの方が見やすい */
+        }
+        .my-line .role-name { text-align: right; color: #80d4ff; }
+        
+        /* 相手の役 */
+        .opponent-line {
+            align-self: flex-start; /* 左側に配置 */
+        }
+
+        /* ★ぼかし効果★ */
+        .blur-mode .my-line .text-content {
+            color: transparent;
+            text-shadow: 0 0 13px rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+
+        /* ホバー/タップで見える */
+        .blur-mode .my-line .text-content:hover,
+        .blur-mode .my-line .text-content:active {
+            color: #fff;
+            text-shadow: none;
+        }
+        
+        /* 完了済み */
+        .revealed {
+            color: #fff !important;
+            text-shadow: none !important;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>台本暗記：想起トレーニング</h1>
+
+    <div class="setup-area" id="setup-panel">
+        <textarea id="raw-script" placeholder="ここに台本を貼り付けてください"></textarea>
+        <div class="controls">
+            <input type="text" id="my-role" placeholder="自分の役名 (例: Patient)">
+            <button onclick="startDrill()">練習スタート</button>
+        </div>
+    </div>
+
+    <div id="drill-area" style="display:none;">
+        <div class="controls" style="margin-bottom: 20px; justify-content: space-between;">
+            <button class="reset" onclick="location.reload()">設定に戻る</button>
+            <div style="color:#aaa; font-size:12px;">自分のセリフに触れると見えます</div>
+        </div>
+        
+        <div id="stage" class="blur-mode">
+            <!-- セリフ生成エリア -->
+        </div>
+    </div>
+</div>
+
+<script>
+    function startDrill() {
+        const rawText = document.getElementById('raw-script').value;
+        const myRoleName = document.getElementById('my-role').value.trim();
+        const stage = document.getElementById('stage');
+        
+        if (!rawText || !myRoleName) {
+            alert("台本を貼り付け、役名を入力してください");
+            return;
+        }
+
+        document.getElementById('setup-panel').style.display = 'none';
+        document.getElementById('drill-area').style.display = 'block';
+        stage.innerHTML = '';
+
+        const lines = rawText.split('\n');
+
+        lines.forEach(line => {
+            const cleanLine = line.trim();
+            if (cleanLine === '') return;
+
+            // 「」があるかどうかで、セリフかト書きかを判定
+            const openBracket = cleanLine.indexOf('「');
+            const closeBracket = cleanLine.lastIndexOf('」');
+
+            // --- A. セリフ行の場合 ---
+            if (openBracket !== -1 && closeBracket !== -1) {
+                const rolePart = cleanLine.substring(0, openBracket).trim(); // 「の前までが役名
+                let dialoguePart = cleanLine.substring(openBracket + 1, closeBracket); // 「」の中身
+
+                const isMyRole = rolePart.toLowerCase().includes(myRoleName.toLowerCase());
+
+                const div = document.createElement('div');
+                div.className = 'line-box ' + (isMyRole ? 'my-line' : 'opponent-line');
+
+                const roleDiv = document.createElement('div');
+                roleDiv.className = 'role-name';
+                roleDiv.innerText = rolePart;
+
+                const textDiv = document.createElement('div');
+                textDiv.className = 'text-content';
+                textDiv.innerText = dialoguePart;
+
+                if (isMyRole) {
+                    textDiv.onclick = function() {
+                        this.classList.toggle('revealed');
+                    };
+                }
+
+                div.appendChild(roleDiv);
+                div.appendChild(textDiv);
+                stage.appendChild(div);
+
+            } 
+            // --- B. ト書き（アクションのみ）の場合 ---
+            else {
+                const div = document.createElement('div');
+                div.className = 'stage-direction';
+                div.innerText = cleanLine;
+                stage.appendChild(div);
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
