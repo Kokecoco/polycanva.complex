@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QRコード生成ツール</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        #text-input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box; /* paddingを含めた幅計算 */
+            font-size: 1em;
+        }
+        #generate-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        #generate-btn:hover {
+            background-color: #0056b3;
+        }
+        #qrcode-container {
+            margin-top: 30px;
+            padding: 20px;
+            border: 1px dashed #ccc;
+            border-radius: 8px;
+            min-height: 256px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f9f9f9;
+        }
+        #qrcode-container img {
+            max-width: 100%;
+        }
+        .placeholder-text {
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>QRコード生成ツール</h1>
+        <input type="text" id="text-input" placeholder="ここにURLやテキストを入力してください">
+        <button id="generate-btn">QRコードを生成</button>
+        <div id="qrcode-container">
+            <span class="placeholder-text">ここにQRコードが表示されます</span>
+        </div>
+    </div>
+
+    <!-- qrcode.jsライブラリをCDNから読み込みます -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+    <script>
+        // ボタンがクリックされたときの処理を設定します
+        document.getElementById('generate-btn').addEventListener('click', function() {
+            // 入力されたテキストを取得します
+            const inputText = document.getElementById('text-input').value.trim();
+            const qrcodeContainer = document.getElementById('qrcode-container');
+
+            // 既存のQRコードやプレースホルダーテキストを消去します
+            qrcodeContainer.innerHTML = "";
+
+            // テキストが入力されているかチェックします
+            if (inputText) {
+                // QRCode.jsを使ってQRコードを生成します
+                new QRCode(qrcodeContainer, {
+                    text: inputText,
+                    width: 256,
+                    height: 256,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+            } else {
+                // 入力がない場合はメッセージを表示します
+                qrcodeContainer.innerHTML = '<span class="placeholder-text">テキストまたはURLを入力してください</span>';
+            }
+        });
+
+        // Enterキーでも生成できるようにします
+        document.getElementById('text-input').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                document.getElementById('generate-btn').click();
+            }
+        });
+    </script>
+
+</body>
+</html>

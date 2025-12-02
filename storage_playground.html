@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Storage Playground</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 0 15px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            background-color: #f9f9f9;
+        }
+        h1 {
+            text-align: center;
+            color: #444;
+        }
+        h2 {
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 5px;
+            color: #007bff;
+        }
+        .input-group {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .input-group label {
+            font-weight: bold;
+            flex-basis: 80px;
+        }
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.danger {
+            background-color: #dc3545;
+        }
+        button.danger:hover {
+            background-color: #c82333;
+        }
+        .output {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Web Storage Playground</h1>
+    <p>このページでは、ブラウザのローカルストレージ、IndexedDB、Cookieの基本的な操作（追加・取得・削除）を試すことができます。ブラウザの開発者ツール（F12キーで開くことが多いです）の「Application」タブと合わせて確認すると、より理解が深まります。</p>
+
+    <!-- LocalStorage Section -->
+    <div class="container">
+        <h2>LocalStorage</h2>
+        <div class="input-group">
+            <label for="ls-key">キー:</label>
+            <input type="text" id="ls-key" placeholder="Key">
+        </div>
+        <div class="input-group">
+            <label for="ls-value">値:</label>
+            <input type="text" id="ls-value" placeholder="Value">
+        </div>
+        <div class="buttons">
+            <button id="ls-add">追加 / 更新</button>
+            <button id="ls-get">取得</button>
+            <button id="ls-remove">削除</button>
+            <button id="ls-clear" class="danger">すべて削除</button>
+        </div>
+        <h3>現在のデータ:</h3>
+        <div id="ls-output" class="output"></div>
+    </div>
+
+    <!-- IndexedDB Section -->
+    <div class="container">
+        <h2>IndexedDB</h2>
+        <div class="input-group">
+            <label for="idb-key">キー:</label>
+            <input type="text" id="idb-key" placeholder="Key">
+        </div>
+        <div class="input-group">
+            <label for="idb-value">値:</label>
+            <input type="text" id="idb-value" placeholder="Value (can be object)">
+        </div>
+        <div class="buttons">
+            <button id="idb-add">追加 / 更新</button>
+            <button id="idb-get">取得</button>
+            <button id="idb-remove">削除</button>
+            <button id="idb-clear" class="danger">すべて削除</button>
+        </div>
+        <h3>現在のデータ:</h3>
+        <div id="idb-output" class="output"></div>
+    </div>
+
+    <!-- Cookie Section -->
+    <div class="container">
+        <h2>Cookie</h2>
+        <div class="input-group">
+            <label for="cookie-key">キー:</label>
+            <input type="text" id="cookie-key" placeholder="Key">
+        </div>
+        <div class="input-group">
+            <label for="cookie-value">値:</label>
+            <input type="text" id="cookie-value" placeholder="Value">
+        </div>
+        <div class="buttons">
+            <button id="cookie-add">追加 / 更新 (Session)</button>
+            <button id="cookie-get">取得</button>
+            <button id="cookie-remove">削除</button>
+        </div>
+        <h3>現在のデータ:</h3>
+        <div id="cookie-output" class="output"></div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- LocalStorage Logic ---
+        const lsKey = document.getElementById('ls-key');
+        const lsValue = document.getElementById('ls-value');
+        const lsOutput = document.getElementById('ls-output');
+
+        const updateLsView = () => {
+            lsOutput.textContent = '';
+            if (localStorage.length === 0) {
+                lsOutput.textContent = 'データがありません。';
+                return;
+            }
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                lsOutput.textContent += `"${key}": "${value}"\n`;
+            }
+        };
+
+        document.getElementById('ls-add').addEventListener('click', () => {
+            if (lsKey.value) {
+                localStorage.setItem(lsKey.value, lsValue.value);
+                updateLsView();
+            }
+        });
+
+        document.getElementById('ls-get').addEventListener('click', () => {
+            if (lsKey.value) {
+                const value = localStorage.getItem(lsKey.value);
+                lsValue.value = value !== null ? value : '';
+                alert(value !== null ? `キー"${lsKey.value}"の値は "${value}" です。` : `キー"${lsKey.value}"は見つかりません。`);
+            }
+        });
+
+        document.getElementById('ls-remove').addEventListener('click', () => {
+            if (lsKey.value) {
+                localStorage.removeItem(lsKey.value);
+                updateLsView();
+            }
+        });
+
+        document.getElementById('ls-clear').addEventListener('click', () => {
+            if (confirm('LocalStorageのすべてのデータを削除しますか？')) {
+                localStorage.clear();
+                updateLsView();
+            }
+        });
+
+
+        // --- IndexedDB Logic ---
+        const idbKey = document.getElementById('idb-key');
+        const idbValue = document.getElementById('idb-value');
+        const idbOutput = document.getElementById('idb-output');
+        let db;
+
+        const dbName = 'PlaygroundDB';
+        const storeName = 'PlaygroundStore';
+
+        const initDB = () => {
+            const request = indexedDB.open(dbName, 1);
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(storeName)) {
+                    db.createObjectStore(storeName);
+                }
+            };
+
+            request.onsuccess = (event) => {
+                db = event.target.result;
+                updateIdbView();
+            };
+
+            request.onerror = (event) => {
+                console.error("IndexedDB error:", event.target.errorCode);
+                idbOutput.textContent = 'IndexedDBの初期化に失敗しました。';
+            };
+        };
+
+        const updateIdbView = () => {
+            if (!db) {
+                idbOutput.textContent = 'DBに接続されていません。';
+                return;
+            }
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.getAll();
+            const keysRequest = store.getAllKeys();
+            
+            idbOutput.textContent = '';
+
+            Promise.all([
+                new Promise((resolve, reject) => {
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                }),
+                new Promise((resolve, reject) => {
+                    keysRequest.onsuccess = () => resolve(keysRequest.result);
+                    keysRequest.onerror = () => reject(keysRequest.error);
+                })
+            ]).then(([values, keys]) => {
+                if (keys.length === 0) {
+                    idbOutput.textContent = 'データがありません。';
+                    return;
+                }
+                keys.forEach((key, i) => {
+                    const value = values[i];
+                    idbOutput.textContent += `"${key}": ${JSON.stringify(value)}\n`;
+                });
+            }).catch(error => {
+                console.error('データの取得に失敗しました:', error);
+                idbOutput.textContent = 'データの取得に失敗しました。';
+            });
+        };
+
+        document.getElementById('idb-add').addEventListener('click', () => {
+            if (idbKey.value && db) {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                // JSONとしてパースを試みる
+                let valueToStore;
+                try {
+                    valueToStore = JSON.parse(idbValue.value);
+                } catch (e) {
+                    valueToStore = idbValue.value;
+                }
+                const request = store.put(valueToStore, idbKey.value);
+                request.onsuccess = () => updateIdbView();
+                request.onerror = () => console.error("データの追加に失敗しました。");
+            }
+        });
+        
+        document.getElementById('idb-get').addEventListener('click', () => {
+            if (idbKey.value && db) {
+                const transaction = db.transaction(storeName, 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.get(idbKey.value);
+                request.onsuccess = () => {
+                    const value = request.result;
+                    const valueStr = value !== undefined ? JSON.stringify(value) : '';
+                    idbValue.value = valueStr;
+                    alert(value !== undefined ? `キー"${idbKey.value}"の値は ${valueStr} です。` : `キー"${idbKey.value}"は見つかりません。`);
+                };
+            }
+        });
+        
+        document.getElementById('idb-remove').addEventListener('click', () => {
+            if (idbKey.value && db) {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.delete(idbKey.value);
+                request.onsuccess = () => updateIdbView();
+            }
+        });
+
+        document.getElementById('idb-clear').addEventListener('click', () => {
+            if (confirm('IndexedDBのすべてのデータを削除しますか？') && db) {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.clear();
+                request.onsuccess = () => updateIdbView();
+            }
+        });
+
+        // --- Cookie Logic ---
+        const cookieKey = document.getElementById('cookie-key');
+        const cookieValue = document.getElementById('cookie-value');
+        const cookieOutput = document.getElementById('cookie-output');
+
+        const getCookie = (name) => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+        };
+
+        const updateCookieView = () => {
+            cookieOutput.textContent = '';
+            const cookies = document.cookie;
+            if (cookies === '') {
+                cookieOutput.textContent = 'データがありません。';
+                return;
+            }
+            cookieOutput.textContent = cookies.split(';').map(c => c.trim()).join('\n');
+        };
+
+        document.getElementById('cookie-add').addEventListener('click', () => {
+            if (cookieKey.value) {
+                document.cookie = `${cookieKey.value}=${encodeURIComponent(cookieValue.value)}; path=/`;
+                updateCookieView();
+            }
+        });
+
+        document.getElementById('cookie-get').addEventListener('click', () => {
+            if (cookieKey.value) {
+                const value = getCookie(cookieKey.value);
+                cookieValue.value = value !== undefined ? value : '';
+                alert(value !== undefined ? `キー"${cookieKey.value}"の値は "${value}" です。` : `キー"${cookieKey.value}"は見つかりません。`);
+            }
+        });
+
+        document.getElementById('cookie-remove').addEventListener('click', () => {
+            if (cookieKey.value) {
+                document.cookie = `${cookieKey.value}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+                updateCookieView();
+            }
+        });
+        
+        // --- Initial Load ---
+        updateLsView();
+        initDB(); // This will trigger updateIdbView on success
+        updateCookieView();
+    });
+    </script>
+</body>
+</html>
