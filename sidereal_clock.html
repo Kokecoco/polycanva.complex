@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>恒星時時計 (Sidereal Clock)</title>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            text-align: center;
+            background: #1e293b;
+            padding: 3rem;
+            border-radius: 20px;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+            border: 1px solid #334155;
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+            font-weight: normal;
+        }
+
+        .clock-display {
+            font-size: 4rem;
+            font-weight: bold;
+            color: #38bdf8; /* Cyan color */
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+            letter-spacing: 2px;
+            margin: 10px 0;
+        }
+
+        .label {
+            font-size: 0.9rem;
+            color: #64748b;
+            margin-bottom: 2rem;
+        }
+
+        .sub-clock {
+            font-size: 1.5rem;
+            color: #cbd5e1;
+            opacity: 0.7;
+        }
+        
+        .sub-label {
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+
+        .note {
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #475569;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- 恒星時 -->
+        <h1>東京平均恒星時 (Sidereal Time)</h1>
+        <div class="clock-display" id="sidereal-clock">00:00:00.00</div>
+        <div class="label">1日 = 23時間56分4秒 (太陽時)</div>
+
+        <hr style="border-color: #334155; margin: 20px 0; opacity: 0.5;">
+
+        <!-- 通常の太陽時 -->
+        <div class="sub-label">日本標準時 (Standard Solar Time)</div>
+        <div class="sub-clock" id="solar-clock">00:00:00.00</div>
+
+        <div class="note">
+            ※恒星時は地球の自転に基づく時間です。通常の時計よりも毎日約4分早く進むため、1年でちょうど1日分の差が生じます。
+        </div>
+    </div>
+
+    <script>
+        // 東京の経度 (東経139.7度)
+        const LONGITUDE = 139.6917;
+
+        function updateClocks() {
+            const now = new Date();
+
+            // 1. 通常の時計 (日本時間) の表示
+            updateSolarClock(now);
+
+            // 2. 恒星時の計算と表示
+            updateSiderealClock(now);
+
+            requestAnimationFrame(updateClocks);
+        }
+
+        function updateSolarClock(date) {
+            const h = String(date.getHours()).padStart(2, '0');
+            const m = String(date.getMinutes()).padStart(2, '0');
+            const s = String(date.getSeconds()).padStart(2, '0');
+            // ミリ秒を2桁で表示
+            const ms = String(Math.floor(date.getMilliseconds() / 10)).padStart(2, '0');
+            
+            document.getElementById('solar-clock').innerText = `${h}:${m}:${s}.${ms}`;
+        }
+
+        function updateSiderealClock(date) {
+            // グリニッジ平均恒星時 (GMST) の計算
+            // ユリウス日 (Julian Date) の計算
+            // JSのgetTime()は1970/1/1からのミリ秒。
+            // 2440587.5 は 1970/1/1 0:00 UTC のユリウス日
+            const jd = (date.getTime() / 86400000.0) + 2440587.5;
+
+            // J2000.0 (2000年1月1日12:00 UTC) からの日数 (D)
+            const d = jd - 2451545.0;
+
+            // GMST (度数法) の計算式 (近似式)
+            // GMST = 280.46061837 + 360.98564736629 * D
+            let gmstDeg = 280.46061837 + 360.98564736629 * d;
+
+            // 0-360度の範囲に正規化
+            gmstDeg = gmstDeg % 360;
+            if (gmstDeg < 0) gmstDeg += 360;
+
+            // 地方恒星時 (LST) = GMST + 経度
+            let lstDeg = gmstDeg + LONGITUDE;
+            
+            // 再度正規化
+            lstDeg = lstDeg % 360;
+            if (lstDeg < 0) lstDeg += 360;
+
+            // 角度を時間に変換 (15度 = 1時間)
+            const totalHours = lstDeg / 15;
+
+            const hVal = Math.floor(totalHours);
+            const mVal = Math.floor((totalHours - hVal) * 60);
+            const sVal = Math.floor(((totalHours - hVal) * 60 - mVal) * 60);
+            
+            // ミリ秒相当の計算 (視覚的なスピード感のため)
+            const remainderSeconds = ((totalHours - hVal) * 60 - mVal) * 60 - sVal;
+            const msVal = Math.floor(remainderSeconds * 100);
+
+            // フォーマット
+            const hStr = String(hVal).padStart(2, '0');
+            const mStr = String(mVal).padStart(2, '0');
+            const sStr = String(sVal).padStart(2, '0');
+            const msStr = String(msVal).padStart(2, '0');
+
+            document.getElementById('sidereal-clock').innerText = `${hStr}:${mStr}:${sStr}.${msStr}`;
+        }
+
+        // 開始
+        updateClocks();
+    </script>
+</body>
+</html>
