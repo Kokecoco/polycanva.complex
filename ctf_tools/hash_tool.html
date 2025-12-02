@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>フォルダハッシュ計算ツール</title>
+    <style>
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 15px;
+            background-color: #eef2f5;
+            border-radius: 6px;
+        }
+        input[type="file"] {
+            flex-grow: 1;
+        }
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #status {
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #555;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+            word-break: break-all;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .hash-cell {
+            font-family: monospace;
+            color: #d35400;
+        }
+        .path-cell {
+            color: #2980b9;
+        }
+        /* ロード中のアニメーション */
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>フォルダハッシュ計算機</h1>
+    <p>フォルダを選択すると、中のすべてのファイルのハッシュ値を計算して表示します。<br>※処理はすべてブラウザ内で行われ、サーバーには送信されません。</p>
+
+    <div class="controls">
+        <!-- webkitdirectory 属性がフォルダ選択を可能にします -->
+        <input type="file" id="fileInput" webkitdirectory multiple>
+        
+        <select id="algoSelect">
+            <option value="SHA-256" selected>SHA-256</option>
+            <option value="SHA-1">SHA-1</option>
+            <option value="SHA-384">SHA-384</option>
+            <option value="SHA-512">SHA-512</option>
+        </select>
+    </div>
+
+    <div id="status">ファイルを選択してください...</div>
+
+    <table id="resultTable">
+        <thead>
+            <tr>
+                <th style="width: 30%;">ファイルパス</th>
+                <th style="width: 10%;">サイズ</th>
+                <th style="width: 60%;">ハッシュ値</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- 結果がここに挿入されます -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const algoSelect = document.getElementById('algoSelect');
+    const resultTableBody = document.querySelector('#resultTable tbody');
+    const statusDiv = document.getElementById('status');
+
+    fileInput.addEventListener('change', async (event) => {
+        const files = Array.from(event.target.files);
+        const algorithm = algoSelect.value;
+
+        if (files.length === 0) return;
+
+        // テーブルをクリア
+        resultTableBody.innerHTML = '';
+        statusDiv.textContent = `処理中... (0 / ${files.length})`;
+        
+        // パスでソート（フォルダ構造順に見やすくする）
+        files.sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath));
+
+        let processedCount = 0;
+
+        // UIをブロックしないように非同期で順次処理
+        for (const file of files) {
+            try {
+                const hash = await calculateHash(file, algorithm);
+                addResultRow(file, hash);
+            } catch (error) {
+                console.error(error);
+                addResultRow(file, "エラー: 計算できませんでした");
+            }
+            
+            processedCount++;
+            statusDiv.textContent = `処理中... (${processedCount} / ${files.length})`;
+        }
+
+        statusDiv.textContent = `完了: ${files.length} 個のファイルを処理しました (${algorithm})`;
+    });
+
+    /**
+     * ファイルのハッシュ値を計算する関数
+     * Web Crypto APIを使用
+     */
+    async function calculateHash(file, algorithm) {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest(algorithm, buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+    }
+
+    /**
+     * 結果をテーブルに追加する関数
+     */
+    function addResultRow(file, hash) {
+        const tr = document.createElement('tr');
+        
+        // ファイルパス
+        const tdPath = document.createElement('td');
+        tdPath.textContent = file.webkitRelativePath || file.name;
+        tdPath.className = 'path-cell';
+        
+        // サイズ (KB/MB変換)
+        const tdSize = document.createElement('td');
+        tdSize.textContent = formatBytes(file.size);
+        
+        // ハッシュ値
+        const tdHash = document.createElement('td');
+        tdHash.textContent = hash;
+        tdHash.className = 'hash-cell';
+        
+        tr.appendChild(tdPath);
+        tr.appendChild(tdSize);
+        tr.appendChild(tdHash);
+        
+        resultTableBody.appendChild(tr);
+    }
+
+    /**
+     * バイト数を読みやすい形式に変換するヘルパー関数
+     */
+    function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+</script>
+
+</body>
+</html>
