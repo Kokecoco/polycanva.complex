@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルなミニチュア風 写真加工サイト</title>
+    <style>
+        /* CSS: サイトの見た目を整えます */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans CJK JP", "Yu Gothic", Meiryo, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #fff;
+            padding: 25px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        h1 {
+            color: #1a73e8;
+            margin-top: 0;
+        }
+
+        p {
+            color: #5f6368;
+            margin-bottom: 25px;
+        }
+
+        /* 操作パネル */
+        .controls {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px; /* 各項目の間隔 */
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            max-width: 450px;
+        }
+        
+        .control-group label {
+            white-space: nowrap;
+            text-align: right;
+            flex-basis: 120px; /* ラベルの幅を調整 */
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        /* ボタン */
+        .button-group { display: flex; gap: 15px; margin-top: 10px; }
+        .btn { border: none; padding: 12px 25px; border-radius: 4px; font-size: 16px; cursor: pointer; transition: background-color 0.3s, box-shadow 0.3s; }
+        #processButton { background-color: #1a73e8; color: white; }
+        #processButton:hover { background-color: #185abc; }
+        #downloadButton { background-color: #34a853; color: white; }
+        #downloadButton:hover { background-color: #2b8a43; }
+        
+        /* Canvas表示領域 */
+        .canvas-container { margin-top: 20px; border: 2px dashed #ccc; border-radius: 8px; padding: 10px; min-height: 150px; display: flex; align-items: center; justify-content: center; color: #888; }
+        canvas { max-width: 100%; height: auto; border-radius: 4px; }
+
+        /* エラー表示用のスタイル */
+        #error-console { position: fixed; bottom: 10px; right: 10px; width: 350px; max-height: 200px; overflow-y: auto; background-color: #fff0f0; border: 1px solid #d8000c; border-radius: 5px; z-index: 9999; font-family: monospace; font-size: 12px; color: #d8000c; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        #error-header { background-color: #ffd2d2; padding: 5px 10px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #d8000c; }
+        #close-error-console { background: none; border: none; font-size: 20px; cursor: pointer; color: #d8000c; line-height: 1; }
+        #error-message { padding: 10px; margin: 0; white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>リアルなミニチュア風 写真加工サイト</h1>
+        <p>光学レンズの特性を再現し、よりリアルなミニチュア風写真に仕上げます。</p>
+
+        <input type="file" id="imageLoader" accept="image/*">
+
+        <div id="canvasContainer" class="canvas-container">
+            <span id="placeholder">ここに画像プレビューが表示されます</span>
+            <canvas id="canvas"></canvas>
+        </div>
+        
+        <div id="controls" class="controls" style="display: none;">
+            <div class="control-group">
+                <label for="blurSlider">ぼかしの強さ:</label>
+                <input type="range" id="blurSlider" min="0" max="20" value="6" step="1">
+            </div>
+            <div class="control-group">
+                <label for="focusSlider">ピントの範囲:</label>
+                <input type="range" id="focusSlider" min="1" max="100" value="25" step="1">
+            </div>
+             <div class="control-group">
+                <label for="focusPositionSlider">ピントの位置:</label>
+                <input type="range" id="focusPositionSlider" min="0" max="100" value="50" step="1">
+            </div>
+            <hr style="width:80%; border:none; border-top: 1px solid #eee;">
+            <div class="control-group">
+                <label for="saturateSlider">色の鮮やかさ:</label>
+                <input type="range" id="saturateSlider" min="50" max="250" value="160" step="1">
+            </div>
+             <div class="control-group">
+                <label for="contrastSlider">コントラスト:</label>
+                <input type="range" id="contrastSlider" min="50" max="200" value="130" step="1">
+            </div>
+             <!-- === 「ハイライトの輝き」スライダーを追加 === -->
+             <div class="control-group">
+                <label for="glowSlider">ハイライトの輝き:</label>
+                <input type="range" id="glowSlider" min="0" max="20" value="10" step="1">
+            </div>
+             <div class="control-group">
+                <label for="vignetteSlider">周辺減光:</label>
+                <input type="range" id="vignetteSlider" min="0" max="80" value="35" step="1">
+            </div>
+            <div class="button-group">
+                <button id="processButton" class="btn">加工する</button>
+                <button id="downloadButton" class="btn" style="display: none;">ダウンロード</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="error-console" style="display:none;">
+      <div id="error-header"><span>JavaScript Error</span><button id="close-error-console">&times;</button></div>
+      <pre id="error-message"></pre>
+    </div>
+
+    <script>
+        // === グローバルエラーハンドラ ===
+        window.onerror = function(message, source, lineno, colno, error) {
+            const errorConsole = document.getElementById('error-console');
+            const errorMessage = document.getElementById('error-message');
+            let fullMessage = `Message: ${message}\nLine: ${lineno}\n`;
+            if (error && error.stack) { fullMessage += `\nStack:\n${error.stack}`; }
+            errorMessage.textContent = fullMessage; errorConsole.style.display = 'block'; return true; 
+        };
+        document.getElementById('close-error-console').addEventListener('click', () => { document.getElementById('error-console').style.display = 'none'; });
+
+        // === メインのアプリケーションコード ===
+        const imageLoader = document.getElementById('imageLoader'), canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d'), controls = document.getElementById('controls');
+        const placeholder = document.getElementById('placeholder'), processButton = document.getElementById('processButton'), downloadButton = document.getElementById('downloadButton');
+        let originalImage = null;
+
+        imageLoader.addEventListener('change', (e) => {
+            try {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        originalImage = img; canvas.width = img.width; canvas.height = img.height;
+                        ctx.drawImage(img, 0, 0); placeholder.style.display = 'none'; controls.style.display = 'flex'; downloadButton.style.display = 'none';
+                    }
+                    img.onerror = () => { throw new Error("画像ファイルの読み込みに失敗しました。"); };
+                    img.src = event.target.result;
+                }
+                reader.onerror = () => { throw new Error("ファイルの読み込み中にエラーが発生しました。"); };
+                reader.readAsDataURL(file);
+            } catch (err) { window.onerror(err.message, null, null, null, err); }
+        });
+
+        processButton.addEventListener('click', () => {
+             try {
+                if (!originalImage) { throw new Error('加工する画像が選択されていません。'); }
+                const params = {
+                    blur: document.getElementById('blurSlider').value, focusRange: document.getElementById('focusSlider').value / 100,
+                    focusPosition: document.getElementById('focusPositionSlider').value / 100, saturate: document.getElementById('saturateSlider').value,
+                    contrast: document.getElementById('contrastSlider').value, vignette: document.getElementById('vignetteSlider').value,
+                    glow: document.getElementById('glowSlider').value, // 新しいパラメータを取得
+                };
+                applyEffects(params);
+                downloadButton.style.display = 'inline-block';
+            } catch (err) { window.onerror(err.message, null, null, null, err); }
+        });
+
+        downloadButton.addEventListener('click', () => {
+            try {
+                const link = document.createElement('a');
+                link.download = 'miniature_photo.jpg';
+                link.href = canvas.toDataURL('image/jpeg', 0.95);
+                link.click();
+            } catch (err) { window.onerror("画像のダウンロードに失敗しました。", null, null, null, err); }
+        });
+
+        /**
+         * すべての効果を適用してCanvasに描画する関数
+         * @param {object} params - 加工パラメータのオブジェクト
+         */
+        function applyEffects(params) {
+            const width = canvas.width, height = canvas.height;
+            const colorFilter = `saturate(${params.saturate}%) contrast(${params.contrast}%)`;
+            const blurFilter = `blur(${params.blur}px)`;
+            ctx.clearRect(0, 0, width, height);
+
+            // --- ステップ1: 全体にぼかしとカラー調整を適用した背景を描画 ---
+            ctx.filter = `${blurFilter} ${colorFilter}`;
+            ctx.drawImage(originalImage, 0, 0);
+            ctx.filter = 'none';
+
+            // --- ステップ2: カラー調整のみ適用した鮮明な部分を重ねる ---
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = width; tempCanvas.height = height;
+            tempCtx.filter = colorFilter; tempCtx.drawImage(originalImage, 0, 0);
+            tempCtx.globalCompositeOperation = 'destination-in';
+            const gradient = tempCtx.createLinearGradient(0, 0, 0, height);
+            const startFocus = Math.max(0, params.focusPosition - (params.focusRange / 2));
+            const endFocus = Math.min(1, params.focusPosition + (params.focusRange / 2));
+            const edgeWidth = 0.1; // ぼけ足を滑らかにするため、縁の幅を少し広げる
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(Math.max(0, startFocus - edgeWidth), 'rgba(0,0,0,0)');
+            gradient.addColorStop(startFocus, 'rgba(0,0,0,1)');
+            gradient.addColorStop(endFocus, 'rgba(0,0,0,1)');
+            gradient.addColorStop(Math.min(1, endFocus + edgeWidth), 'rgba(0,0,0,0)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            tempCtx.fillStyle = gradient; tempCtx.fillRect(0, 0, width, height);
+            ctx.drawImage(tempCanvas, 0, 0);
+
+            // --- ステップ3: ハイライトの輝き(ブルーム効果)を追加 ---
+            if (params.glow > 0) {
+                const glowCanvas = document.createElement('canvas');
+                const glowCtx = glowCanvas.getContext('2d');
+                glowCanvas.width = width; glowCanvas.height = height;
+                // (A) ハイライト部分を抽出・強調して描画
+                glowCtx.filter = `brightness(120%) contrast(250%) saturate(150%)`;
+                glowCtx.drawImage(originalImage, 0, 0);
+                // (B) 抽出したハイライトを強くぼかす
+                glowCtx.filter = `blur(${params.glow}px)`;
+                glowCtx.drawImage(glowCanvas, 0, 0); // 自身にぼかしをかける
+                // (C) 合成モードを「スクリーン」にして、メインのCanvasに重ねる
+                ctx.globalCompositeOperation = 'screen';
+                ctx.globalAlpha = 0.8; // 輝きの強さを少し抑える
+                ctx.drawImage(glowCanvas, 0, 0);
+                // (D) 合成モードと透明度を元に戻す
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1.0;
+            }
+
+            // --- ステップ4: 周辺減光(ビネット効果)を追加 ---
+            if (params.vignette > 0) {
+                const outerRadius = Math.sqrt(Math.pow(width / 2, 2) + Math.pow(height / 2, 2));
+                const alpha = params.vignette / 100;
+                const vignetteGradient = ctx.createRadialGradient(width/2, height/2, height/3, width/2, height/2, outerRadius);
+                vignetteGradient.addColorStop(0.2, 'rgba(0,0,0,0)'); // 中心部は完全に透明
+                vignetteGradient.addColorStop(1, `rgba(0,0,0,${alpha})`);
+                ctx.fillStyle = vignetteGradient; ctx.fillRect(0, 0, width, height);
+            }
+        }
+    </script>
+
+</body>
+</html>

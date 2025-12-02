@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像背景透過ツール</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #111;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .control-item {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            border: 1px solid #ddd;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        input[type="range"] {
+            cursor: pointer;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #canvas-container {
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image:
+                linear-gradient(45deg, #eee 25%, transparent 25%),
+                linear-gradient(-45deg, #eee 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #eee 75%),
+                linear-gradient(-45deg, transparent 75%, #eee 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        #canvas {
+            max-width: 100%;
+            cursor: crosshair;
+        }
+        .info {
+            margin-top: 15px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>画像背景透過ツール</h1>
+        <div class="controls">
+            <div class="control-item">
+                <label for="imageLoader">1. 画像ファイルを選択</label>
+                <input type="file" id="imageLoader" accept="image/*">
+            </div>
+            <div class="control-item">
+                <label for="tolerance">2. 色の許容範囲: <span id="toleranceValue">20</span></label>
+                <input type="range" id="tolerance" min="0" max="255" value="20">
+            </div>
+             <div class="control-item">
+                <label for="downloadBtn">3. 画像を保存</label>
+                <button id="downloadBtn" disabled>画像をダウンロード</button>
+            </div>
+        </div>
+
+        <p class="info">画像を選択後、透明にしたい部分をクリックしてください。</p>
+
+        <div id="canvas-container">
+            <canvas id="canvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const imageLoader = document.getElementById('imageLoader');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const toleranceSlider = document.getElementById('tolerance');
+        const toleranceValueSpan = document.getElementById('toleranceValue');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        let originalImageData = null;
+
+        // スライダーの値を表示に反映
+        toleranceSlider.addEventListener('input', () => {
+            toleranceValueSpan.textContent = toleranceSlider.value;
+        });
+
+        // 画像が読み込まれたときの処理
+        imageLoader.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Canvasのサイズを画像に合わせる
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    // 画像をCanvasに描画
+                    ctx.drawImage(img, 0, 0);
+                    // 元の画像データを保持
+                    originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    // ダウンロードボタンを有効化
+                    downloadBtn.disabled = false;
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        // Canvasがクリックされたときの処理
+        canvas.addEventListener('click', (e) => {
+            if (!originalImageData) {
+                alert('先に画像を選択してください。');
+                return;
+            }
+
+            // 元の画像を再描画して、処理をリセット
+            ctx.putImageData(originalImageData, 0, 0);
+
+            // クリックされた座標を取得
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // クリックされたピクセルの色情報を取得 [R, G, B, A]
+            const clickedColorData = ctx.getImageData(x, y, 1, 1).data;
+            const targetR = clickedColorData[0];
+            const targetG = clickedColorData[1];
+            const targetB = clickedColorData[2];
+
+            // Canvas全体の画像データを取得
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            const tolerance = parseInt(toleranceSlider.value, 10);
+
+            // 全ピクセルをループ
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                // 色の差を計算（ユークリッド距離）
+                const colorDiff = Math.sqrt(
+                    Math.pow(r - targetR, 2) +
+                    Math.pow(g - targetG, 2) +
+                    Math.pow(b - targetB, 2)
+                );
+
+                // 差が許容範囲内なら、そのピクセルを透明にする
+                if (colorDiff <= tolerance) {
+                    data[i + 3] = 0; // アルファ値（透明度）を0に設定
+                }
+            }
+
+            // 変更した画像データをCanvasに書き戻す
+            ctx.putImageData(imageData, 0, 0);
+        });
+
+        // ダウンロードボタンの処理
+        downloadBtn.addEventListener('click', () => {
+            if (!originalImageData) return;
+
+            const link = document.createElement('a');
+            // ファイル名を 'transparent_image.png' に設定
+            link.download = 'transparent_image.png';
+            // Canvasの内容をPNG形式のデータURLとして取得
+            link.href = canvas.toDataURL('image/png');
+            // リンクをクリックしてダウンロードをトリガー
+            link.click();
+        });
+
+    </script>
+
+</body>
+</html>
