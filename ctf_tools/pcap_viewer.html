@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCAP Viewer: CTF Edition</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-bg: #252526;
+            --header-bg: #333333;
+            --accent-color: #007acc;
+            --text-color: #d4d4d4;
+            --border-color: #3e3e42;
+            --highlight-bg: #264f78;
+            --search-match: #6b4e00;
+        }
+
+        body {
+            font-family: 'Segoe UI', Consolas, Tahoma, sans-serif;
+            margin: 0; padding: 0; height: 100vh;
+            display: flex; flex-direction: column;
+            background-color: var(--bg-color); color: var(--text-color);
+            font-size: 13px;
+        }
+
+        /* Header & Search */
+        header {
+            background-color: var(--header-bg); padding: 8px 15px;
+            display: flex; align-items: center; gap: 15px;
+            border-bottom: 1px solid #000; flex-shrink: 0;
+        }
+        h1 { margin: 0; font-size: 1.1rem; color: #fff; font-weight: 600; }
+        .badge { background: #d63031; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; vertical-align: middle; }
+        
+        .search-box {
+            display: flex; flex: 1; max-width: 400px; background: #3c3c3c;
+            border: 1px solid #555; border-radius: 3px; overflow: hidden;
+        }
+        .search-box input {
+            flex: 1; background: transparent; border: none; color: #fff;
+            padding: 5px 10px; outline: none; font-family: inherit;
+        }
+        .search-box button {
+            background: #444; border: none; color: #ccc; cursor: pointer; padding: 0 10px; border-left: 1px solid #555;
+        }
+        .search-box button:hover { background: #555; }
+
+        .file-input-wrapper { background: #007acc; padding: 4px 10px; border-radius: 3px; cursor: pointer; }
+        .file-input-wrapper:hover { background: #0062a3; }
+        input[type="file"] { display: none; }
+        .file-label { color: white; cursor: pointer; font-weight: bold; }
+
+        /* Tabs */
+        .tabs {
+            display: flex; background: var(--header-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+        }
+        .tab-btn {
+            padding: 8px 16px; border: none; background: none; cursor: pointer;
+            color: #999; font-weight: 600; border-right: 1px solid #444; transition: 0.2s;
+        }
+        .tab-btn:hover { background: #3e3e42; color: #fff; }
+        .tab-btn.active { background: var(--panel-bg); color: #fff; border-top: 2px solid var(--accent-color); }
+
+        /* Panels */
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        .view-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+        .view-panel.active { display: flex; }
+
+        /* Packet List */
+        .packet-list-pane { flex: 2; overflow: auto; background: var(--panel-bg); border-bottom: 1px solid var(--border-color); }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        th {
+            background: #2d2d2d; color: #ccc; position: sticky; top: 0; text-align: left;
+            padding: 4px 8px; border-right: 1px solid #444; border-bottom: 1px solid #444; font-size: 12px;
+        }
+        td { padding: 3px 8px; border-right: 1px solid #333; border-bottom: 1px solid #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #ccc; }
+        tr:hover { background: #2a2d2e; }
+        tr.selected { background: var(--highlight-bg) !important; color: #fff; }
+        
+        /* Protocol Colors (Dark Theme) */
+        tr.proto-TCP { color: #a8c7fa; }
+        tr.proto-UDP { color: #f2c97d; }
+        tr.proto-ICMP { color: #f28b82; }
+        tr.match-search { background: var(--search-match); }
+
+        /* Details & Hex */
+        .details-pane { flex: 1; display: flex; background: #1e1e1e; border-top: 1px solid var(--border-color); min-height: 200px; }
+        .tree-view { flex: 1; overflow: auto; padding: 10px; border-right: 1px solid var(--border-color); font-family: Consolas, monospace; line-height: 1.4; }
+        .hex-view { flex: 1; display: flex; padding: 10px; overflow: auto; font-family: Consolas, monospace; background: #1e1e1e; }
+        .hex-left { border-right: 1px solid #444; padding-right: 10px; margin-right: 10px; color: #85c69c; user-select: text; }
+        .hex-right { color: #ce9178; user-select: text; }
+        
+        .detail-header { color: #569cd6; font-weight: bold; margin-top: 5px; border-bottom: 1px solid #333; }
+        .detail-row { margin-left: 10px; }
+        .decoder-box { margin-top: 10px; padding: 5px; background: #333; border: 1px solid #444; font-size: 12px; }
+        .decoder-label { color: #dcdcaa; font-weight: bold; display: block; margin-bottom: 2px;}
+
+        /* CTF Tools View */
+        .ctf-container { display: flex; flex: 1; overflow: hidden; }
+        .ctf-sidebar { width: 250px; background: #252526; border-right: 1px solid #444; display: flex; flex-direction: column; }
+        .ctf-main { flex: 1; background: #1e1e1e; padding: 20px; overflow: auto; font-family: Consolas, monospace; white-space: pre-wrap; color: #d4d4d4; }
+        .ctf-item { padding: 8px 10px; border-bottom: 1px solid #333; cursor: pointer; }
+        .ctf-item:hover { background: #2a2d2e; }
+        .ctf-item.active { background: var(--highlight-bg); }
+        .ctf-item-title { font-weight: bold; color: #dcdcaa; }
+        .ctf-item-desc { font-size: 11px; color: #888; }
+        .stream-content { user-select: text; }
+
+        /* Files View */
+        #fileView { padding: 20px; overflow: auto; }
+        .file-card { background: #252526; border: 1px solid #444; padding: 10px; margin-bottom: 10px; display: flex; align-items: center; }
+        .file-info { flex: 1; margin-left: 15px; color: #ccc; }
+        .btn-action { background: #0e639c; color: white; border: none; padding: 5px 10px; cursor: pointer; text-decoration: none; font-size: 11px; border-radius: 2px; }
+        .btn-action:hover { background: #1177bb; }
+
+        /* Log */
+        .status-bar { height: 25px; background: #007acc; color: white; display: flex; align-items: center; padding: 0 10px; font-size: 12px; flex-shrink: 0; }
+        .log-error { background: #c0392b; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>PCAP Viewer <span class="badge">CTF</span></h1>
+    
+    <div class="search-box" style="margin-left: 20px;">
+        <input type="text" id="searchInput" placeholder="Search string in payload (e.g. flag, pass)...">
+        <button onclick="performSearch()">Search</button>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <label class="file-input-wrapper">
+        <span class="file-label">Open PCAP</span>
+        <input type="file" id="fileInput" accept=".pcap">
+    </label>
+</header>
+
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('list')">Packet List</button>
+    <button class="tab-btn" onclick="switchTab('ctf')">CTF Tools & Streams</button>
+    <button class="tab-btn" onclick="switchTab('files')">Extracted Files</button>
+    <button class="tab-btn" onclick="switchTab('flow')">Sequence Diagram</button>
+</div>
+
+<div class="main-content">
+    
+    <!-- 1. Packet List View -->
+    <div id="listView" class="view-panel active">
+        <div class="packet-list-pane">
+            <table id="packetTable">
+                <thead>
+                    <tr>
+                        <th style="width: 50px;">No.</th>
+                        <th style="width: 80px;">Time</th>
+                        <th style="width: 120px;">Source</th>
+                        <th style="width: 120px;">Dest</th>
+                        <th style="width: 50px;">Proto</th>
+                        <th style="width: 50px;">Len</th>
+                        <th>Info</th>
+                    </tr>
+                </thead>
+                <tbody id="packetTableBody"></tbody>
+            </table>
+        </div>
+        <div class="details-pane">
+            <div class="tree-view" id="detailView">Select a packet...</div>
+            <div class="hex-view" id="hexView">
+                <div class="hex-left" id="hexLeft"></div>
+                <div class="hex-right" id="hexRight"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. CTF Tools View -->
+    <div id="ctfView" class="view-panel">
+        <div class="ctf-container">
+            <div class="ctf-sidebar" id="ctfSidebar">
+                <div style="padding:10px; font-weight:bold; color:#fff; background:#333;">Detected Findings</div>
+                <div id="ctfFindingsList"></div>
+                <div style="padding:10px; font-weight:bold; color:#fff; background:#333; border-top:1px solid #555;">TCP Streams</div>
+                <div id="ctfStreamsList"></div>
+            </div>
+            <div class="ctf-main" id="ctfMainContent">
+                <div style="color:#666; text-align:center; margin-top:50px;">
+                    Select an item from the sidebar.<br><br>
+                    <b>Findings:</b> Auto-detected flags, credentials, headers.<br>
+                    <b>Streams:</b> "Follow TCP Stream" reconstruction.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Files View -->
+    <div id="fileView" class="view-panel">
+        <div id="fileListContainer"></div>
+    </div>
+
+    <!-- 4. Flow View -->
+    <div id="flowView" class="view-panel">
+        <div id="flowCanvas" style="padding:20px; overflow:auto;"></div>
+    </div>
+
+</div>
+
+<div class="status-bar" id="statusBar">Ready.</div>
+
+<script>
+/**
+ * PCAP Viewer CTF Edition
+ * Features: Packet List, Split Hex, TCP Follow Stream, Credential Hunter, Global Search
+ */
+
+// --- Global State ---
+let packets = [];
+let tcpStreams = {}; // key: streamID, value: array of packets
+let streamIdMap = {}; // key: "ip:port-ip:port", value: int ID
+let startTime = 0;
+const LIMIT = 10000;
+
+// --- Logger ---
+function status(msg, isError=false) {
+    const bar = document.getElementById('statusBar');
+    bar.textContent = msg;
+    bar.className = isError ? 'status-bar log-error' : 'status-bar';
+    if(isError) console.error(msg);
+}
+
+// --- Tabs ---
+function switchTab(tab) {
+    document.querySelectorAll('.view-panel').forEach(e => e.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
+    document.getElementById(tab+'View').classList.add('active');
+    document.querySelector(`button[onclick="switchTab('${tab}')"]`).classList.add('active');
+    
+    if(tab==='flow' && packets.length) renderFlow();
+}
+
+// --- File Load ---
+document.getElementById('fileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    status(`Loading ${file.name}...`);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try {
+            parsePCAP(ev.target.result);
+            status(`Loaded ${packets.length} packets.`);
+            renderList();
+            analyzeCTF(); // Run CTF analysis
+            extractFiles();
+        } catch(err) { status(err.message, true); }
+    };
+    reader.readAsArrayBuffer(file);
+});
+
+// --- Parsing Logic ---
+function parsePCAP(buffer) {
+    packets = [];
+    tcpStreams = {};
+    streamIdMap = {};
+    
+    const view = new DataView(buffer);
+    const len = buffer.byteLength;
+    if(len < 24) throw new Error("File too short");
+
+    const magic = view.getUint32(0, true);
+    let le = true;
+    let timeScale = 1000000;
+
+    if(magic === 0xa1b2c3d4) le = true;
+    else if(magic === 0xd4c3b2a1) le = false;
+    else if(magic === 0xa1b23c4d) { le = true; timeScale = 1e9; }
+    else if(magic === 0x4d3cb2a1) { le = false; timeScale = 1e9; }
+    else if(magic === 0x0A0D0D0A) throw new Error("PCAPNG not supported. Use Wireshark to save as .pcap");
+    else status("Unknown magic, assuming LE", true);
+
+    let off = 24;
+    let idx = 1;
+    let streamCounter = 0;
+
+    while(off < len) {
+        if(idx > LIMIT) break;
+        if(off + 16 > len) break;
+
+        const ts_sec = view.getUint32(off, le);
+        const ts_usec = view.getUint32(off+4, le);
+        const incl = view.getUint32(off+8, le);
+        off += 16;
+
+        if(incl < 0 || incl > 65535 || off+incl > len) break;
+
+        const ts = ts_sec + (ts_usec / timeScale);
+        if(idx===1) startTime = ts;
+
+        const data = new Uint8Array(buffer, off, incl);
+        const pkt = decodePacket(data, ts, startTime, idx);
+        
+        // Stream ID assignment for TCP
+        if(pkt.proto === 'TCP') {
+            const k1 = `${pkt.src}:${pkt.srcPort}-${pkt.dst}:${pkt.dstPort}`;
+            const k2 = `${pkt.dst}:${pkt.dstPort}-${pkt.src}:${pkt.srcPort}`;
+            let sid = streamIdMap[k1] || streamIdMap[k2];
+            if(sid === undefined) {
+                sid = ++streamCounter;
+                streamIdMap[k1] = sid;
+                tcpStreams[sid] = [];
+            }
+            pkt.streamID = sid;
+            tcpStreams[sid].push(pkt);
+        }
+
+        packets.push(pkt);
+        off += incl;
+        idx++;
+    }
+}
+
+function decodePacket(data, ts, start, idx) {
+    let p = {
+        index: idx,
+        relTime: (ts - start).toFixed(4),
+        len: data.length,
+        src: '?', dst: '?', proto: '?', info: '',
+        raw: data,
+        payload: new Uint8Array(0),
+        srcPort:0, dstPort:0,
+        ascii: '' // Cache for search
+    };
+
+    if(data.length >= 14) {
+        let etype = (data[12]<<8)|data[13];
+        let ipOff = 14;
+        if(etype === 0x8100) { ipOff+=4; etype=(data[16]<<8)|data[17]; }
+
+        if(etype === 0x0800 && data.length >= ipOff+20) {
+            p.proto = 'IPv4';
+            p.src = data.slice(ipOff+12, ipOff+16).join('.');
+            p.dst = data.slice(ipOff+16, ipOff+20).join('.');
+            const prot = data[ipOff+9];
+            const ihl = (data[ipOff]&0x0f)*4;
+            const transOff = ipOff + ihl;
+
+            if(prot===6 && data.length >= transOff+20) {
+                p.proto = 'TCP';
+                p.srcPort = (data[transOff]<<8)|data[transOff+1];
+                p.dstPort = (data[transOff+2]<<8)|data[transOff+3];
+                const dataOff = ((data[transOff+12]>>4)*4);
+                p.payload = data.subarray(transOff+dataOff);
+                const flags = getFlags(data[transOff+13]);
+                p.info = `${p.srcPort} > ${p.dstPort} [${flags}] Len=${p.payload.length}`;
+            } else if(prot===17) {
+                p.proto = 'UDP';
+                p.srcPort = (data[transOff]<<8)|data[transOff+1];
+                p.dstPort = (data[transOff+2]<<8)|data[transOff+3];
+                p.payload = data.subarray(transOff+8);
+                p.info = `${p.srcPort} > ${p.dstPort} UDP Len=${p.payload.length}`;
+            } else if(prot===1) {
+                p.proto = 'ICMP';
+                p.info = 'ICMP';
+            }
+        }
+    }
+    
+    // Pre-calculate ASCII for search
+    if(p.payload.length > 0) {
+        p.ascii = new TextDecoder().decode(p.payload).replace(/[^\x20-\x7E]/g, '.');
+    }
+    return p;
+}
+
+function getFlags(b) {
+    let f=[];
+    if(b&0x02)f.push('S'); if(b&0x10)f.push('A'); if(b&0x01)f.push('F');
+    if(b&0x04)f.push('R'); if(b&0x08)f.push('P');
+    return f.join('');
+}
+
+// --- Search Functionality ---
+function performSearch() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    if(!q) return;
+
+    const rows = document.getElementById('packetTableBody').rows;
+    let found = 0;
+    
+    // Clear previous
+    document.querySelectorAll('.match-search').forEach(r => r.classList.remove('match-search'));
+
+    for(let i=0; i<packets.length && i<rows.length; i++) {
+        const p = packets[i];
+        if(p.payload.length > 0) {
+            // Check raw ASCII representation
+            if(p.ascii.toLowerCase().includes(q)) {
+                rows[i].classList.add('match-search');
+                if(found === 0) rows[i].scrollIntoView({behavior:'smooth', block:'center'});
+                found++;
+            }
+        }
+    }
+    status(`Search found ${found} matches.`);
+}
+
+// --- CTF Analysis (Flag & Stream Hunter) ---
+function analyzeCTF() {
+    const findingsList = document.getElementById('ctfFindingsList');
+    const streamsList = document.getElementById('ctfStreamsList');
+    findingsList.innerHTML = '';
+    streamsList.innerHTML = '';
+
+    let findings = [];
+
+    // 1. Scan for Strings
+    packets.forEach(p => {
+        if(p.payload.length < 2) return;
+        const text = p.ascii;
+        
+        // Patterns
+        if(text.match(/flag\{.*?\}/i)) addFinding(p, "Flag Format", text.match(/flag\{.*?\}/i)[0]);
+        if(text.includes("Authorization: Basic")) {
+            const b64 = text.split("Basic ")[1]?.split("\r")[0]?.trim();
+            try {
+                const dec = atob(b64);
+                addFinding(p, "Basic Auth", `${b64} -> ${dec}`);
+            } catch(e) { addFinding(p, "Basic Auth", b64); }
+        }
+        if(text.match(/(password|pass|passwd|pwd)\s*[:=]\s*[^\s]+/i)) addFinding(p, "Creds", text.match(/(password|pass|passwd|pwd)\s*[:=]\s*[^\s]+/i)[0]);
+        if(text.startsWith("USER ") || text.startsWith("PASS ")) addFinding(p, "FTP/Mail", text.trim());
+        if(text.includes("/bin/sh") || text.includes("cmd.exe")) addFinding(p, "Shell", "Command execution detected");
+    });
+
+    // 2. Render Findings
+    function addFinding(p, type, detail) {
+        const div = document.createElement('div');
+        div.className = 'ctf-item';
+        div.innerHTML = `<div class="ctf-item-title">[${type}] Pkt #${p.index}</div><div class="ctf-item-desc">${detail.substring(0, 40)}...</div>`;
+        div.onclick = () => {
+            switchTab('list');
+            const row = document.getElementById('packetTableBody').rows[p.index-1];
+            row.click();
+            row.scrollIntoView({block:'center'});
+        };
+        findingsList.appendChild(div);
+    }
+    if(!findingsList.hasChildNodes()) findingsList.innerHTML = '<div style="padding:10px; color:#666;">No obvious flags found.</div>';
+
+    // 3. Render Stream List
+    Object.keys(tcpStreams).forEach(sid => {
+        const streamPkts = tcpStreams[sid];
+        const p1 = streamPkts[0];
+        const totalLen = streamPkts.reduce((acc,p)=>acc+p.payload.length,0);
+        
+        const div = document.createElement('div');
+        div.className = 'ctf-item';
+        div.innerHTML = `<div class="ctf-item-title">Stream #${sid}</div><div class="ctf-item-desc">${p1.src}:${p1.srcPort} <-> ${p1.dst}:${p1.dstPort} (${totalLen} bytes)</div>`;
+        div.onclick = () => {
+            document.querySelectorAll('.ctf-item').forEach(e=>e.classList.remove('active'));
+            div.classList.add('active');
+            showStreamContent(sid);
+        };
+        streamsList.appendChild(div);
+    });
+}
+
+function showStreamContent(sid) {
+    const main = document.getElementById('ctfMainContent');
+    const stream = tcpStreams[sid].sort((a,b) => a.index - b.index);
+    
+    // Simple reconstruction
+    let html = '';
+    stream.forEach(p => {
+        if(p.payload.length === 0) return;
+        const text = new TextDecoder().decode(p.payload).replace(/</g, "&lt;");
+        const color = (p.src === stream[0].src) ? '#ce9178' : '#4ec9b0'; // Color by direction
+        html += `<span style="color:${color}; display:block;">${text}</span>`;
+    });
+    
+    main.innerHTML = `<div class="stream-content" style="background:#1e1e1e; padding:10px;">${html}</div>`;
+}
+
+// --- Standard Views Rendering ---
+
+function renderList() {
+    const tbody = document.getElementById('packetTableBody');
+    tbody.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    
+    packets.slice(0, 2000).forEach(p => {
+        const tr = document.createElement('tr');
+        tr.className = `proto-${p.proto}`;
+        tr.innerHTML = `<td>${p.index}</td><td>${p.relTime}</td><td>${p.src}</td><td>${p.dst}</td><td>${p.proto}</td><td>${p.len}</td><td>${p.info}</td>`;
+        tr.onclick = () => selectPacket(tr, p);
+        frag.appendChild(tr);
+    });
+    tbody.appendChild(frag);
+}
+
+function selectPacket(tr, p) {
+    document.querySelectorAll('tr.selected').forEach(e=>e.classList.remove('selected'));
+    tr.classList.add('selected');
+    
+    // Tree
+    const dv = document.getElementById('detailView');
+    let h = `<div class="detail-header">Packet #${p.index}</div>`;
+    h += `<div class="detail-row">Time: ${p.relTime}</div><div class="detail-row">Length: ${p.len}</div>`;
+    h += `<div class="detail-header">Ethernet</div><div class="detail-row">Src: ${p.src}</div><div class="detail-row">Dst: ${p.dst}</div>`;
+    
+    if(p.proto === 'TCP') {
+        h += `<div class="detail-header">TCP</div><div class="detail-row">Stream ID: ${p.streamID}</div><div class="detail-row">Payload: ${p.payload.length} bytes</div>`;
+        h += `<button class="btn-action" style="margin:10px 0 0 10px;" onclick="switchTab('ctf'); showStreamContent(${p.streamID})">Follow TCP Stream</button>`;
+    }
+
+    // CTF Decoders in Details
+    if(p.payload.length > 0) {
+        h += `<div class="decoder-box">`;
+        h += `<span class="decoder-label">ASCII Preview:</span> ${p.ascii.substring(0, 100)}...<br>`;
+        try {
+            if(p.ascii.includes('%')) h += `<span class="decoder-label">URL Decode:</span> ${decodeURIComponent(p.ascii.substring(0,100))}<br>`;
+        } catch(e){}
+        // Try Base64 detection
+        const b64match = p.ascii.match(/[A-Za-z0-9+/=]{20,}/);
+        if(b64match) {
+            try { h += `<span class="decoder-label">Base64 Decode candidate:</span> ${atob(b64match[0])}`; } catch(e){}
+        }
+        h += `</div>`;
+    }
+    
+    dv.innerHTML = h;
+
+    // Split Hex
+    let left='', right='';
+    for(let i=0; i<p.raw.length; i+=16) {
+        left += i.toString(16).padStart(4,'0').toUpperCase() + '  ';
+        for(let j=0; j<16; j++) {
+            if(i+j < p.raw.length) {
+                const b = p.raw[i+j];
+                left += b.toString(16).padStart(2,'0').toUpperCase() + ' ';
+                right += (b>=32 && b<=126) ? String.fromCharCode(b) : '.';
+            } else left += '   ';
+        }
+        left += '\n'; right += '\n';
+    }
+    document.getElementById('hexLeft').textContent = left;
+    document.getElementById('hexRight').textContent = right;
+}
+
+// --- Extracted Files (Reuse logic) ---
+async function extractFiles() {
+    const list = document.getElementById('fileListContainer');
+    list.innerHTML = '';
+    
+    // Iterate streams to find HTTP responses
+    let count = 0;
+    Object.values(tcpStreams).forEach(stream => {
+        // Simple reassemble
+        stream.sort((a,b)=>a.index-b.index);
+        let data = new Uint8Array(stream.reduce((a,b)=>a+b.payload.length,0));
+        let off=0; stream.forEach(p=>{data.set(p.payload,off); off+=p.payload.length;});
+
+        // Detect HTTP File
+        if(data.length > 50) {
+            const head = new TextDecoder().decode(data.slice(0, 500));
+            if(head.startsWith("HTTP/1.") && head.includes(" 200 OK")) {
+                const dCrlf = indexOfSeq(data, [13,10,13,10]);
+                if(dCrlf > 0) {
+                    const typeMatch = head.match(/Content-Type:\s*(.*)/i);
+                    const type = typeMatch ? typeMatch[1].trim() : "application/octet-stream";
+                    const body = data.slice(dCrlf+4);
+                    // Skip if empty or too small
+                    if(body.length > 100) {
+                        count++;
+                        addFileCard(stream[0].streamID, type, body);
+                    }
+                }
+            }
+        }
+    });
+    if(count===0) list.innerHTML = "<div style='color:#777;text-align:center'>No HTTP files extracted.</div>";
+}
+
+function indexOfSeq(arr, seq) {
+    for(let i=0; i<arr.length-seq.length; i++) {
+        let match=true;
+        for(let j=0; j<seq.length; j++) if(arr[i+j]!==seq[j]) { match=false; break; }
+        if(match) return i;
+    }
+    return -1;
+}
+
+function addFileCard(sid, type, data) {
+    const blob = new Blob([data], {type});
+    const url = URL.createObjectURL(blob);
+    const div = document.createElement('div');
+    div.className = 'file-card';
+    div.innerHTML = `
+        <div class="file-info"><b>Stream #${sid}</b> - ${type} (${(data.length/1024).toFixed(1)} KB)</div>
+        <a href="${url}" download="stream_${sid}.dat" class="btn-action">Download</a>
+    `;
+    document.getElementById('fileListContainer').appendChild(div);
+}
+
+// --- Flow Diagram (Simple) ---
+function renderFlow() {
+    const div = document.getElementById('flowCanvas');
+    // Simplified: Just list unique conversations
+    let html = '';
+    const printed = new Set();
+    packets.forEach(p => {
+        if(p.proto !== 'TCP' && p.proto !== 'UDP') return;
+        const k = [p.src, p.dst].sort().join('-');
+        if(!printed.has(k)) {
+            printed.add(k);
+            html += `<div style="padding:5px; border-bottom:1px solid #444;">${p.src} <-> ${p.dst} (${p.proto})</div>`;
+        }
+    });
+    div.innerHTML = html || "No flows detected.";
+}
+
+</script>
+</body>
+</html>

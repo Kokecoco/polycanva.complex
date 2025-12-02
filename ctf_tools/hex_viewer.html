@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTF Artifact Analyzer (Static & Decoder)</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --text-color: #cccccc;
+            --accent-color: #00bcd4; /* Cyan for hacker vibe */
+            --border-color: #333;
+            --hex-byte-color: #b3e5fc;
+            --ascii-color: #ffccbc;
+            --address-color: #666;
+            --highlight-bg: #006064;
+            --selection-bg: rgba(0, 188, 212, 0.3);
+            --success-color: #66bb6a;
+            --warning-color: #ffa726;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Consolas', 'Monaco', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        /* Header */
+        header {
+            padding: 8px 15px;
+            background-color: #262626;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        h1 { margin: 0; font-size: 1rem; color: var(--accent-color); letter-spacing: 1px;}
+        
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        
+        input[type="file"] {
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        /* Layout */
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 400px;
+            background-color: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tabs {
+            display: flex;
+            background: #2d2d2d;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            color: #777;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-family: inherit;
+            transition: 0.2s;
+        }
+
+        .tab-btn:hover { color: #fff; background: #333; }
+        .tab-btn.active {
+            color: var(--accent-color);
+            border-bottom: 2px solid var(--accent-color);
+            background: var(--panel-bg);
+        }
+
+        .tab-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: none;
+        }
+        .tab-content.active { display: flex; flex-direction: column; gap: 15px; }
+
+        /* Generic Panels */
+        .panel {
+            background: #252526;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        .panel-title {
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-bottom: 8px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 4px;
+        }
+
+        /* Decoder Controls */
+        .decoder-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        .control-group { display: flex; flex-direction: column; gap: 2px; }
+        .control-group label { font-size: 0.75rem; color: #888; }
+        
+        input[type="text"], input[type="number"], select {
+            background: #111;
+            border: 1px solid #444;
+            color: white;
+            padding: 4px;
+            font-family: monospace;
+        }
+        
+        .result-box {
+            background: #000;
+            border: 1px solid #444;
+            padding: 8px;
+            min-height: 60px;
+            word-break: break-all;
+            color: var(--success-color);
+            font-size: 0.9rem;
+        }
+
+        /* Buttons */
+        button {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 4px 10px;
+            cursor: pointer;
+            border-radius: 2px;
+            font-family: inherit;
+        }
+        button:hover { background-color: #444; border-color: #666; }
+        button.primary { background-color: var(--accent-color); color: #000; border: none; font-weight: bold;}
+        button.primary:hover { opacity: 0.9; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; color: #888; padding: 4px; border-bottom: 1px solid #444; }
+        td { padding: 4px; border-bottom: 1px solid #333; cursor: pointer; }
+        tr:hover td { background: #333; color: white; }
+
+        /* Main Hex View */
+        .main-view {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .toolbar {
+            padding: 5px 10px;
+            background: #252526;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .hex-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: #121212;
+            user-select: none; /* Custom selection logic */
+        }
+
+        .row { display: flex; }
+        .row:hover { background: #1a1a1a; }
+        .addr { color: var(--address-color); width: 90px; }
+        .hex-area { display: flex; gap: 6px; width: 380px; }
+        .hex-byte { width: 20px; text-align: center; cursor: pointer; }
+        .hex-byte.sel { background: var(--selection-bg); color: white; }
+        .hex-byte.sel-start { border-left: 2px solid var(--accent-color); }
+        .hex-byte.sel-end { border-right: 2px solid var(--accent-color); }
+        .ascii-area { display: flex; margin-left: 20px; color: var(--ascii-color); }
+        .ascii-char { width: 9px; text-align: center; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #444; }
+
+        .hint-text { font-size: 0.75rem; color: #666; margin-top: 5px; font-style: italic;}
+    </style>
+</head>
+<body>
+
+<header>
+    <h1><span style="color:#fff;">CTF</span> Artifact Analyzer</h1>
+    <div>
+        <span id="fileInfo" style="margin-right:15px; color:#888;">No file loaded</span>
+        <input type="file" id="fileInput">
+    </div>
+</header>
+
+<div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('tab-decoder')">Decoder</button>
+            <button class="tab-btn" onclick="switchTab('tab-elf')">ELF Sections</button>
+            <button class="tab-btn" onclick="switchTab('tab-tools')">XOR Bruteforce</button>
+        </div>
+
+        <!-- Tab: Decoder (Selection Analysis) -->
+        <div id="tab-decoder" class="tab-content active">
+            <div class="panel">
+                <div class="panel-title">Selected Bytes</div>
+                <div id="selectionInfo" style="margin-bottom:10px; color:#aaa;">Select bytes in Hex View...</div>
+                
+                <div class="decoder-controls">
+                    <div class="control-group">
+                        <label>Operation</label>
+                        <select id="opSelect" onchange="updateDecoder()">
+                            <option value="none">None (Raw)</option>
+                            <option value="xor">XOR (Bitwise)</option>
+                            <option value="add">ADD (Shift)</option>
+                            <option value="sub">SUB (Shift)</option>
+                            <option value="rol">Rotate Left</option>
+                            <option value="ror">Rotate Right</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Key (Hex 0x..)</label>
+                        <input type="text" id="opKey" value="00" maxlength="2" oninput="updateDecoder()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">Preview (ASCII)</div>
+                <div class="result-box" id="decodeResult"></div>
+                <div class="hint-text">
+                    Tip: Output missing? Check .data section for obfuscated strings and apply XOR keys.
+                </div>
+            </div>
+            
+             <div class="panel">
+                <div class="panel-title">Data Types</div>
+                <table style="table-layout: fixed;">
+                    <tr><td width="60" style="color:#888;">Int32</td><td id="insp-i32">-</td></tr>
+                    <tr><td style="color:#888;">Uint32</td><td id="insp-u32">-</td></tr>
+                    <tr><td style="color:#888;">Float</td><td id="insp-f32">-</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: ELF Structure -->
+        <div id="tab-elf" class="tab-content">
+            <div id="elfStatus"></div>
+            <table id="elfHeaderTable"></table>
+            
+            <div class="panel-title" style="margin-top:15px;">Sections</div>
+            <div class="hint-text" style="margin-bottom:5px;">
+                Look in <b>.rodata</b> (constants) or <b>.data</b> (globals).
+            </div>
+            <table id="sectionTable">
+                <thead><tr><th>Name</th><th>Offset</th><th>Size</th></tr></thead>
+                <tbody id="sectionTableBody"></tbody>
+            </table>
+        </div>
+
+        <!-- Tab: Tools (XOR Search) -->
+        <div id="tab-tools" class="tab-content">
+            <div class="panel">
+                <div class="panel-title">XOR Bruteforce Search</div>
+                <div style="margin-bottom:10px;">
+                    Search for a string across all 0x00-0xFF XOR keys.
+                </div>
+                <div class="control-group" style="margin-bottom:10px;">
+                    <label>Target String (e.g., flag, ctf)</label>
+                    <input type="text" id="xorTarget" value="flag">
+                </div>
+                <button class="primary" onclick="runXorBruteforce()">Run Search</button>
+                <div id="xorStatus" style="margin-top:5px; font-size:0.8rem;"></div>
+            </div>
+            <div id="xorResults" style="display:flex; flex-direction:column; gap:5px;"></div>
+        </div>
+    </div>
+
+    <!-- Main View -->
+    <div class="main-view">
+        <div class="toolbar">
+            <div>
+                Offset: <span id="currentOffsetDisp" style="color:var(--accent-color);">0x00000000</span>
+                <span id="selRangeDisp" style="margin-left:20px; color:#888;"></span>
+            </div>
+            <div>
+                <button onclick="navigatePage(-1)">Prev</button>
+                <button onclick="navigatePage(1)">Next</button>
+            </div>
+        </div>
+        <div class="hex-container" id="hexView">
+            <!-- Hex Content -->
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- State ---
+    let fileBuffer = null;
+    let currentOffset = 0;
+    const pageSize = 1024;
+    
+    // Selection state
+    let selStart = -1;
+    let selEnd = -1;
+    let isSelecting = false;
+
+    // DOM
+    const el = {
+        fileInput: document.getElementById('fileInput'),
+        hexView: document.getElementById('hexView'),
+        offsetDisp: document.getElementById('currentOffsetDisp'),
+        selRangeDisp: document.getElementById('selRangeDisp'),
+        decodeResult: document.getElementById('decodeResult'),
+        opSelect: document.getElementById('opSelect'),
+        opKey: document.getElementById('opKey'),
+        sectionBody: document.getElementById('sectionTableBody'),
+        xorResults: document.getElementById('xorResults'),
+        xorStatus: document.getElementById('xorStatus'),
+        insp: { i32: document.getElementById('insp-i32'), u32: document.getElementById('insp-u32'), f32: document.getElementById('insp-f32') }
+    };
+
+    // --- Events ---
+    el.fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('fileInfo').textContent = `${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+        
+        fileBuffer = await file.arrayBuffer();
+        currentOffset = 0;
+        selStart = -1; selEnd = -1;
+        
+        parseELF(fileBuffer);
+        renderHexView();
+        updateDecoder();
+    });
+
+    // --- Hex View Logic ---
+    function renderHexView() {
+        if (!fileBuffer) return;
+        const view = new DataView(fileBuffer);
+        const start = currentOffset;
+        const end = Math.min(start + pageSize, fileBuffer.byteLength);
+        
+        let html = '';
+        
+        // Alignment
+        const displayStart = Math.floor(start / 16) * 16;
+
+        for (let i = displayStart; i < end; i += 16) {
+            const addrHex = i.toString(16).padStart(8, '0').toUpperCase();
+            
+            let hexHtml = '';
+            let asciiHtml = '';
+            
+            for (let j = 0; j < 16; j++) {
+                const off = i + j;
+                if (off < fileBuffer.byteLength) {
+                    const byte = view.getUint8(off);
+                    
+                    // Selection Class
+                    let classes = 'hex-byte';
+                    if (selStart !== -1 && selEnd !== -1) {
+                        const s = Math.min(selStart, selEnd);
+                        const e = Math.max(selStart, selEnd);
+                        if (off >= s && off <= e) classes += ' sel';
+                        if (off === s) classes += ' sel-start';
+                        if (off === e) classes += ' sel-end';
+                    }
+
+                    hexHtml += `<div class="${classes}" 
+                        data-off="${off}"
+                        onmousedown="onByteDown(${off})" 
+                        onmouseover="onByteOver(${off})" 
+                        onmouseup="onByteUp(${off})">${byte.toString(16).padStart(2, '0').toUpperCase()}</div>`;
+                    
+                    const char = (byte >= 32 && byte <= 126) ? String.fromCharCode(byte) : '.';
+                    asciiHtml += `<div class="ascii-char">${char.replace(/</g, '&lt;')}</div>`;
+                } else {
+                    hexHtml += `<div class="hex-byte" style="opacity:0"></div>`;
+                }
+            }
+
+            html += `<div class="row">
+                <span class="addr">0x${addrHex}</span>
+                <div class="hex-area">${hexHtml}</div>
+                <div class="ascii-area">${asciiHtml}</div>
+            </div>`;
+        }
+        
+        el.hexView.innerHTML = html;
+        el.offsetDisp.textContent = `0x${displayStart.toString(16).toUpperCase().padStart(8,'0')}`;
+    }
+
+    function navigatePage(dir) {
+        if (!fileBuffer) return;
+        const next = currentOffset + (dir * pageSize);
+        if (next >= 0 && next < fileBuffer.byteLength) {
+            currentOffset = next;
+            renderHexView();
+        }
+    }
+
+    // --- Selection Logic ---
+    window.onByteDown = (off) => {
+        isSelecting = true;
+        selStart = off;
+        selEnd = off;
+        renderHexView(); // Optim: could use class toggling, but simple render is safer
+        updateSelectionInfo();
+    };
+    window.onByteOver = (off) => {
+        if (isSelecting) {
+            selEnd = off;
+            renderHexView();
+        }
+    };
+    window.onByteUp = (off) => {
+        isSelecting = false;
+        selEnd = off;
+        renderHexView();
+        updateSelectionInfo();
+        updateDecoder();
+    };
+
+    function updateSelectionInfo() {
+        if (selStart === -1) {
+            el.selRangeDisp.textContent = '';
+            return;
+        }
+        const s = Math.min(selStart, selEnd);
+        const e = Math.max(selStart, selEnd);
+        const len = e - s + 1;
+        el.selRangeDisp.textContent = `Sel: 0x${s.toString(16).toUpperCase()} - 0x${e.toString(16).toUpperCase()} (${len} bytes)`;
+    }
+
+    // --- Decoder / CyberChef Lite ---
+    function updateDecoder() {
+        if (!fileBuffer || selStart === -1) {
+            el.decodeResult.textContent = "";
+            return;
+        }
+
+        const s = Math.min(selStart, selEnd);
+        const e = Math.max(selStart, selEnd);
+        const len = e - s + 1;
+        
+        // Don't process too massive selection for decoder
+        const processLen = Math.min(len, 2048); 
+        const u8 = new Uint8Array(fileBuffer, s, processLen);
+        
+        // Data Types Inspector (First 4 bytes)
+        const dv = new DataView(fileBuffer, s, Math.min(fileBuffer.byteLength - s, 4));
+        try {
+            el.insp.i32.textContent = dv.getInt32(0, true);
+            el.insp.u32.textContent = dv.getUint32(0, true);
+            el.insp.f32.textContent = dv.getFloat32(0, true).toFixed(4);
+        } catch(e) { 
+            el.insp.i32.textContent = "-"; 
+        }
+
+        // Operation
+        const op = el.opSelect.value;
+        const key = parseInt(el.opKey.value, 16) || 0;
+        
+        let resultStr = "";
+        
+        for (let i = 0; i < u8.length; i++) {
+            let b = u8[i];
+            
+            if (op === 'xor') b = b ^ key;
+            else if (op === 'add') b = (b + key) & 0xFF;
+            else if (op === 'sub') b = (b - key) & 0xFF;
+            else if (op === 'rol') b = ((b << 1) | (b >> 7)) & 0xFF; // simple rotate 1
+            else if (op === 'ror') b = ((b >> 1) | (b << 7)) & 0xFF;
+
+            // Simple ASCII filter
+            if (b >= 32 && b <= 126) resultStr += String.fromCharCode(b);
+            else resultStr += '.';
+        }
+
+        el.decodeResult.textContent = resultStr;
+    }
+
+    // --- XOR Bruteforce ---
+    function runXorBruteforce() {
+        if (!fileBuffer) return;
+        const target = document.getElementById('xorTarget').value;
+        if (target.length < 3) { alert("Target too short"); return; }
+        
+        el.xorResults.innerHTML = '';
+        el.xorStatus.textContent = 'Scanning...';
+        
+        const u8 = new Uint8Array(fileBuffer);
+        const targetCodes = [];
+        for(let i=0; i<target.length; i++) targetCodes.push(target.charCodeAt(i));
+
+        // Async to prevent freeze
+        setTimeout(() => {
+            let foundCount = 0;
+            
+            for (let key = 1; key < 256; key++) {
+                // Prepare "XORed Target" to search for
+                // Instead of XORing the whole file 255 times, we XOR the target
+                // and search for that byte sequence. Much faster.
+                const searchPattern = targetCodes.map(c => c ^ key);
+                
+                // Simple search
+                for (let i = 0; i < u8.length - searchPattern.length; i++) {
+                    let match = true;
+                    for (let j = 0; j < searchPattern.length; j++) {
+                        if (u8[i+j] !== searchPattern[j]) {
+                            match = false;
+                            break;
+                        }
+                    }
+                    
+                    if (match) {
+                        foundCount++;
+                        // Decode context (surrounding 20 chars)
+                        let context = "";
+                        const start = Math.max(0, i - 10);
+                        const end = Math.min(u8.length, i + searchPattern.length + 20);
+                        for(let k=start; k<end; k++) {
+                            const b = u8[k] ^ key;
+                            context += (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.';
+                        }
+
+                        const div = document.createElement('div');
+                        div.style.borderBottom = '1px solid #333';
+                        div.style.padding = '5px';
+                        div.style.cursor = 'pointer';
+                        div.innerHTML = `<span style="color:var(--accent-color)">Key 0x${key.toString(16).toUpperCase()}</span> @ 0x${i.toString(16)}<br><span style="color:#fff; font-family:monospace">${context.replace(/</g,'&lt;')}</span>`;
+                        div.onclick = () => {
+                            currentOffset = Math.floor(i / 16) * 16;
+                            // Set decoder settings
+                            el.opSelect.value = 'xor';
+                            el.opKey.value = key.toString(16);
+                            // Set selection
+                            selStart = i;
+                            selEnd = i + searchPattern.length + 10;
+                            renderHexView();
+                            updateDecoder();
+                            switchTab('tab-decoder');
+                        };
+                        el.xorResults.appendChild(div);
+                        
+                        // Limit results
+                        if (foundCount > 50) break;
+                    }
+                }
+                if (foundCount > 50) break;
+            }
+            
+            el.xorStatus.textContent = foundCount > 0 ? `Found ${foundCount} matches.` : 'No matches found.';
+        }, 10);
+    }
+
+    // --- Simple ELF Parser (Condensed) ---
+    function parseELF(buffer) {
+        el.sectionBody.innerHTML = '';
+        const view = new DataView(buffer);
+        
+        // Basic Check
+        if (buffer.byteLength < 4 || view.getUint32(0, false) !== 0x7F454C46) {
+            document.getElementById('elfStatus').innerHTML = 'Not an ELF file.';
+            return;
+        }
+
+        const is64 = view.getUint8(4) === 2;
+        const isLittle = view.getUint8(5) === 1;
+        const ptrSize = is64 ? 8 : 4;
+        const getU = (o,s) => s===8 ? Number(view.getBigUint64(o, isLittle)) : (s===4?view.getUint32(o,isLittle):view.getUint16(o,isLittle));
+
+        // Header info
+        const e_shoff = getU(is64 ? 0x28 : 0x20, ptrSize);
+        const fStart = is64 ? 0x38 : 0x28;
+        const e_shentsize = view.getUint16(fStart+6, isLittle);
+        const e_shnum = view.getUint16(fStart+8, isLittle);
+        const e_shstrndx = view.getUint16(fStart+10, isLittle);
+
+        let sections = [];
+        for(let i=0; i<e_shnum; i++){
+            const off = e_shoff + i*e_shentsize;
+            if(off >= buffer.byteLength) break;
+            sections.push({
+                nameIdx: view.getUint32(off, isLittle),
+                offset: getU(off + (is64?0x18:0x10), ptrSize),
+                size: getU(off + (is64?0x20:0x14), ptrSize),
+                name: ""
+            });
+        }
+        
+        // Name Resolve
+        if(e_shstrndx < sections.length) {
+            const strSec = sections[e_shstrndx];
+            sections.forEach(s => {
+                let p = strSec.offset + s.nameIdx;
+                let n = "";
+                while(p < buffer.byteLength && view.getUint8(p)!==0) n += String.fromCharCode(view.getUint8(p++));
+                s.name = n;
+            });
+        }
+
+        // Render
+        sections.forEach(s => {
+            const tr = document.createElement('tr');
+            let highlight = "";
+            if (s.name === '.text') highlight = "color:#aaa"; // code
+            if (s.name === '.data' || s.name === '.rodata') highlight = "color:var(--success-color); font-weight:bold;";
+            
+            tr.innerHTML = `<td style="${highlight}">${s.name}</td><td>0x${s.offset.toString(16).toUpperCase()}</td><td>${s.size}</td>`;
+            tr.onclick = () => {
+                currentOffset = Math.floor(s.offset / 16) * 16;
+                renderHexView();
+            };
+            el.sectionBody.appendChild(tr);
+        });
+    }
+
+    function switchTab(id) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`button[onclick="switchTab('${id}')"]`).classList.add('active');
+        document.getElementById(id).classList.add('active');
+    }
+</script>
+
+</body>
+</html>
