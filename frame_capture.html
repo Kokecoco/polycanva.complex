@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>動画フレーム切り出しツール</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 800px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 1.5rem;
+            color: #444;
+        }
+
+        /* ファイル入力 */
+        .file-input-wrapper {
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            padding: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            width: 80%;
+            cursor: pointer;
+        }
+
+        /* 動画エリア */
+        .video-wrapper {
+            margin-bottom: 15px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 50vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        video {
+            max-width: 100%;
+            max-height: 50vh;
+            display: block;
+        }
+
+        /* 操作パネル */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        button.capture-btn {
+            background-color: #28a745;
+            font-weight: bold;
+        }
+        button.capture-btn:hover {
+            background-color: #218838;
+        }
+
+        /* プレビューエリア */
+        .preview-area {
+            margin-top: 20px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            display: none; /* 初期は非表示 */
+        }
+        .preview-area img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            text-decoration: none;
+            background-color: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+        }
+        .download-link:hover {
+            background-color: #5a6268;
+        }
+        
+        /* canvasは処理用なので隠す */
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>動画フレーム切り出しツール</h1>
+    <p style="font-size: 0.9rem; color: #666;">動画を選択し、好きな位置で止めて画像を保存してください。<br>（処理はすべて端末内で行われます）</p>
+
+    <div class="file-input-wrapper">
+        <input type="file" id="videoInput" accept="video/*">
+    </div>
+
+    <div class="video-wrapper">
+        <video id="videoPlayer" controls playsinline></video>
+    </div>
+
+    <div class="controls">
+        <button id="btnPrevFrame" disabled>◀ 前のコマ</button>
+        <button id="btnNextFrame" disabled>次のコマ ▶</button>
+        <button id="btnCapture" class="capture-btn" disabled>📸 このフレームを保存</button>
+    </div>
+
+    <div class="preview-area" id="previewArea">
+        <h3>切り出しプレビュー</h3>
+        <img id="capturedImage" alt="Captured Frame">
+        <br>
+        <a id="downloadBtn" class="download-link" download="frame.png">画像をダウンロード</a>
+    </div>
+
+    <!-- 隠しキャンバス -->
+    <canvas id="canvas"></canvas>
+</div>
+
+<script>
+    const videoInput = document.getElementById('videoInput');
+    const videoPlayer = document.getElementById('videoPlayer');
+    const canvas = document.getElementById('canvas');
+    const capturedImage = document.getElementById('capturedImage');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const previewArea = document.getElementById('previewArea');
+    
+    const btnPrevFrame = document.getElementById('btnPrevFrame');
+    const btnNextFrame = document.getElementById('btnNextFrame');
+    const btnCapture = document.getElementById('btnCapture');
+
+    // コマ送りの秒数（約30fps想定）
+    const FRAME_STEP = 0.033; 
+
+    // ファイルが選択されたら動画をロード
+    videoInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const fileURL = URL.createObjectURL(file);
+            videoPlayer.src = fileURL;
+            videoPlayer.load();
+            
+            // ボタンを有効化
+            btnPrevFrame.disabled = false;
+            btnNextFrame.disabled = false;
+            btnCapture.disabled = false;
+            
+            // 新しい動画になったらプレビューを隠す
+            previewArea.style.display = 'none';
+        }
+    });
+
+    // 次のコマへ
+    btnNextFrame.addEventListener('click', () => {
+        videoPlayer.currentTime += FRAME_STEP;
+    });
+
+    // 前のコマへ
+    btnPrevFrame.addEventListener('click', () => {
+        videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime - FRAME_STEP);
+    });
+
+    // キャプチャ処理
+    btnCapture.addEventListener('click', () => {
+        if (!videoPlayer.videoWidth) return;
+
+        // Canvasサイズを動画の元のサイズに合わせる
+        canvas.width = videoPlayer.videoWidth;
+        canvas.height = videoPlayer.videoHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+        
+        // 画像データに変換 (PNG)
+        const dataURL = canvas.toDataURL('image/png');
+        
+        // プレビュー表示
+        capturedImage.src = dataURL;
+        previewArea.style.display = 'block';
+        
+        // ダウンロードリンク設定
+        // ファイル名にタイムスタンプを入れる
+        const time = Math.floor(videoPlayer.currentTime);
+        downloadBtn.href = dataURL;
+        downloadBtn.download = `capture_${time}s.png`;
+        
+        // プレビュー位置へスクロール
+        previewArea.scrollIntoView({ behavior: 'smooth' });
+    });
+</script>
+
+</body>
+</html>
