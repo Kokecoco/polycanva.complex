@@ -124,6 +124,7 @@ function unique(arr) {
 }
 
 function randomElement(arr) {
+  if (!arr || arr.length === 0) return undefined;
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
@@ -181,7 +182,11 @@ function ensureAtLeastOneMatchPerQuestion() {
   const qSet = new Set(questionSlots);
   // Prefer to replace an answer that doesn't correspond to any visible question; otherwise replace a random one.
   let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
-  if (replaceIndex === -1) replaceIndex = answerSlots.indexOf(randomElement(answerSlots));
+  if (replaceIndex === -1) {
+    const randomChoice = randomElement(answerSlots);
+    replaceIndex = randomChoice === undefined ? 0 : answerSlots.indexOf(randomChoice);
+  }
+  if (replaceIndex < 0) replaceIndex = 0;
 
   const removed = answerSlots[replaceIndex];
   answerSlots[replaceIndex] = targetId;
