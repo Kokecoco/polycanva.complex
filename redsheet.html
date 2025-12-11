@@ -182,7 +182,6 @@ function ensureAtLeastOneMatchPerQuestion() {
 
   const qSet = new Set(questionSlots);
   // Prefer to replace an answer that doesn't correspond to any visible question; otherwise replace a random one.
-  if (answerSlots.length === 0) return;
   let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
   if (replaceIndex === -1) replaceIndex = Math.floor(Math.random() * answerSlots.length);
 
