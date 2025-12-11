@@ -375,8 +375,19 @@
                             if (nonEssentialAnswers.length > 0) {
                                 targetIndex = nonEssentialAnswers[Math.floor(Math.random() * nonEssentialAnswers.length)].idx;
                             } else {
-                                // すべての答えが必要な場合、ランダムに置き換え
-                                targetIndex = Math.floor(Math.random() * answerSlots.length);
+                                // すべての答えが必要な場合、最後の手段として置き換えを行う
+                                // この状況は通常発生しないが、安全のため処理を実装
+                                // 重複している答えを優先的に選択
+                                const duplicates = answerSlots
+                                    .map((a, idx) => ({item: a, idx}))
+                                    .filter(({item}) => answerSlots.filter(a2 => a2 && a2.id === item.id).length > 1);
+                                
+                                if (duplicates.length > 0) {
+                                    targetIndex = duplicates[Math.floor(Math.random() * duplicates.length)].idx;
+                                } else {
+                                    // 本当に最後の手段：ランダムに置き換え
+                                    targetIndex = Math.floor(Math.random() * answerSlots.length);
+                                }
                             }
                         }
                         answerSlots[targetIndex] = answerFromPool;
