@@ -171,6 +171,7 @@ function ensureAtLeastOneMatchPerQuestion() {
   if (questionSlots.length === 0) return;
 
   const targetId = randomElement(questionSlots);
+  if (targetId === undefined) return;
   const poolIdx = answerPool.indexOf(targetId);
   if (poolIdx !== -1) answerPool.splice(poolIdx, 1);
 
@@ -181,6 +182,7 @@ function ensureAtLeastOneMatchPerQuestion() {
 
   const qSet = new Set(questionSlots);
   // Prefer to replace an answer that doesn't correspond to any visible question; otherwise replace a random one.
+  if (answerSlots.length === 0) return;
   let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
   if (replaceIndex === -1) replaceIndex = Math.floor(Math.random() * answerSlots.length);
 
