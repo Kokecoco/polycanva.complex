@@ -1,376 +1,493 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Red Sheet – Matching</title>
-  <style>
-    /* Existing styles preserved (UI unchanged) */
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 0; background: #0b0b0f; color: #f6f7fb; }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
-    h1 { margin: 0 0 10px; font-size: 20px; font-weight: 650; }
-    .topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom: 14px; }
-    .progress { font-variant-numeric: tabular-nums; opacity: .9; }
-    .board { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .col { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; }
-    .col h2 { margin: 0 0 10px; font-size: 14px; opacity: .9; }
-    .list { display:flex; flex-direction:column; gap:10px; }
-    .card { user-select:none; cursor:pointer; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); transition: transform .08s ease, background .15s ease, border-color .15s ease; }
-    .card:hover { transform: translateY(-1px); background: rgba(255,255,255,0.075); }
-    .card.selected { border-color: rgba(255,76,76,0.8); box-shadow: 0 0 0 2px rgba(255,76,76,0.25) inset; }
-    .card.matched { opacity: .55; cursor: default; }
-    .card.good { border-color: rgba(80,255,160,0.9); box-shadow: 0 0 0 2px rgba(80,255,160,0.18) inset; }
-    .card.bad { border-color: rgba(255,110,110,0.95); }
-    .controls { display:flex; gap:10px; align-items:center; }
-    button { cursor:pointer; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: #f6f7fb; border-radius: 10px; padding: 8px 10px; }
-    button:hover { background: rgba(255,255,255,0.075); }
-    .small { font-size: 12px; opacity: .85; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web赤シートメーカー | クイズ自動生成・共有機能付き暗記帳ツール</title>
+    <meta name="description" content="無料で使えるオンライン赤シート作成ツール。4択クイズやマッチング問題を自動生成し、URLやファイルで簡単に共有できます。英単語や試験勉強の暗記に最適です。">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #1E90FF; --primary-dark-color: #1C86EE; --secondary-color: #f4f7fa;
+            --border-color: #e1e5eb; --text-color: #333; --light-text-color: #777;
+            --card-bg-color: #ffffff; --answer-color: #d32f2f; --correct-color: #28a745;
+            --incorrect-color: #dc3545; --selected-color: #a5d6a7;
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6; background-color: var(--secondary-color); color: var(--text-color); margin: 0; padding: 20px;
+        }
+        body.modal-open { overflow: hidden; }
+        .app-container { max-width: 800px; margin: 0 auto; background-color: var(--card-bg-color); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); overflow: hidden; }
+        .tab-nav { display: flex; background-color: #fff; border-bottom: 1px solid var(--border-color); }
+        .tab-button {
+            flex-grow: 1; padding: 15px 10px; border: none; background-color: transparent; font-size: 16px;
+            font-weight: 500; color: var(--light-text-color); cursor: pointer; transition: all 0.2s; position: relative;
+        }
+        .tab-button.active { color: var(--primary-color); }
+        .tab-button.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 3px; background-color: var(--primary-color); }
+        .tab-content { display: none; padding: 25px; }
+        .tab-content.active { display: block; animation: fadeIn 0.4s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        h2 { text-align: left; margin-top: 0; color: #333; }
+        p, label { color: var(--light-text-color); font-size: 15px; }
+        hr { border: none; border-top: 1px solid var(--border-color); margin: 25px 0; }
+        .section-box { border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; margin-bottom: 20px; background-color: #fff; }
+        textarea, input, input[type="number"] { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 16px; transition: border-color 0.2s, box-shadow 0.2s; }
+        textarea:focus, input:focus, input[type="number"]:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(30, 144, 255, 0.2); outline: none; }
+        button, .file-label {
+            background-color: var(--primary-color); color: #fff; border: none; padding: 12px 18px;
+            border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 500;
+            transition: background-color 0.2s; text-align: center; margin: 2px; display: inline-block;
+        }
+        button:hover, .file-label:hover { background-color: var(--primary-dark-color); }
+        button:disabled { background-color: #aaa; cursor: not-allowed; }
+        .button-secondary { background-color: #6c757d; } .button-secondary:hover { background-color: #5a6268; }
+        #question-list { list-style-type: none; padding: 0; margin-top: 20px; }
+        .question-item {
+            background-color: var(--card-bg-color); border: 1px solid var(--border-color); padding: 15px 20px; margin-bottom: 15px;
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: box-shadow 0.2s, transform 0.2s;
+        }
+        .question-item:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.08); transform: translateY(-2px); }
+        .question-item-header { display: flex; justify-content: space-between; align-items: center; }
+        .question-text { font-weight: 500; margin-bottom: 10px; flex-grow: 1; word-wrap: break-word; }
+        .answer-text { cursor: pointer; transition: all 0.2s; padding: 5px; border-radius: 3px; color: var(--answer-color); font-weight: 500; }
+        .answer-text.hidden { background-color: var(--answer-color); user-select: none; }
+        .question-item .actions button { background-color: #e6e6e6; color: #555; padding: 6px 10px; font-size: 12px; }
+        .question-item .actions button:hover { background-color: #dcdcdc; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
+        .modal-card { background-color: #fff; width: 90%; max-width: 700px; max-height: 90vh; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; transform: scale(0.95); opacity: 0; transition: transform 0.3s, opacity 0.3s; }
+        .modal-overlay.visible { opacity: 1; visibility: visible; }
+        .modal-overlay.visible .modal-card { transform: scale(1); opacity: 1; }
+        .modal-header { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .modal-header h3 { margin: 0; font-size: 18px; }
+        .modal-body { padding: 25px; overflow-y: auto; flex-grow: 1; }
+        .modal-footer { padding: 15px 20px; background-color: #f5f5f5; flex-shrink: 0; border-top: 1px solid var(--border-color); text-align: center; }
+        .focus-body .answer-area { margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border-color); color: var(--answer-color); visibility: hidden; }
+        .focus-body .answer-area.visible { visibility: visible; }
+        .quiz-options { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
+        .quiz-option-container { display: flex; flex-direction: column; position: relative; }
+        .quiz-option-button { width: 100%; padding: 15px; font-size: 16px; background-color: #f0f0f0; color: #333; text-align: left; border: 1px solid var(--border-color); }
+        .quiz-option-button:hover { background-color: #e9e9e9; }
+        .quiz-option-button::before { content: attr(data-key) ". "; font-weight: bold; margin-right: 5px; }
+        .quiz-option-button.correct { background-color: var(--correct-color) !important; color: white; border-color: var(--correct-color); }
+        .quiz-option-button.incorrect { background-color: var(--incorrect-color) !important; color: white; border-color: var(--incorrect-color); }
+        .quiz-option-button:disabled { opacity: 0.8; cursor: not-allowed; }
+        .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
+        #quiz-next-button { display: none; }
+        .matching-container { display: flex; justify-content: space-between; }
+        .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; }
+        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; will-change: transform, opacity; min-height: 50px; display: flex; align-items: center; }
+        .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
+        .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        .file-input { display: none; }
+        .toast-notification { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.75); color: white; padding: 12px 20px; border-radius: 25px; font-size: 15px; z-index: 2000; transition: bottom 0.5s ease-in-out; }
+        .toast-notification.show { bottom: 30px; }
+        @media (min-width: 600px) { .quiz-options { grid-template-columns: 1fr 1fr; } }
+        @media print { .no-print, .tab-nav { display: none; } body { padding: 20px; background-color: #fff; } .app-container, .question-item { box-shadow: none; border: 1px solid #ccc; } .tab-content { display: block !important; padding: 0; } .controls h2 { text-align: left; color: #000; } .question-item { page-break-inside: avoid; } .answer-text, .answer-text.hidden { background-color: transparent !important; color: var(--answer-color) !important; user-select: auto !important; } }
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="topbar">
-      <div>
-        <h1>Red Sheet – Matching</h1>
-        <div class="small">Match each question with its correct answer. Correct matches refill from the remaining pool.</div>
-      </div>
-      <div class="controls">
-        <div class="progress" id="progressText">0 / 0</div>
-        <button id="resetBtn">Reset</button>
-      </div>
+    <div class="app-container">
+        <nav class="tab-nav no-print">
+            <button class="tab-button active" data-tab="edit">編集</button>
+            <button class="tab-button" data-tab="learn">学習</button>
+            <button class="tab-button" data-tab="manage">共有・管理</button>
+        </nav>
+        <div id="edit-tab" class="tab-content active">
+            <div class="section-box">
+                <h2>問題を作成</h2>
+                <p>問題と答えを入力し、<code>Ctrl + Enter</code>でも追加できます。</p>
+                <textarea id="question-input" rows="3" placeholder="問題文を入力..."></textarea>
+                <textarea id="answer-input" rows="3" placeholder="答えを入力..."></textarea>
+                <button id="add-button">問題を追加</button>
+            </div>
+            <div class="controls">
+                <h2>問題リスト (<span id="question-count">0</span>問)</h2>
+                <div class="no-print">
+                    <button id="shuffle-button" class="button-secondary" disabled>シャッフル</button>
+                    <button id="toggle-all-button" class="button-secondary" disabled>答えを全て隠す/表示</button>
+                </div>
+            </div>
+            <ul id="question-list"></ul>
+        </div>
+        <div id="learn-tab" class="tab-content">
+            <h2>学習モードを選択</h2>
+            <div class="section-box">
+                <h3>集中学習モード</h3>
+                <p>問題を1問ずつカード形式で表示し、集中して学習するモードです。</p>
+                <button id="start-focus-mode-button" disabled>開始する</button>
+            </div>
+            <div class="section-box">
+                <h3>4択クイズモード</h3>
+                <p>正解に似た単語で賢い選択肢を自動生成します。間違えた問題は最後にまとめて復習できます。</p>
+                <button id="start-quiz-mode-button" disabled>開始する</button>
+                <small id="quiz-mode-notice" style="color: #666; margin-top: 5px; display: block;">（4問以上で利用可）</small>
+            </div>
+            <div class="section-box">
+                <h3>マッチング問題</h3>
+                <p>問題と答えをペアにするゲーム形式で、記憶の定着度をテストします。</p>
+                <label for="matching-count-input">挑戦する問題数</label>
+                <input type="number" id="matching-count-input" value="5" min="5" style="width: 100px; display: inline-block; margin-bottom:0;">
+                <button id="start-matching-mode-button" disabled>開始する</button>
+                <small id="matching-mode-notice" style="color: #666; margin-top: 5px; display: block;">（5問以上で利用可）</small>
+            </div>
+        </div>
+        <div id="manage-tab" class="tab-content">
+            <h2>共有・データ管理</h2>
+            <div class="section-box">
+                <h3>URLで共有</h3>
+                <p>現在の問題リストを圧縮したURLとして生成し、他者と共有できます。</p>
+                <button id="generate-url-button" disabled>共有URLをコピー</button>
+            </div>
+            <div class="section-box">
+                <h3>ファイルで管理 (JSON)</h3>
+                <p>問題リストをファイルとしてPCに保存したり、読み込んだりできます。</p>
+                <button id="export-json-button" disabled>エクスポート</button>
+                <label for="import-json-input" class="file-label">インポート</label>
+                <input type="file" id="import-json-input" class="file-input" accept=".json">
+            </div>
+            <div class="section-box">
+                <h3>印刷 / PDF保存</h3>
+                <p>物理的な赤シート学習用に、問題リストを印刷またはPDFとして保存します。</p>
+                <button id="print-button" disabled>印刷プレビュー</button>
+            </div>
+        </div>
+    </div>
+    <div id="toast-notification" class="toast-notification"></div>
+    <div id="focus-mode-modal" class="modal-overlay no-print">
+        <div class="modal-card">
+            <div class="modal-header"><h3>集中学習モード</h3><span id="focus-counter"></span></div>
+            <div class="modal-body focus-body">
+                <div id="focus-question" class="question-text"></div>
+                <div id="focus-answer-area" class="answer-area">
+                    <strong style="color: var(--answer-color);">A:</strong>
+                    <div id="focus-answer"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="focus-toggle-answer-button">答えを見る (Space)</button>
+                <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                    <button id="focus-prev-button">(←) 前の問題へ</button>
+                    <button id="focus-next-button">次の問題へ (→)</button>
+                </div>
+                 <button id="focus-close-button" class="button-secondary" style="margin-top: 10px;">モードを終了 (Esc)</button>
+            </div>
+        </div>
+    </div>
+    <div id="quiz-mode-modal" class="modal-overlay no-print">
+        <div class="modal-card">
+            <div class="modal-header"><h3>4択クイズモード</h3><span id="quiz-counter"></span></div>
+            <div class="modal-body quiz-body">
+                <div id="quiz-question" class="question-text"></div>
+                <div id="quiz-options" class="quiz-options"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="quiz-next-button">次の問題へ (Enter)</button>
+                <button id="quiz-close-button" class="button-secondary" style="margin-top: 10px;">モードを終了 (Esc)</button>
+            </div>
+        </div>
+    </div>
+    <div id="matching-mode-modal" class="modal-overlay no-print">
+        <div class="modal-card">
+            <div class="modal-header"><h3>マッチング問題</h3><span id="matching-progress"></span></div>
+            <div class="modal-body">
+                <div id="matching-container" class="matching-container">
+                    <ul id="matching-questions" class="matching-list"></ul>
+                    <ul id="matching-answers" class="matching-list"></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="matching-reset-button" class="button-secondary">リセット</button>
+                <button id="matching-close-button" class="button-secondary">モードを終了 (Esc)</button>
+            </div>
+        </div>
     </div>
 
-    <div class="board">
-      <div class="col">
-        <h2>Questions</h2>
-        <div class="list" id="questionList"></div>
-      </div>
-      <div class="col">
-        <h2>Answers</h2>
-        <div class="list" id="answerList"></div>
-      </div>
-    </div>
-  </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const qa = sel => document.querySelector(sel);
+        const questionInput = qa('#question-input'), answerInput = qa('#answer-input'), addButton = qa('#add-button');
+        const questionList = qa('#question-list'), questionCount = qa('#question-count');
+        const shuffleButton = qa('#shuffle-button'), toggleAllButton = qa('#toggle-all-button');
+        const startFocusModeButton = qa('#start-focus-mode-button'), startQuizModeButton = qa('#start-quiz-mode-button'), quizModeNotice = qa('#quiz-mode-notice');
+        const matchingCountInput = qa('#matching-count-input'), startMatchingModeButton = qa('#start-matching-mode-button'), matchingModeNotice = qa('#matching-mode-notice');
+        const generateUrlButton = qa('#generate-url-button'), exportJsonButton = qa('#export-json-button'), importJsonInput = qa('#import-json-input'), printButton = qa('#print-button');
+        const focusModal = qa('#focus-mode-modal'), focusCounter = qa('#focus-counter'), focusQuestion = qa('#focus-question'), focusAnswerArea = qa('#focus-answer-area'), focusAnswer = qa('#focus-answer');
+        const focusToggleAnswerButton = qa('#focus-toggle-answer-button'), focusPrevButton = qa('#focus-prev-button'), focusNextButton = qa('#focus-next-button'), focusCloseButton = qa('#focus-close-button');
+        const quizModal = qa('#quiz-mode-modal'), quizCounter = qa('#quiz-counter'), quizQuestion = qa('#quiz-question'), quizOptions = qa('#quiz-options');
+        const quizNextButton = qa('#quiz-next-button'), quizCloseButton = qa('#quiz-close-button');
+        const matchingModal = qa('#matching-mode-modal'), matchingContainer = qa('#matching-container'), matchingQuestions = qa('#matching-questions'), matchingAnswers = qa('#matching-answers'), matchingProgress = qa('#matching-progress');
+        const matchingResetButton = qa('#matching-reset-button'), matchingCloseButton = qa('#matching-close-button');
+        const toast = qa('#toast-notification');
+        
+        let questions = []; let allAnswersVisible = false; let currentFocusIndex = 0;
+        let currentQuizIndex = 0; let quizQuestions = []; let quizMistakes = [];
+        let selectedMatchingItem = null; let matchingPool = []; let questionSlots = []; let answerSlots = [];
+        const MATCHING_VISIBLE_COUNT = 5;
 
-<script>
-/*
-  IMPORTANT: UI/progress logic preserved.
+        const tabs = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(item => item.classList.remove('active'));
+                tab.classList.add('active');
+                const targetTab = qa(`#${tab.dataset.tab}-tab`);
+                tabContents.forEach(content => content.classList.remove('active'));
+                targetTab.classList.add('active');
+            });
+        });
+        const showToast = (message) => { toast.textContent = message; toast.classList.add('show'); setTimeout(() => { toast.classList.remove('show'); }, 2000); };
+        const showModal = (modal) => { modal.style.display = 'flex'; setTimeout(() => modal.classList.add('visible'), 10); document.body.classList.add('modal-open'); };
+        const hideModal = (modal) => { modal.classList.remove('visible'); setTimeout(() => { modal.style.display = 'none'; document.body.classList.remove('modal-open'); }, 300); };
+        
+        const shuffleArray = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
+        const sanitizeHTML = str => str.replace(/\n/g, '<br>');
+        const levenshteinDistance = (str1 = '', str2 = '') => { const track = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null)); for (let i = 0; i <= str1.length; i += 1) { track[0][i] = i; } for (let j = 0; j <= str2.length; j += 1) { track[j][0] = j; } for (let j = 1; j <= str2.length; j += 1) { for (let i = 1; i <= str1.length; i += 1) { const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1; track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator); } } return track[str2.length][str1.length]; };
+        
+        const updateButtonsState = () => { const count = questions.length; const hasQuestions = count > 0; const canStartQuiz = count >= 4; const canStartMatching = count >= MATCHING_VISIBLE_COUNT; shuffleButton.disabled = toggleAllButton.disabled = startFocusModeButton.disabled = !hasQuestions; startQuizModeButton.disabled = !canStartQuiz; quizModeNotice.style.display = canStartQuiz ? 'none' : 'block'; startMatchingModeButton.disabled = !canStartMatching; matchingModeNotice.style.display = canStartMatching ? 'none' : `block`; matchingModeNotice.textContent = `（${MATCHING_VISIBLE_COUNT}問以上で利用可）`; if(hasQuestions) matchingCountInput.max = count; generateUrlButton.disabled = exportJsonButton.disabled = printButton.disabled = !hasQuestions; };
+        
+        const renderQuestions = () => {
+            questionList.innerHTML = ''; questionCount.textContent = questions.length; updateButtonsState();
+            if (questions.length === 0) { questionList.innerHTML = '<p style="text-align:center; color: #999;">問題がありません。作成してください。</p>'; return; }
+            questions.forEach((q, index) => {
+                const li = document.createElement('li'); li.className = 'question-item';
+                li.innerHTML = `<div class="question-item-header"><div class="question-text">Q${index + 1}: ${sanitizeHTML(q.question)}</div><div class="actions no-print"><button class="delete-button" data-index="${index}">削除</button></div></div><div class="answer-text hidden">A: ${sanitizeHTML(q.answer)}</div>`;
+                questionList.appendChild(li);
+            });
+            updateAllAnswersVisibility();
+        };
 
-  Change requested:
-  - When a correct pair is matched, replacement question and replacement answer must be drawn independently
-    from remaining pool (not the same item).
-  - Ensure solvability by maintaining a consistent active set:
-      * only fill from remaining items NOT currently displayed
-      * keep displayed questions and displayed answers each as a set of IDs
-  - Implement separate questionPool and answerPool.
-  - Provide helper functions to refill without creating forced pairs.
-  - After replacement, reshuffle answerSlots while keeping at least one match for each displayed question.
+        const addQuestion = () => { const q = questionInput.value.trim(), a = answerInput.value.trim(); if (q && a) { questions.push({ id: Date.now(), question: q, answer: a }); questionInput.value = answerInput.value = ''; renderQuestions(); questionInput.focus(); showToast('問題を追加しました。'); } else { alert('問題と答えを入力してください。'); } };
+        const deleteQuestion = index => { if (confirm(`問題${index + 1}を削除しますか？`)) { questions.splice(index, 1); renderQuestions(); showToast('問題を削除しました。'); } };
+        const updateAllAnswersVisibility = () => document.querySelectorAll('.answer-text').forEach(el => allAnswersVisible ? el.classList.remove('hidden') : el.classList.add('hidden'));
+        
+        const renderFocusQuestion = () => { const q = questions[currentFocusIndex]; focusCounter.textContent = `${currentFocusIndex + 1} / ${questions.length}`; focusQuestion.innerHTML = `Q: ${sanitizeHTML(q.question)}`; focusAnswer.innerHTML = sanitizeHTML(q.answer); focusAnswerArea.classList.remove('visible'); focusToggleAnswerButton.textContent = '答えを見る (Space)'; focusPrevButton.disabled = currentFocusIndex === 0; focusNextButton.disabled = currentFocusIndex === questions.length - 1; };
+        const startFocusMode = () => { currentFocusIndex = 0; renderFocusQuestion(); showModal(focusModal); };
+        const endFocusMode = () => { hideModal(focusModal); };
+        
+        const renderQuizQuestion = () => {
+            quizOptions.innerHTML = ''; quizNextButton.style.display = 'none';
+            const currentQ = quizQuestions[currentQuizIndex]; const correctAnswer = currentQ.answer;
+            quizCounter.textContent = `${currentQuizIndex + 1} / ${quizQuestions.length}`; quizQuestion.innerHTML = `Q: ${sanitizeHTML(currentQ.question)}`;
+            const otherAnswers = questions.map(q => q.answer).filter(ans => ans !== correctAnswer);
+            const incorrectOptions = [...new Set(otherAnswers)].map(ans => ({ text: ans, distance: levenshteinDistance(correctAnswer, ans) })).sort((a, b) => a.distance - b.distance).slice(0, 3).map(item => item.text);
+            const options = shuffleArray([correctAnswer, ...incorrectOptions]);
+            options.forEach((option, index) => {
+                const container = document.createElement('div'); container.className = 'quiz-option-container';
+                const button = document.createElement('button'); button.className = 'quiz-option-button';
+                button.innerHTML = sanitizeHTML(option); button.dataset.key = index + 1;
+                button.addEventListener('click', () => checkAnswer(button, option, correctAnswer));
+                container.appendChild(button); quizOptions.appendChild(container);
+            });
+        };
+        const checkAnswer = (button, selectedAnswer, correctAnswer) => {
+            Array.from(document.querySelectorAll('.quiz-option-button')).forEach(btn => btn.disabled = true);
+            const isCorrect = selectedAnswer === correctAnswer;
+            if (isCorrect) {
+                button.classList.add('correct');
+                setTimeout(() => { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } }, 800);
+            } else {
+                const currentQ = quizQuestions[currentQuizIndex]; if (!quizMistakes.find(q => q.id === currentQ.id)) { quizMistakes.push(currentQ); }
+                button.classList.add('incorrect');
+                Array.from(quizOptions.querySelectorAll('.quiz-option-button')).forEach(btn => {
+                    const btnAnswerText = btn.textContent;
+                    if (btnAnswerText === correctAnswer) { btn.classList.add('correct'); }
+                    else if (btn.classList.contains('incorrect')) {
+                        const originalQuestion = questions.find(q => q.answer === btnAnswerText);
+                        if (originalQuestion) { const explanation = document.createElement('div'); explanation.className = 'quiz-explanation'; explanation.textContent = `（これは「${originalQuestion.question}」の答えです）`; btn.parentElement.appendChild(explanation); }
+                    }
+                });
+                quizNextButton.style.display = 'block';
+                if (currentQuizIndex === quizQuestions.length - 1) { quizNextButton.textContent = '結果を見る'; }
+            }
+        };
+        const handleQuizCompletion = () => { const total = quizQuestions.length; const mistakesCount = quizMistakes.length; const correctCount = total - mistakesCount; let message = mistakesCount === 0 ? '全問正解です！素晴らしい！' : `${total}問中、${correctCount}問正解でした。`; setTimeout(() => { alert(message); if (mistakesCount > 0 && confirm('間違えた問題に再挑戦しますか？')) { quizQuestions = shuffleArray([...quizMistakes]); quizMistakes = []; currentQuizIndex = 0; renderQuizQuestion(); } else { endQuizMode(); } }, 200); };
+        const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
+        const endQuizMode = () => { hideModal(quizModal); };
+        
+        // ★★★★★ 修正前のマッチングモード ★★★★★
+        const startMatchingMode = () => {
+            const count = parseInt(matchingCountInput.value, 10);
+            if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; }
+            const allMatchingQuestions = shuffleArray([...questions]);
+            matchingPool = allMatchingQuestions.slice(MATCHING_VISIBLE_COUNT, count);
+            questionSlots = allMatchingQuestions.slice(0, MATCHING_VISIBLE_COUNT);
+            answerSlots = shuffleArray([...questionSlots]);
+            renderMatchingGame(); showModal(matchingModal);
+        };
+        const renderMatchingGame = () => {
+            selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
+            const createItem = (item, type) => {
+                const li = document.createElement('li'); li.className = 'matching-item';
+                if(item) {
+                    li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
+                    li.dataset.id = item.id;
+                    li.dataset.type = type;
+                } else {
+                    li.style.visibility = 'hidden'; // 空のスロット
+                    li.style.pointerEvents = 'none';
+                }
+                return li;
+            };
+            for(let i = 0; i < MATCHING_VISIBLE_COUNT; i++) {
+                matchingQuestions.appendChild(createItem(questionSlots[i], 'question'));
+                matchingAnswers.appendChild(createItem(answerSlots[i], 'answer'));
+            }
+            updateMatchingProgress();
+        };
 
-  Notes:
-  - This implementation assumes each pair is represented by a shared id.
-  - We keep two active arrays: questionSlots (ids) and answerSlots (ids).
-  - The DOM renders from these arrays.
-*/
+        // ▼▼▼▼▼ ここから修正後のコード ▼▼▼▼▼
+        const handleMatchingClick = e => {
+            const target = e.target.closest('.matching-item');
+            // クリック対象外、または既にマッチ済みの場合は処理しない
+            if (!target || target.classList.contains('matched') || !target.dataset.id) return;
 
-// ---- Data (existing questions/answers can remain; example fallback) ----
-// If your existing file already defines PAIRS elsewhere, keep it and remove this block.
-const PAIRS = window.PAIRS || [
-  { id: '1', q: 'What is 2 + 2?', a: '4' },
-  { id: '2', q: 'Capital of France?', a: 'Paris' },
-  { id: '3', q: 'H2O is?', a: 'Water' },
-  { id: '4', q: 'Opposite of hot?', a: 'Cold' },
-  { id: '5', q: 'Primary color: red + blue = ?', a: 'Purple' },
-  { id: '6', q: '10 / 2 = ?', a: '5' },
-  { id: '7', q: 'Largest planet?', a: 'Jupiter' },
-  { id: '8', q: 'HTML stands for?', a: 'HyperText Markup Language' }
-];
+            // 1つ目のアイテムを選択
+            if (!selectedMatchingItem) {
+                // 他に選択中のアイテムがあれば処理を中断
+                if (document.querySelector('.matching-item.selected')) return;
+                selectedMatchingItem = target;
+                target.classList.add('selected');
+            } 
+            // 2つ目のアイテムを選択
+            else {
+                // 同じアイテムや同じ種類（問題同士・答え同士）を選択した場合は選択を解除
+                if (target === selectedMatchingItem || target.dataset.type === selectedMatchingItem.dataset.type) {
+                    selectedMatchingItem.classList.remove('selected');
+                    selectedMatchingItem = null;
+                    return;
+                }
+                
+                // questionとanswerの要素を特定
+                let questionEl, answerEl;
+                if (selectedMatchingItem.dataset.type === 'question') {
+                    questionEl = selectedMatchingItem;
+                    answerEl = target;
+                } else {
+                    questionEl = target;
+                    answerEl = selectedMatchingItem;
+                }
+                
+                // IDを比較して正解かどうかを判定
+                if (questionEl.dataset.id === answerEl.dataset.id) {
+                    // 正解の場合
+                    matchingContainer.style.pointerEvents = 'none'; // 連打防止
+                    questionEl.classList.add('matched');
+                    answerEl.classList.add('matched');
+                    selectedMatchingItem.classList.remove('selected');
+                    selectedMatchingItem = null;
+                    
+                    // アニメーションが終わるのを待ってからDOMを更新
+                    setTimeout(() => {
+                        // 【バグ修正】 表示されているリスト内での正しいインデックスを取得
+                        const qIndex = Array.from(matchingQuestions.children).indexOf(questionEl);
+                        const aIndex = Array.from(matchingAnswers.children).indexOf(answerEl);
+                        
+                        // 【改善対応】 プールから新しい問題と答えを独立して取得
+                        let newQuestion = null;
+                        let newAnswer = null;
+                        
+                        if (matchingPool.length > 0) {
+                            // 新しい問題を取得
+                            newQuestion = matchingPool.shift();
+                            
+                            // 新しい答えを取得（できれば新しい問題とは異なるもの）
+                            if (matchingPool.length > 0) {
+                                // プールに2つ以上ある場合、異なるアイテムを選択
+                                const availableAnswers = matchingPool.filter(item => item.id !== newQuestion.id);
+                                if (availableAnswers.length > 0) {
+                                    // ランダムに選択して削除
+                                    const randomIndex = Math.floor(Math.random() * availableAnswers.length);
+                                    newAnswer = availableAnswers[randomIndex];
+                                    const poolIndex = matchingPool.indexOf(newAnswer);
+                                    matchingPool.splice(poolIndex, 1);
+                                } else {
+                                    // すべて同じIDの場合（通常ありえない）、次のアイテムを使用
+                                    newAnswer = matchingPool.shift();
+                                }
+                            } else {
+                                // プールに1つしかない場合、強制的にペアになる
+                                newAnswer = newQuestion;
+                            }
+                        }
+                        
+                        // データスロットを新しいアイテムで置き換える
+                        // これで他のアイテムの位置は変わらない
+                        questionSlots[qIndex] = newQuestion;
+                        answerSlots[aIndex] = newAnswer;
+                        
+                        // DOMを再描画して変更を反映
+                        renderMatchingGame();
+                        matchingContainer.style.pointerEvents = 'auto';
+                        
+                        // 全ての問題を解き終わったかチェック
+                        if (questionSlots.every(q => q === null)) {
+                            updateMatchingProgress();
+                            setTimeout(() => {
+                                alert('全問正解！クリアです！');
+                                endMatchingMode();
+                            }, 500); // アニメーション後にアラート
+                        }
+                    }, 400); // .matchedのアニメーション時間
+                } else {
+                    // 不正解の場合
+                    questionEl.classList.add('incorrect-flash');
+                    answerEl.classList.add('incorrect-flash');
+                    const prevSelectedItem = selectedMatchingItem;
+                    selectedMatchingItem = null;
+                    // アニメーションが終わった後にクラスを削除
+                    setTimeout(() => {
+                        questionEl.classList.remove('incorrect-flash', 'selected');
+                        answerEl.classList.remove('incorrect-flash', 'selected');
+                        if (prevSelectedItem) prevSelectedItem.classList.remove('incorrect-flash', 'selected');
+                    }, 500);
+                }
+            }
+        };
+        // ▲▲▲▲▲ ここまで修正後のコード ▲▲▲▲▲
 
-const byId = new Map(PAIRS.map(p => [String(p.id), p]));
-const allIds = PAIRS.map(p => String(p.id));
+        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const solvedCount = totalCount - (matchingPool.length + questionSlots.filter(Boolean).length); matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
+        const endMatchingMode = () => { hideModal(matchingModal); };
+        
+        const generateShareUrl = () => { try { const jsonString = JSON.stringify(questions); const compressed = pako.deflate(jsonString, { to: 'string' }); const base64String = btoa(compressed); const url = `${location.origin}${location.pathname}#${base64String}`; navigator.clipboard.writeText(url).then(() => showToast('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
+        const loadFromUrl = () => { if (location.hash) { try { const base64String = location.hash.substring(1); const compressed = atob(base64String); const jsonString = pako.inflate(compressed, { to: 'string' }); const data = JSON.parse(jsonString); if (Array.isArray(data)) { if (data.length > 0 && typeof data[0].id === 'undefined') { data.forEach((item, index) => { item.id = Date.now() + index; }); } questions = data; renderQuestions(); showToast(`${data.length}問の問題をURLから読み込みました。`); } } catch (e) { alert('URLのデータが不正か、古い形式のため読み込めませんでした。'); history.replaceState(null, '', ' '); } } };
+        const exportToJson = () => { const blob = new Blob([JSON.stringify(questions, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'web-akasheet-data.json'; a.click(); URL.revokeObjectURL(a.href); };
+        const importFromJson = e => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = re => { try { const data = JSON.parse(re.target.result); if (Array.isArray(data) && confirm(`${data.length}問を読込みますか？`)) { if (data.length > 0 && typeof data[0].id === 'undefined') { data.forEach((item, index) => { item.id = Date.now() + index; }); } questions = data; renderQuestions(); showToast(`${data.length}問の問題をファイルから読み込みました。`); } } catch (err) { alert('ファイルの読込に失敗しました。'); } }; reader.readAsText(file); e.target.value = ''; };
+        
+        addButton.addEventListener('click', addQuestion);
+        toggleAllButton.addEventListener('click', () => { allAnswersVisible = !allAnswersVisible; updateAllAnswersVisibility(); });
+        shuffleButton.addEventListener('click', () => { shuffleArray(questions); renderQuestions(); showToast('問題をシャッフルしました。'); });
+        questionList.addEventListener('click', e => { if (e.target.classList.contains('answer-text')) { e.target.classList.toggle('hidden'); } if (e.target.classList.contains('delete-button')) { deleteQuestion(parseInt(e.target.dataset.index, 10)); } });
+        startFocusModeButton.addEventListener('click', startFocusMode); startQuizModeButton.addEventListener('click', startQuizMode); startMatchingModeButton.addEventListener('click', startMatchingMode);
+        focusCloseButton.addEventListener('click', endFocusMode); focusToggleAnswerButton.addEventListener('click', () => { focusAnswerArea.classList.toggle('visible'); focusToggleAnswerButton.textContent = focusAnswerArea.classList.contains('visible') ? '答えを隠す (Space)' : '答えを見る (Space)'; });
+        focusNextButton.addEventListener('click', () => { if (!focusNextButton.disabled) { currentFocusIndex++; renderFocusQuestion(); } });
+        focusPrevButton.addEventListener('click', () => { if (!focusPrevButton.disabled) { currentFocusIndex--; renderFocusQuestion(); } });
+        quizCloseButton.addEventListener('click', endQuizMode); quizNextButton.addEventListener('click', () => { if (!quizNextButton.disabled) { if (currentQuizIndex < quizQuestions.length - 1) { currentQuizIndex++; renderQuizQuestion(); } else { handleQuizCompletion(); } } });
+        matchingResetButton.addEventListener('click', startMatchingMode);
+        matchingCloseButton.addEventListener('click', endMatchingMode); matchingModal.addEventListener('click', handleMatchingClick);
+        generateUrlButton.addEventListener('click', generateShareUrl); exportJsonButton.addEventListener('click', exportToJson); importJsonInput.addEventListener('change', importFromJson); printButton.addEventListener('click', () => window.print());
 
-// ---- State ----
-let questionSlots = []; // array of ids currently displayed in Questions column
-let answerSlots   = []; // array of ids currently displayed in Answers column (order shuffled)
-
-// Separate pools (ids not currently displayed in their respective column)
-let questionPool = [];
-let answerPool   = [];
-
-let selectedQuestionId = null;
-let selectedAnswerId = null;
-
-let matchedCount = 0;
-
-// Config: number of active cards per column
-const ACTIVE_COUNT = 6;
-
-// ---- DOM ----
-const questionListEl = document.getElementById('questionList');
-const answerListEl = document.getElementById('answerList');
-const progressTextEl = document.getElementById('progressText');
-const resetBtn = document.getElementById('resetBtn');
-
-// ---- Utilities ----
-function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-function unique(arr) {
-  return Array.from(new Set(arr));
-}
-
-function removeFromArray(arr, value) {
-  const idx = arr.indexOf(value);
-  if (idx >= 0) arr.splice(idx, 1);
-}
-
-function setProgress() {
-  progressTextEl.textContent = `${matchedCount} / ${PAIRS.length}`;
-}
-
-// ---- Pool helpers ----
-function rebuildPools() {
-  // Pools are ids NOT currently displayed in their respective column.
-  const qActive = new Set(questionSlots);
-  const aActive = new Set(answerSlots);
-
-  questionPool = allIds.filter(id => !qActive.has(id));
-  answerPool = allIds.filter(id => !aActive.has(id));
-
-  shuffle(questionPool);
-  shuffle(answerPool);
-}
-
-function pickFromPool(pool, forbiddenSet) {
-  // Picks first available id in pool that isn't forbidden.
-  for (let i = 0; i < pool.length; i++) {
-    const id = pool[i];
-    if (!forbiddenSet || !forbiddenSet.has(id)) {
-      pool.splice(i, 1);
-      return id;
-    }
-  }
-  return null;
-}
-
-function ensureAtLeastOneMatchPerQuestion() {
-  // For each displayed question id, ensure its corresponding answer id exists somewhere in answerSlots.
-  const aSet = new Set(answerSlots);
-  const missing = questionSlots.filter(qid => !aSet.has(qid));
-  if (missing.length === 0) return;
-
-  // We need to bring in missing answer ids by swapping out answers that aren't required.
-  const required = new Set(questionSlots);
-  const mustHave = new Set(questionSlots); // same ids
-
-  // Candidates to remove: answers not corresponding to any displayed question
-  const removableIdx = [];
-  for (let i = 0; i < answerSlots.length; i++) {
-    if (!mustHave.has(answerSlots[i])) removableIdx.push(i);
-  }
-
-  for (const neededId of missing) {
-    if (aSet.has(neededId)) continue;
-
-    // Try to source neededId from answerPool; if not there, it might be currently in questionPool but not in answerSlots.
-    // Since pools are separate, neededId may still be present in answerPool (if not displayed).
-    // If it's displayed as an answer already, we'd have had it.
-    // If it's neither in answerPool nor answerSlots, it means answerSlots already contains it (contradiction) or data mismatch.
-
-    // Remove neededId from answerPool if present; else allow injecting it anyway (we'll keep pools consistent afterwards).
-    removeFromArray(answerPool, neededId);
-
-    let swapIndex = removableIdx.pop();
-    if (swapIndex === undefined) {
-      // No removable slots (answerSlots exactly equals questionSlots but missing can't happen). Safety break.
-      break;
-    }
-
-    const removed = answerSlots[swapIndex];
-    answerSlots[swapIndex] = neededId;
-    aSet.delete(removed);
-    aSet.add(neededId);
-
-    // Put removed id back into answerPool if it's not currently displayed.
-    if (!aSet.has(removed)) answerPool.push(removed);
-  }
-
-  shuffle(answerPool);
-}
-
-function reshuffleAnswersPreservingSolvability() {
-  // Shuffle order but keep solvability constraint: at least one match for each displayed question.
-  // Since solvability depends on set membership, a shuffle doesn't break it.
-  shuffle(answerSlots);
-  ensureAtLeastOneMatchPerQuestion();
-  // If ensureAtLeastOneMatchPerQuestion performed swaps, reshuffle again lightly to avoid the inserted answers
-  // always landing at the end.
-  shuffle(answerSlots);
-}
-
-function refillActiveSetsAfterMatch(matchedId) {
-  // Remove matched id from both active sets, then independently refill each side from its pool.
-  // Also ensure we never introduce duplicate ids within a column.
-
-  // 1) Remove matched from actives
-  removeFromArray(questionSlots, matchedId);
-  removeFromArray(answerSlots, matchedId);
-
-  // 2) Rebuild pools based on current actives
-  rebuildPools();
-
-  // 3) Refill question side: choose an id not currently in questionSlots
-  const qForbidden = new Set(questionSlots);
-  const newQ = pickFromPool(questionPool, qForbidden);
-  if (newQ) questionSlots.push(newQ);
-
-  // 4) Refill answer side independently: choose an id not currently in answerSlots
-  const aForbidden = new Set(answerSlots);
-  // Additionally, avoid forcing a single remaining match scenario by preferring an id that is NOT exactly newQ
-  // when possible (independent draw). This is the core behavior change.
-  let newA = null;
-  if (newQ) {
-    const forbidJustNewQ = new Set([...aForbidden, newQ]);
-    newA = pickFromPool(answerPool, forbidJustNewQ);
-    if (!newA) {
-      // Fall back: if the only available answer replacement is newQ, allow it.
-      newA = pickFromPool(answerPool, aForbidden);
-    }
-  } else {
-    newA = pickFromPool(answerPool, aForbidden);
-  }
-  if (newA) answerSlots.push(newA);
-
-  // 5) Make sure answer side contains at least one correct answer for each question
-  // This prevents unsolvable states.
-  rebuildPools();
-  ensureAtLeastOneMatchPerQuestion();
-
-  // 6) Reshuffle answers after replacement (requested)
-  reshuffleAnswersPreservingSolvability();
-
-  // 7) Rebuild pools again for next operation
-  rebuildPools();
-}
-
-// ---- Rendering ----
-function render() {
-  questionListEl.innerHTML = '';
-  answerListEl.innerHTML = '';
-
-  for (const qid of questionSlots) {
-    const p = byId.get(qid);
-    const el = document.createElement('div');
-    el.className = 'card';
-    el.dataset.id = qid;
-    el.textContent = p ? p.q : qid;
-    if (selectedQuestionId === qid) el.classList.add('selected');
-    el.addEventListener('click', () => onSelectQuestion(qid));
-    questionListEl.appendChild(el);
-  }
-
-  for (const aid of answerSlots) {
-    const p = byId.get(aid);
-    const el = document.createElement('div');
-    el.className = 'card';
-    el.dataset.id = aid;
-    el.textContent = p ? p.a : aid;
-    if (selectedAnswerId === aid) el.classList.add('selected');
-    el.addEventListener('click', () => onSelectAnswer(aid));
-    answerListEl.appendChild(el);
-  }
-
-  setProgress();
-}
-
-function flashCard(listEl, id, className, ms=380) {
-  const el = listEl.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
-  if (!el) return;
-  el.classList.add(className);
-  setTimeout(() => el.classList.remove(className), ms);
-}
-
-// ---- Interaction / game logic ----
-function onSelectQuestion(id) {
-  selectedQuestionId = (selectedQuestionId === id) ? null : id;
-  render();
-  tryResolve();
-}
-
-function onSelectAnswer(id) {
-  selectedAnswerId = (selectedAnswerId === id) ? null : id;
-  render();
-  tryResolve();
-}
-
-function tryResolve() {
-  if (!selectedQuestionId || !selectedAnswerId) return;
-
-  const isCorrect = selectedQuestionId === selectedAnswerId;
-
-  if (isCorrect) {
-    // Visual feedback
-    flashCard(questionListEl, selectedQuestionId, 'good');
-    flashCard(answerListEl, selectedAnswerId, 'good');
-
-    const matchedId = selectedQuestionId;
-    selectedQuestionId = null;
-    selectedAnswerId = null;
-
-    matchedCount += 1;
-
-    // Replacement behavior changed here:
-    // Use independent replacements from separate pools while maintaining solvability.
-    refillActiveSetsAfterMatch(matchedId);
-
-    render();
-  } else {
-    flashCard(questionListEl, selectedQuestionId, 'bad');
-    flashCard(answerListEl, selectedAnswerId, 'bad');
-
-    // Keep selections (existing behavior may differ; UI unchanged otherwise)
-    selectedQuestionId = null;
-    selectedAnswerId = null;
-    render();
-  }
-}
-
-function initGame() {
-  matchedCount = 0;
-  selectedQuestionId = null;
-  selectedAnswerId = null;
-
-  const ids = shuffle(allIds.slice());
-  // Start with ACTIVE_COUNT questions
-  questionSlots = ids.slice(0, Math.min(ACTIVE_COUNT, ids.length));
-
-  // Start with ACTIVE_COUNT answers, independently chosen from remaining to avoid identical initial set when possible
-  // but still maintain solvability by ensuring each displayed question has its answer present.
-  const remainingForAnswers = ids.slice(questionSlots.length);
-  answerSlots = remainingForAnswers.slice(0, Math.min(ACTIVE_COUNT, remainingForAnswers.length));
-
-  // If we don't have enough remaining (small dataset), fill from start but avoid duplicates
-  const aSet = new Set(answerSlots);
-  for (const id of ids) {
-    if (answerSlots.length >= questionSlots.length) break;
-    if (!aSet.has(id)) { answerSlots.push(id); aSet.add(id); }
-  }
-
-  rebuildPools();
-  ensureAtLeastOneMatchPerQuestion();
-  reshuffleAnswersPreservingSolvability();
-  rebuildPools();
-
-  render();
-}
-
-resetBtn.addEventListener('click', initGame);
-
-initGame();
-</script>
+        document.addEventListener('keydown', e => {
+            const isAnyModalVisible = !!qa('.modal-overlay.visible');
+            if (e.ctrlKey && e.key === 'Enter' && (document.activeElement === questionInput || document.activeElement === answerInput)) { e.preventDefault(); addButton.click(); }
+            if (e.key === 'Escape' && isAnyModalVisible) { hideModal(qa('.modal-overlay.visible')); }
+            if (focusModal.classList.contains('visible')) {
+                if (e.key === ' ') { e.preventDefault(); focusToggleAnswerButton.click(); }
+                if (e.key === 'ArrowRight') { focusNextButton.click(); } if (e.key === 'ArrowLeft') { focusPrevButton.click(); }
+            }
+            if (quizModal.classList.contains('visible')) {
+                if (['1', '2', '3', '4'].includes(e.key)) { const choiceButton = qa(`.quiz-option-button[data-key="${e.key}"]`); if (choiceButton && !choiceButton.disabled) { choiceButton.click(); } }
+                if (e.key === 'Enter' && quizNextButton.style.display === 'block') { quizNextButton.click(); }
+            }
+        });
+        
+        loadFromUrl();
+        renderQuestions();
+    });
+    </script>
 </body>
 </html>
