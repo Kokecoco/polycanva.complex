@@ -158,7 +158,7 @@ function pickFromPool(pool, forbiddenSet) {
 }
 
 function ensureAtLeastOneMatchPerQuestion() {
-  // Keep the board solvable by guaranteeing at least one visible question-answer pair shares the same id.
+  // Ensure the game stays solvable by guaranteeing at least one visible question has its matching answer.
   const aSet = new Set(answerSlots);
   const hasAnyMatch = questionSlots.some(qid => aSet.has(qid));
   if (hasAnyMatch) return;
@@ -180,7 +180,7 @@ function ensureAtLeastOneMatchPerQuestion() {
 
   const removed = answerSlots[replaceIndex];
   answerSlots[replaceIndex] = targetId;
-  answerPool.push(removed);
+  if (!answerPool.includes(removed)) answerPool.push(removed);
 }
 
 function reshuffleAnswersPreservingSolvability() {
