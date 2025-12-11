@@ -192,7 +192,7 @@ function ensureAtLeastOneMatchPerQuestion() {
 }
 
 function reshuffleAnswersPreservingSolvability() {
-  // Shuffle order but keep solvability constraint: at least one match for each displayed question.
+  // Shuffle order but keep solvability constraint: ensure at least one visible question still has its answer available.
   // Since solvability depends on set membership, a shuffle doesn't break it.
   shuffle(answerSlots);
   ensureAtLeastOneMatchPerQuestion();
