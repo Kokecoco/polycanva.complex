@@ -174,13 +174,13 @@ function ensureAtLeastOneMatchPerQuestion() {
   }
 
   const qSet = new Set(questionSlots);
+  // Prefer to replace an answer that is unrelated to currently shown questions; otherwise replace a random one.
   let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
   if (replaceIndex === -1) replaceIndex = Math.floor(Math.random() * answerSlots.length);
 
   const removed = answerSlots[replaceIndex];
   answerSlots[replaceIndex] = targetId;
-
-  if (!answerSlots.includes(removed)) answerPool.push(removed);
+  answerPool.push(removed);
 }
 
 function reshuffleAnswersPreservingSolvability() {
