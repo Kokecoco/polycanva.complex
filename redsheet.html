@@ -340,6 +340,51 @@
             updateMatchingProgress();
         };
 
+        // 解答可能性を確保する関数
+        const ensureAllQuestionsHaveAnswers = () => {
+            // すべての問題に対して、少なくとも1つの答えが存在することを保証
+            const questionIds = new Set(questionSlots.filter(q => q !== null).map(q => q.id));
+            const answerIds = new Set(answerSlots.filter(a => a !== null).map(a => a.id));
+            
+            // 答えが欠けている問題を特定
+            const missingAnswerIds = [...questionIds].filter(id => !answerIds.has(id));
+            
+            if (missingAnswerIds.length > 0) {
+                // 答えが欠けている場合、プールまたは既存の答えから補充
+                for (const missingId of missingAnswerIds) {
+                    // プールから該当する答えを探す
+                    const answerFromPool = matchingPool.find(item => item.id === missingId);
+                    
+                    if (answerFromPool) {
+                        // プールにある場合、それを使用
+                        const poolIndex = matchingPool.indexOf(answerFromPool);
+                        matchingPool.splice(poolIndex, 1);
+                        
+                        // 空いている答えスロットまたは重複している答えを置き換え
+                        let targetIndex = answerSlots.findIndex(a => a === null);
+                        if (targetIndex === -1) {
+                            // 空きがない場合、ランダムに置き換え（解答可能性を維持するため）
+                            const nonEssentialAnswers = answerSlots
+                                .map((a, idx) => ({item: a, idx}))
+                                .filter(({item}) => {
+                                    // 他の場所に同じIDの答えがあるか、問題が存在しない答え
+                                    const count = answerSlots.filter(a2 => a2 && a2.id === item.id).length;
+                                    return count > 1 || !questionIds.has(item.id);
+                                });
+                            
+                            if (nonEssentialAnswers.length > 0) {
+                                targetIndex = nonEssentialAnswers[Math.floor(Math.random() * nonEssentialAnswers.length)].idx;
+                            } else {
+                                // すべての答えが必要な場合、ランダムに置き換え
+                                targetIndex = Math.floor(Math.random() * answerSlots.length);
+                            }
+                        }
+                        answerSlots[targetIndex] = answerFromPool;
+                    }
+                }
+            }
+        };
+
         // ▼▼▼▼▼ ここから修正後のコード ▼▼▼▼▼
         const handleMatchingClick = e => {
             const target = e.target.closest('.matching-item');
@@ -387,38 +432,66 @@
                         const qIndex = Array.from(matchingQuestions.children).indexOf(questionEl);
                         const aIndex = Array.from(matchingAnswers.children).indexOf(answerEl);
                         
-                        // 【改善対応】 プールから新しい問題と答えを独立して取得
-                        let newQuestion = null;
-                        let newAnswer = null;
+                        // 【改善対応】 解答可能性を維持しながら強制ペアリングを回避
+                        // 戦略: 新しいアイテムを追加した後、すべての問題に対する答えが存在することを保証
                         
                         if (matchingPool.length > 0) {
-                            // 新しい問題を取得
-                            newQuestion = matchingPool.shift();
+                            // プールから新しい問題を取得
+                            const newQuestion = matchingPool.shift();
+                            questionSlots[qIndex] = newQuestion;
                             
-                            // 新しい答えを取得（できれば新しい問題とは異なるもの）
-                            if (matchingPool.length > 0) {
-                                // プールに2つ以上ある場合、異なるアイテムを選択
-                                const availableAnswers = matchingPool.filter(item => item.id !== newQuestion.id);
+                            // 現在表示されている問題のIDを収集
+                            const displayedQuestionIds = new Set(
+                                questionSlots.filter(q => q !== null).map(q => q.id)
+                            );
+                            
+                            // 現在表示されている答えのIDを収集（新しく追加する位置を除く）
+                            const displayedAnswerIds = new Set(
+                                answerSlots.filter((a, idx) => idx !== aIndex && a !== null).map(a => a.id)
+                            );
+                            
+                            // 答えが欠けている問題を特定
+                            const missingAnswerIds = [...displayedQuestionIds].filter(id => !displayedAnswerIds.has(id));
+                            
+                            // 新しい答えを選択
+                            let newAnswer = null;
+                            
+                            if (missingAnswerIds.length > 0) {
+                                // 答えが欠けている問題がある場合、プールからその答えを探す
+                                const availableAnswers = matchingPool.filter(item => 
+                                    missingAnswerIds.includes(item.id)
+                                );
+                                
                                 if (availableAnswers.length > 0) {
-                                    // ランダムに選択して削除
+                                    // ランダムに選択（強制ペアリングを避けるため）
                                     const randomIndex = Math.floor(Math.random() * availableAnswers.length);
                                     newAnswer = availableAnswers[randomIndex];
                                     const poolIndex = matchingPool.indexOf(newAnswer);
                                     matchingPool.splice(poolIndex, 1);
-                                } else {
-                                    // すべて同じIDの場合（通常ありえない）、次のアイテムを使用
+                                } else if (matchingPool.length > 0) {
+                                    // プールに適切な答えがない場合、任意のアイテムを取得
+                                    // （後で ensureAllQuestionsHaveAnswers で調整）
                                     newAnswer = matchingPool.shift();
+                                } else {
+                                    // プールが空の場合、nullのまま
+                                    newAnswer = null;
                                 }
+                            } else if (matchingPool.length > 0) {
+                                // すべての問題に答えがある場合、プールから任意のアイテムを追加
+                                newAnswer = matchingPool.shift();
                             } else {
-                                // プールに1つしかない場合、強制的にペアになる
-                                newAnswer = newQuestion;
+                                newAnswer = null;
                             }
+                            
+                            answerSlots[aIndex] = newAnswer;
+                            
+                            // 【重要】解答可能性を確保：すべての問題に少なくとも1つの答えが存在するようにする
+                            ensureAllQuestionsHaveAnswers();
+                        } else {
+                            // プールが空の場合、両方nullに設定
+                            questionSlots[qIndex] = null;
+                            answerSlots[aIndex] = null;
                         }
-                        
-                        // データスロットを新しいアイテムで置き換える
-                        // これで他のアイテムの位置は変わらない
-                        questionSlots[qIndex] = newQuestion;
-                        answerSlots[aIndex] = newAnswer;
                         
                         // DOMを再描画して変更を反映
                         renderMatchingGame();
