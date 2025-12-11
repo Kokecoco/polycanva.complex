@@ -166,7 +166,8 @@ function ensureAtLeastOneMatchPerQuestion() {
   if (questionSlots.length === 0) return;
 
   const targetId = questionSlots[Math.floor(Math.random() * questionSlots.length)];
-  removeFromArray(answerPool, targetId);
+  const poolIdx = answerPool.indexOf(targetId);
+  if (poolIdx !== -1) answerPool.splice(poolIdx, 1);
 
   if (answerSlots.length === 0) {
     answerSlots.push(targetId);
@@ -180,8 +181,8 @@ function ensureAtLeastOneMatchPerQuestion() {
 
   const removed = answerSlots[replaceIndex];
   answerSlots[replaceIndex] = targetId;
-  // removed came from answerSlots, so by construction it is not in answerPool; push directly.
-  answerPool.push(removed);
+  // Keep pool unique.
+  if (answerPool.indexOf(removed) === -1) answerPool.push(removed);
 }
 
 function reshuffleAnswersPreservingSolvability() {
