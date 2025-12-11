@@ -115,15 +115,13 @@ function refillAfterMatch(matchedId) {
   
   // Add new items if available
   if (availableForQ.length > 0 && availableForA.length > 0) {
-    const shuffledQ = shuffle(availableForQ);
-    const shuffledA = shuffle(availableForA);
+    const newQ = shuffle(availableForQ)[0];
     
-    const newQ = shuffledQ[0];
-    // Try to pick a different ID for answer
-    let newA = shuffledA[0];
-    if (newA === newQ && shuffledA.length > 1) {
-      newA = shuffledA[1];
-    }
+    // For answer, prefer a different ID than newQ when possible
+    const availableForANotQ = availableForA.filter(id => id !== newQ);
+    const newA = (availableForANotQ.length > 0) 
+      ? shuffle(availableForANotQ)[0] 
+      : shuffle(availableForA)[0];
     
     questionSlots.push(newQ);
     answerSlots.push(newA);
