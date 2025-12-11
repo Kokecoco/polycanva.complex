@@ -188,7 +188,7 @@ function ensureAtLeastOneMatchPerQuestion() {
   const removed = answerSlots[replaceIndex];
   answerSlots[replaceIndex] = targetId;
   // Keep pool unique.
-  if (answerPool.indexOf(removed) === -1) answerPool.push(removed);
+  if (!answerPool.includes(removed)) answerPool.push(removed);
 }
 
 function reshuffleAnswersPreservingSolvability() {
