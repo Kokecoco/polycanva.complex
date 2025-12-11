@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Red Sheet – Matching</title>
   <style>
-    /* Existing styles preserved (UI unchanged) */
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 0; background: #0b0b0f; color: #f6f7fb; }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
     h1 { margin: 0 0 10px; font-size: 20px; font-weight: 650; }
@@ -53,27 +52,7 @@
   </div>
 
 <script>
-/*
-  IMPORTANT: UI/progress logic preserved.
-
-  Change requested:
-  - When a correct pair is matched, replacement question and replacement answer must be drawn independently
-    from remaining pool (not the same item).
-  - Ensure solvability by maintaining a consistent active set:
-      * only fill from remaining items NOT currently displayed
-      * keep displayed questions and displayed answers each as a set of IDs
-  - Implement separate questionPool and answerPool.
-  - Provide helper functions to refill without creating forced pairs.
-  - After replacement, reshuffle answerSlots while keeping at least one match for each displayed question.
-
-  Notes:
-  - This implementation assumes each pair is represented by a shared id.
-  - We keep two active arrays: questionSlots (ids) and answerSlots (ids).
-  - The DOM renders from these arrays.
-*/
-
-// ---- Data (existing questions/answers can remain; example fallback) ----
-// If your existing file already defines PAIRS elsewhere, keep it and remove this block.
+// ---- Data ----
 const PAIRS = window.PAIRS || [
   { id: '1', q: 'What is 2 + 2?', a: '4' },
   { id: '2', q: 'Capital of France?', a: 'Paris' },
@@ -89,19 +68,14 @@ const byId = new Map(PAIRS.map(p => [String(p.id), p]));
 const allIds = PAIRS.map(p => String(p.id));
 
 // ---- State ----
-let questionSlots = []; // array of ids currently displayed in Questions column
-let answerSlots   = []; // array of ids currently displayed in Answers column (order shuffled)
-
-// Separate pools (ids not currently displayed in their respective column)
-let questionPool = [];
-let answerPool   = [];
+let questionSlots = [];  // Currently displayed question IDs
+let answerSlots = [];    // Currently displayed answer IDs (shuffled)
+let unmatchedIds = [];   // IDs that haven't been successfully matched yet
 
 let selectedQuestionId = null;
 let selectedAnswerId = null;
-
 let matchedCount = 0;
 
-// Config: number of active cards per column
 const ACTIVE_COUNT = 6;
 
 // ---- DOM ----
@@ -112,149 +86,75 @@ const resetBtn = document.getElementById('resetBtn');
 
 // ---- Utilities ----
 function shuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    [result[i], result[j]] = [result[j], result[i]];
   }
-  return arr;
-}
-
-function unique(arr) {
-  return Array.from(new Set(arr));
-}
-
-function removeFromArray(arr, value) {
-  const idx = arr.indexOf(value);
-  if (idx >= 0) arr.splice(idx, 1);
+  return result;
 }
 
 function setProgress() {
   progressTextEl.textContent = `${matchedCount} / ${PAIRS.length}`;
 }
 
-// ---- Pool helpers ----
-function rebuildPools() {
-  // Pools are ids NOT currently displayed in their respective column.
-  const qActive = new Set(questionSlots);
-  const aActive = new Set(answerSlots);
-
-  questionPool = allIds.filter(id => !qActive.has(id));
-  answerPool = allIds.filter(id => !aActive.has(id));
-
-  shuffle(questionPool);
-  shuffle(answerPool);
-}
-
-function pickFromPool(pool, forbiddenSet) {
-  // Picks first available id in pool that isn't forbidden.
-  for (let i = 0; i < pool.length; i++) {
-    const id = pool[i];
-    if (!forbiddenSet || !forbiddenSet.has(id)) {
-      pool.splice(i, 1);
-      return id;
-    }
-  }
-  return null;
-}
-
-function ensureAtLeastOneMatchPerQuestion() {
-  // For each displayed question id, ensure its corresponding answer id exists somewhere in answerSlots.
+// ---- Game Logic ----
+function refillAfterMatch(matchedId) {
+  // Remove matched ID from both active sets
+  questionSlots = questionSlots.filter(id => id !== matchedId);
+  answerSlots = answerSlots.filter(id => id !== matchedId);
+  
+  // Remove from unmatched pool
+  unmatchedIds = unmatchedIds.filter(id => id !== matchedId);
+  
+  // Find available IDs (unmatched IDs not currently displayed in respective column)
+  const qSet = new Set(questionSlots);
   const aSet = new Set(answerSlots);
-  const missing = questionSlots.filter(qid => !aSet.has(qid));
-  if (missing.length === 0) return;
-
-  // We need to bring in missing answer ids by swapping out answers that aren't required.
-  const required = new Set(questionSlots);
-  const mustHave = new Set(questionSlots); // same ids
-
-  // Candidates to remove: answers not corresponding to any displayed question
-  const removableIdx = [];
-  for (let i = 0; i < answerSlots.length; i++) {
-    if (!mustHave.has(answerSlots[i])) removableIdx.push(i);
-  }
-
-  for (const neededId of missing) {
-    if (aSet.has(neededId)) continue;
-
-    // Try to source neededId from answerPool; if not there, it might be currently in questionPool but not in answerSlots.
-    // Since pools are separate, neededId may still be present in answerPool (if not displayed).
-    // If it's displayed as an answer already, we'd have had it.
-    // If it's neither in answerPool nor answerSlots, it means answerSlots already contains it (contradiction) or data mismatch.
-
-    // Remove neededId from answerPool if present; else allow injecting it anyway (we'll keep pools consistent afterwards).
-    removeFromArray(answerPool, neededId);
-
-    let swapIndex = removableIdx.pop();
-    if (swapIndex === undefined) {
-      // No removable slots (answerSlots exactly equals questionSlots but missing can't happen). Safety break.
-      break;
+  const availableForQ = unmatchedIds.filter(id => !qSet.has(id));
+  const availableForA = unmatchedIds.filter(id => !aSet.has(id));
+  
+  // Add new items if available
+  if (availableForQ.length > 0 && availableForA.length > 0) {
+    const shuffledQ = shuffle(availableForQ);
+    const shuffledA = shuffle(availableForA);
+    
+    const newQ = shuffledQ[0];
+    // Try to pick a different ID for answer
+    let newA = shuffledA[0];
+    if (newA === newQ && shuffledA.length > 1) {
+      newA = shuffledA[1];
     }
-
-    const removed = answerSlots[swapIndex];
-    answerSlots[swapIndex] = neededId;
-    aSet.delete(removed);
-    aSet.add(neededId);
-
-    // Put removed id back into answerPool if it's not currently displayed.
-    if (!aSet.has(removed)) answerPool.push(removed);
+    
+    questionSlots.push(newQ);
+    answerSlots.push(newA);
+  } else if (availableForQ.length > 0) {
+    questionSlots.push(availableForQ[0]);
+  } else if (availableForA.length > 0) {
+    answerSlots.push(availableForA[0]);
   }
-
-  shuffle(answerPool);
+  
+  // Ensure solvability and shuffle
+  ensureSolvable();
+  answerSlots = shuffle(answerSlots);
 }
 
-function reshuffleAnswersPreservingSolvability() {
-  // Shuffle order but keep solvability constraint: at least one match for each displayed question.
-  // Since solvability depends on set membership, a shuffle doesn't break it.
-  shuffle(answerSlots);
-  ensureAtLeastOneMatchPerQuestion();
-  // If ensureAtLeastOneMatchPerQuestion performed swaps, reshuffle again lightly to avoid the inserted answers
-  // always landing at the end.
-  shuffle(answerSlots);
-}
-
-function refillActiveSetsAfterMatch(matchedId) {
-  // Remove matched id from both active sets, then independently refill each side from its pool.
-  // Also ensure we never introduce duplicate ids within a column.
-
-  // 1) Remove matched from actives
-  removeFromArray(questionSlots, matchedId);
-  removeFromArray(answerSlots, matchedId);
-
-  // 2) Rebuild pools based on current actives
-  rebuildPools();
-
-  // 3) Refill question side: choose an id not currently in questionSlots
-  const qForbidden = new Set(questionSlots);
-  const newQ = pickFromPool(questionPool, qForbidden);
-  if (newQ) questionSlots.push(newQ);
-
-  // 4) Refill answer side independently: choose an id not currently in answerSlots
-  const aForbidden = new Set(answerSlots);
-  // Additionally, avoid forcing a single remaining match scenario by preferring an id that is NOT exactly newQ
-  // when possible (independent draw). This is the core behavior change.
-  let newA = null;
-  if (newQ) {
-    const forbidJustNewQ = new Set([...aForbidden, newQ]);
-    newA = pickFromPool(answerPool, forbidJustNewQ);
-    if (!newA) {
-      // Fall back: if the only available answer replacement is newQ, allow it.
-      newA = pickFromPool(answerPool, aForbidden);
+function ensureSolvable() {
+  // Ensure at least one visible match exists
+  const qSet = new Set(questionSlots);
+  const hasMatch = answerSlots.some(id => qSet.has(id));
+  
+  if (!hasMatch && questionSlots.length > 0) {
+    // No match exists - need to inject one
+    // Find a question whose answer is not yet displayed
+    const aSet = new Set(answerSlots);
+    const unmatchedQ = questionSlots.find(id => !aSet.has(id));
+    
+    if (unmatchedQ) {
+      // Replace a random answer with the matching one
+      const replaceIdx = Math.floor(Math.random() * answerSlots.length);
+      answerSlots[replaceIdx] = unmatchedQ;
     }
-  } else {
-    newA = pickFromPool(answerPool, aForbidden);
   }
-  if (newA) answerSlots.push(newA);
-
-  // 5) Make sure answer side contains at least one correct answer for each question
-  // This prevents unsolvable states.
-  rebuildPools();
-  ensureAtLeastOneMatchPerQuestion();
-
-  // 6) Reshuffle answers after replacement (requested)
-  reshuffleAnswersPreservingSolvability();
-
-  // 7) Rebuild pools again for next operation
-  rebuildPools();
 }
 
 // ---- Rendering ----
@@ -294,7 +194,7 @@ function flashCard(listEl, id, className, ms=380) {
   setTimeout(() => el.classList.remove(className), ms);
 }
 
-// ---- Interaction / game logic ----
+// ---- Interaction ----
 function onSelectQuestion(id) {
   selectedQuestionId = (selectedQuestionId === id) ? null : id;
   render();
@@ -313,26 +213,22 @@ function tryResolve() {
   const isCorrect = selectedQuestionId === selectedAnswerId;
 
   if (isCorrect) {
-    // Visual feedback
     flashCard(questionListEl, selectedQuestionId, 'good');
     flashCard(answerListEl, selectedAnswerId, 'good');
 
     const matchedId = selectedQuestionId;
     selectedQuestionId = null;
     selectedAnswerId = null;
-
     matchedCount += 1;
 
-    // Replacement behavior changed here:
-    // Use independent replacements from separate pools while maintaining solvability.
-    refillActiveSetsAfterMatch(matchedId);
-
-    render();
+    // Replace with new items
+    setTimeout(() => {
+      refillAfterMatch(matchedId);
+      render();
+    }, 400);
   } else {
     flashCard(questionListEl, selectedQuestionId, 'bad');
     flashCard(answerListEl, selectedAnswerId, 'bad');
-
-    // Keep selections (existing behavior may differ; UI unchanged otherwise)
     selectedQuestionId = null;
     selectedAnswerId = null;
     render();
@@ -343,33 +239,25 @@ function initGame() {
   matchedCount = 0;
   selectedQuestionId = null;
   selectedAnswerId = null;
-
-  const ids = shuffle(allIds.slice());
-  // Start with ACTIVE_COUNT questions
-  questionSlots = ids.slice(0, Math.min(ACTIVE_COUNT, ids.length));
-
-  // Start with ACTIVE_COUNT answers, independently chosen from remaining to avoid identical initial set when possible
-  // but still maintain solvability by ensuring each displayed question has its answer present.
-  const remainingForAnswers = ids.slice(questionSlots.length);
-  answerSlots = remainingForAnswers.slice(0, Math.min(ACTIVE_COUNT, remainingForAnswers.length));
-
-  // If we don't have enough remaining (small dataset), fill from start but avoid duplicates
-  const aSet = new Set(answerSlots);
-  for (const id of ids) {
-    if (answerSlots.length >= questionSlots.length) break;
-    if (!aSet.has(id)) { answerSlots.push(id); aSet.add(id); }
-  }
-
-  rebuildPools();
-  ensureAtLeastOneMatchPerQuestion();
-  reshuffleAnswersPreservingSolvability();
-  rebuildPools();
-
+  
+  // All IDs start as unmatched
+  unmatchedIds = [...allIds];
+  
+  // Initialize with ACTIVE_COUNT items
+  const numToShow = Math.min(ACTIVE_COUNT, allIds.length);
+  const shuffled = shuffle([...allIds]);
+  
+  questionSlots = shuffled.slice(0, numToShow);
+  answerSlots = shuffle(shuffled.slice(0, numToShow)); // Same IDs, different order
+  
+  // Ensure initial solvability
+  ensureSolvable();
+  answerSlots = shuffle(answerSlots);
+  
   render();
 }
 
 resetBtn.addEventListener('click', initGame);
-
 initGame();
 </script>
 </body>
