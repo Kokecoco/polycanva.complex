@@ -123,6 +123,10 @@ function unique(arr) {
   return Array.from(new Set(arr));
 }
 
+function randomElement(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function removeFromArray(arr, value) {
   const idx = arr.indexOf(value);
   if (idx >= 0) arr.splice(idx, 1);
@@ -161,11 +165,11 @@ function ensureAtLeastOneMatchPerQuestion() {
   // Ensure the game stays solvable by guaranteeing at least one visible question has its matching answer.
   const aSet = new Set(answerSlots);
   const hasAnyMatch = questionSlots.some(qid => aSet.has(qid));
-  if (hasAnyMatch) return;
+  if (hasAnyMatch) return; // Already solvable state.
 
   if (questionSlots.length === 0) return;
 
-  const targetId = questionSlots[Math.floor(Math.random() * questionSlots.length)];
+  const targetId = randomElement(questionSlots);
   const poolIdx = answerPool.indexOf(targetId);
   if (poolIdx !== -1) answerPool.splice(poolIdx, 1);
 
@@ -177,7 +181,7 @@ function ensureAtLeastOneMatchPerQuestion() {
   const qSet = new Set(questionSlots);
   // Prefer to replace an answer that doesn't correspond to any visible question; otherwise replace a random one.
   let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
-  if (replaceIndex === -1) replaceIndex = Math.floor(Math.random() * answerSlots.length);
+  if (replaceIndex === -1) replaceIndex = answerSlots.indexOf(randomElement(answerSlots));
 
   const removed = answerSlots[replaceIndex];
   answerSlots[replaceIndex] = targetId;
