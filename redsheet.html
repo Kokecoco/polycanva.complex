@@ -157,36 +157,57 @@ function pickFromPool(pool, forbiddenSet) {
   return null;
 }
 
-function ensureAtLeastOneMatchAvailable() {
-  // Keep the board solvable by ensuring there is at least one matching pair
-  // between the visible questions and answers. We intentionally avoid forcing
-  // every question's answer to appear to prevent guaranteed new pairs.
-  if (questionSlots.length === 0) return;
+function ensureAtLeastOneMatchPerQuestion() {
+  // For each displayed question id, ensure its corresponding answer id exists somewhere in answerSlots.
+  const aSet = new Set(answerSlots);
+  const missing = questionSlots.filter(qid => !aSet.has(qid));
+  if (missing.length === 0) return;
 
-  const qSet = new Set(questionSlots);
-  const hasOverlap = answerSlots.some(id => qSet.has(id));
-  if (hasOverlap) return;
+  // We need to bring in missing answer ids by swapping out answers that aren't required.
+  const required = new Set(questionSlots);
+  const mustHave = new Set(questionSlots); // same ids
 
-  // Guarantee a single match by injecting one of the visible questions' answers.
-  const targetId = questionSlots[0];
-  removeFromArray(answerPool, targetId);
-
-  if (answerSlots.length === 0) {
-    answerSlots.push(targetId);
-    return;
+  // Candidates to remove: answers not corresponding to any displayed question
+  const removableIdx = [];
+  for (let i = 0; i < answerSlots.length; i++) {
+    if (!mustHave.has(answerSlots[i])) removableIdx.push(i);
   }
 
-  let replaceIdx = answerSlots.findIndex(id => !qSet.has(id));
-  if (replaceIdx === -1) replaceIdx = 0;
-  answerSlots[replaceIdx] = targetId;
+  for (const neededId of missing) {
+    if (aSet.has(neededId)) continue;
+
+    // Try to source neededId from answerPool; if not there, it might be currently in questionPool but not in answerSlots.
+    // Since pools are separate, neededId may still be present in answerPool (if not displayed).
+    // If it's displayed as an answer already, we'd have had it.
+    // If it's neither in answerPool nor answerSlots, it means answerSlots already contains it (contradiction) or data mismatch.
+
+    // Remove neededId from answerPool if present; else allow injecting it anyway (we'll keep pools consistent afterwards).
+    removeFromArray(answerPool, neededId);
+
+    let swapIndex = removableIdx.pop();
+    if (swapIndex === undefined) {
+      // No removable slots (answerSlots exactly equals questionSlots but missing can't happen). Safety break.
+      break;
+    }
+
+    const removed = answerSlots[swapIndex];
+    answerSlots[swapIndex] = neededId;
+    aSet.delete(removed);
+    aSet.add(neededId);
+
+    // Put removed id back into answerPool if it's not currently displayed.
+    if (!aSet.has(removed)) answerPool.push(removed);
+  }
+
+  shuffle(answerPool);
 }
 
 function reshuffleAnswersPreservingSolvability() {
-  // Shuffle order but keep solvability constraint: at least one match remains available.
+  // Shuffle order but keep solvability constraint: at least one match for each displayed question.
   // Since solvability depends on set membership, a shuffle doesn't break it.
   shuffle(answerSlots);
-  ensureAtLeastOneMatchAvailable();
-  // If ensureAtLeastOneMatchAvailable performed swaps, reshuffle again lightly to avoid the inserted answers
+  ensureAtLeastOneMatchPerQuestion();
+  // If ensureAtLeastOneMatchPerQuestion performed swaps, reshuffle again lightly to avoid the inserted answers
   // always landing at the end.
   shuffle(answerSlots);
 }
@@ -224,9 +245,10 @@ function refillActiveSetsAfterMatch(matchedId) {
   }
   if (newA) answerSlots.push(newA);
 
-  // 5) Make sure there is at least one visible match to prevent unsolvable states.
+  // 5) Make sure answer side contains at least one correct answer for each question
+  // This prevents unsolvable states.
   rebuildPools();
-  ensureAtLeastOneMatchAvailable();
+  ensureAtLeastOneMatchPerQuestion();
 
   // 6) Reshuffle answers after replacement (requested)
   reshuffleAnswersPreservingSolvability();
@@ -327,7 +349,7 @@ function initGame() {
   questionSlots = ids.slice(0, Math.min(ACTIVE_COUNT, ids.length));
 
   // Start with ACTIVE_COUNT answers, independently chosen from remaining to avoid identical initial set when possible
-  // but still maintain solvability by ensuring at least one visible match exists.
+  // but still maintain solvability by ensuring each displayed question has its answer present.
   const remainingForAnswers = ids.slice(questionSlots.length);
   answerSlots = remainingForAnswers.slice(0, Math.min(ACTIVE_COUNT, remainingForAnswers.length));
 
@@ -339,7 +361,7 @@ function initGame() {
   }
 
   rebuildPools();
-  ensureAtLeastOneMatchAvailable();
+  ensureAtLeastOneMatchPerQuestion();
   reshuffleAnswersPreservingSolvability();
   rebuildPools();
 
