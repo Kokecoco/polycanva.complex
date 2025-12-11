@@ -76,11 +76,11 @@
         .quiz-option-button:disabled { opacity: 0.8; cursor: not-allowed; }
         .quiz-explanation { font-size: 0.8em; color: #555; padding-left: 15px; margin-top: 2px; }
         #quiz-next-button { display: none; }
-        .matching-container { display: flex; justify-content: space-between; }
-        .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; }
-        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s, opacity 0.3s, transform 0.3s; word-wrap: break-word; will-change: transform, opacity; min-height: 50px; display: flex; align-items: center; }
+        .matching-container { display: flex; justify-content: space-between; gap: 20px; height: 400px; }
+        .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; overflow-x: hidden; max-height: 100%; }
+        .matching-item { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; transition: all 0.2s; word-wrap: break-word; min-height: 50px; display: flex; align-items: center; flex-shrink: 0; }
         .matching-item.selected { background-color: var(--selected-color); border-color: var(--correct-color); transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .matching-item.matched { opacity: 0; transform: scale(0.8); pointer-events: none; }
+        .matching-item.matched { opacity: 0.3; text-decoration: line-through; pointer-events: none; }
         .matching-item.incorrect-flash { animation: shake 0.5s; background-color: var(--incorrect-color); }
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
         .file-input { display: none; }
@@ -226,8 +226,7 @@
         
         let questions = []; let allAnswersVisible = false; let currentFocusIndex = 0;
         let currentQuizIndex = 0; let quizQuestions = []; let quizMistakes = [];
-        let selectedMatchingItem = null; let matchingPool = []; let questionSlots = []; let answerSlots = [];
-        const MATCHING_VISIBLE_COUNT = 5;
+        let selectedMatchingItem = null; let allMatchingQuestions = []; let matchedPairs = new Set();
 
         const tabs = document.querySelectorAll('.tab-button');
         const tabContents = document.querySelectorAll('.tab-content');
@@ -248,7 +247,7 @@
         const sanitizeHTML = str => str.replace(/\n/g, '<br>');
         const levenshteinDistance = (str1 = '', str2 = '') => { const track = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null)); for (let i = 0; i <= str1.length; i += 1) { track[0][i] = i; } for (let j = 0; j <= str2.length; j += 1) { track[j][0] = j; } for (let j = 1; j <= str2.length; j += 1) { for (let i = 1; i <= str1.length; i += 1) { const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1; track[j][i] = Math.min(track[j][i - 1] + 1, track[j - 1][i] + 1, track[j - 1][i - 1] + indicator); } } return track[str2.length][str1.length]; };
         
-        const updateButtonsState = () => { const count = questions.length; const hasQuestions = count > 0; const canStartQuiz = count >= 4; const canStartMatching = count >= MATCHING_VISIBLE_COUNT; shuffleButton.disabled = toggleAllButton.disabled = startFocusModeButton.disabled = !hasQuestions; startQuizModeButton.disabled = !canStartQuiz; quizModeNotice.style.display = canStartQuiz ? 'none' : 'block'; startMatchingModeButton.disabled = !canStartMatching; matchingModeNotice.style.display = canStartMatching ? 'none' : `block`; matchingModeNotice.textContent = `（${MATCHING_VISIBLE_COUNT}問以上で利用可）`; if(hasQuestions) matchingCountInput.max = count; generateUrlButton.disabled = exportJsonButton.disabled = printButton.disabled = !hasQuestions; };
+        const updateButtonsState = () => { const count = questions.length; const hasQuestions = count > 0; const canStartQuiz = count >= 4; const canStartMatching = count >= 5; shuffleButton.disabled = toggleAllButton.disabled = startFocusModeButton.disabled = !hasQuestions; startQuizModeButton.disabled = !canStartQuiz; quizModeNotice.style.display = canStartQuiz ? 'none' : 'block'; startMatchingModeButton.disabled = !canStartMatching; matchingModeNotice.style.display = canStartMatching ? 'none' : `block`; matchingModeNotice.textContent = `（5問以上で利用可）`; if(hasQuestions) matchingCountInput.max = count; generateUrlButton.disabled = exportJsonButton.disabled = printButton.disabled = !hasQuestions; };
         
         const renderQuestions = () => {
             questionList.innerHTML = ''; questionCount.textContent = questions.length; updateButtonsState();
@@ -309,166 +308,54 @@
         const startQuizMode = () => { if (questions.length < 4) return; quizQuestions = shuffleArray([...questions]); quizMistakes = []; currentQuizIndex = 0; quizNextButton.textContent = '次の問題へ'; renderQuizQuestion(); showModal(quizModal); };
         const endQuizMode = () => { hideModal(quizModal); };
         
-        // ★★★★★ 修正前のマッチングモード ★★★★★
+        // ★★★★★ 全問表示型マッチングモード ★★★★★
         const startMatchingMode = () => {
             const count = parseInt(matchingCountInput.value, 10);
-            if (count < MATCHING_VISIBLE_COUNT || count > questions.length) { alert(`問題数は${MATCHING_VISIBLE_COUNT}以上、${questions.length}以下で指定してください。`); return; }
-            const allMatchingQuestions = shuffleArray([...questions]);
-            matchingPool = allMatchingQuestions.slice(MATCHING_VISIBLE_COUNT, count);
-            questionSlots = allMatchingQuestions.slice(0, MATCHING_VISIBLE_COUNT);
-            answerSlots = shuffleArray([...questionSlots]);
-            renderMatchingGame(); showModal(matchingModal);
+            if (count < 5 || count > questions.length) { alert(`問題数は5以上、${questions.length}以下で指定してください。`); return; }
+            
+            // 全問を表示用に準備
+            allMatchingQuestions = shuffleArray([...questions]).slice(0, count);
+            matchedPairs = new Set();
+            
+            renderMatchingGame();
+            showModal(matchingModal);
         };
+        
         const renderMatchingGame = () => {
-            selectedMatchingItem = null; matchingQuestions.innerHTML = ''; matchingAnswers.innerHTML = '';
-            const createItem = (item, type) => {
-                const li = document.createElement('li'); li.className = 'matching-item';
-                if(item) {
-                    li.innerHTML = type === 'question' ? sanitizeHTML(item.question) : sanitizeHTML(item.answer);
-                    li.dataset.id = item.id;
-                    li.dataset.type = type;
-                } else {
-                    li.style.visibility = 'hidden'; // 空のスロット
-                    li.style.pointerEvents = 'none';
+            selectedMatchingItem = null;
+            matchingQuestions.innerHTML = '';
+            matchingAnswers.innerHTML = '';
+            
+            // 問題列を作成
+            allMatchingQuestions.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'matching-item';
+                li.innerHTML = sanitizeHTML(item.question);
+                li.dataset.id = item.id;
+                li.dataset.type = 'question';
+                if (matchedPairs.has(item.id)) {
+                    li.classList.add('matched');
                 }
-                return li;
-            };
-            for(let i = 0; i < MATCHING_VISIBLE_COUNT; i++) {
-                matchingQuestions.appendChild(createItem(questionSlots[i], 'question'));
-                matchingAnswers.appendChild(createItem(answerSlots[i], 'answer'));
-            }
+                matchingQuestions.appendChild(li);
+            });
+            
+            // 答え列を作成（シャッフル）
+            const shuffledAnswers = shuffleArray([...allMatchingQuestions]);
+            shuffledAnswers.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'matching-item';
+                li.innerHTML = sanitizeHTML(item.answer);
+                li.dataset.id = item.id;
+                li.dataset.type = 'answer';
+                if (matchedPairs.has(item.id)) {
+                    li.classList.add('matched');
+                }
+                matchingAnswers.appendChild(li);
+            });
+            
             updateMatchingProgress();
         };
 
-        // 解答可能性を確保する関数（常に少なくとも1つのマッチが可能であることを保証）
-        const ensureAtLeastOneMatch = () => {
-            // 現在表示されている問題と答えのIDを収集
-            const questionIds = new Set(questionSlots.filter(q => q !== null).map(q => q.id));
-            const answerIds = new Set(answerSlots.filter(a => a !== null).map(a => a.id));
-            
-            // マッチする組み合わせが少なくとも1つ存在するかチェック
-            const hasMatch = [...questionIds].some(id => answerIds.has(id));
-            
-            if (!hasMatch && questionIds.size > 0) {
-                // マッチが1つもない場合、必ず1つ作成する
-                // 戦略1: プールから任意の問題の答えを探す
-                const anyQuestionId = [...questionIds][0];
-                let matchingAnswer = matchingPool.find(item => item.id === anyQuestionId);
-                
-                if (matchingAnswer) {
-                    // プールにマッチする答えがある場合、それを追加
-                    const poolIndex = matchingPool.indexOf(matchingAnswer);
-                    matchingPool.splice(poolIndex, 1);
-                    
-                    // 空いているスロットまたはランダムな位置に配置
-                    let targetIndex = answerSlots.findIndex(a => a === null);
-                    if (targetIndex === -1) {
-                        targetIndex = Math.floor(Math.random() * answerSlots.length);
-                    }
-                    
-                    // 重複チェック: 既に同じIDの答えが存在する場合は置き換え
-                    const duplicateIndex = answerSlots.findIndex(a => a && a.id === matchingAnswer.id);
-                    if (duplicateIndex !== -1 && duplicateIndex !== targetIndex) {
-                        // 重複がある場合、その位置を使用
-                        targetIndex = duplicateIndex;
-                    }
-                    
-                    const replacedItem = answerSlots[targetIndex];
-                    answerSlots[targetIndex] = matchingAnswer;
-                    
-                    // 置き換えられたアイテムをプールに戻す（重複でない場合のみ）
-                    if (replacedItem && replacedItem.id !== matchingAnswer.id) {
-                        matchingPool.push(replacedItem);
-                    }
-                } else {
-                    // 戦略2: プールにマッチする答えがない場合、
-                    // 既存の答えの1つを、プールまたは表示中の問題に対応する答えと交換
-                    // まず、表示中の問題に対応する答えをプールから探す
-                    let foundMatch = false;
-                    for (const qid of questionIds) {
-                        matchingAnswer = matchingPool.find(item => item.id === qid);
-                        if (matchingAnswer) {
-                            const poolIndex = matchingPool.indexOf(matchingAnswer);
-                            matchingPool.splice(poolIndex, 1);
-                            
-                            // 重複チェック: 既に同じIDの答えが存在するかチェック
-                            const duplicateIndex = answerSlots.findIndex(a => a && a.id === matchingAnswer.id);
-                            let targetIndex;
-                            
-                            if (duplicateIndex !== -1) {
-                                // 既に存在する場合はスキップ（既にマッチがある）
-                                matchingPool.push(matchingAnswer);
-                                continue;
-                            } else {
-                                // ランダムな答えスロットを置き換え
-                                targetIndex = Math.floor(Math.random() * answerSlots.length);
-                            }
-                            
-                            const replacedItem = answerSlots[targetIndex];
-                            answerSlots[targetIndex] = matchingAnswer;
-                            
-                            // 置き換えられたアイテムをプールに戻す
-                            if (replacedItem && replacedItem.id !== matchingAnswer.id) {
-                                matchingPool.push(replacedItem);
-                            }
-                            foundMatch = true;
-                            break;
-                        }
-                    }
-                    
-                    // 戦略3: それでもない場合、プールと表示中の答えを全体的に調整
-                    if (!foundMatch && matchingPool.length > 0) {
-                        // プールから1つ取得し、それに対応する問題を探す
-                        const itemFromPool = matchingPool.shift();
-                        
-                        // この答えに対応する問題が表示されているかチェック
-                        if (questionIds.has(itemFromPool.id)) {
-                            // 既に問題が表示されている場合、答えを追加
-                            // 重複チェック
-                            const duplicateIndex = answerSlots.findIndex(a => a && a.id === itemFromPool.id);
-                            
-                            if (duplicateIndex === -1) {
-                                // 重複がない場合のみ追加
-                                const targetIndex = Math.floor(Math.random() * answerSlots.length);
-                                const replacedItem = answerSlots[targetIndex];
-                                answerSlots[targetIndex] = itemFromPool;
-                                if (replacedItem) {
-                                    matchingPool.push(replacedItem);
-                                }
-                            } else {
-                                // 既に存在する場合はプールに戻す
-                                matchingPool.push(itemFromPool);
-                            }
-                        } else {
-                            // 問題が表示されていない場合、問題も追加する（最終手段）
-                            // 重複チェック
-                            const qDuplicateIndex = questionSlots.findIndex(q => q && q.id === itemFromPool.id);
-                            const aDuplicateIndex = answerSlots.findIndex(a => a && a.id === itemFromPool.id);
-                            
-                            if (qDuplicateIndex === -1 && aDuplicateIndex === -1) {
-                                // 重複がない場合のみ追加
-                                const qTargetIndex = Math.floor(Math.random() * questionSlots.length);
-                                const aTargetIndex = Math.floor(Math.random() * answerSlots.length);
-                                
-                                const replacedQ = questionSlots[qTargetIndex];
-                                const replacedA = answerSlots[aTargetIndex];
-                                
-                                questionSlots[qTargetIndex] = itemFromPool;
-                                answerSlots[aTargetIndex] = itemFromPool;
-                                
-                                if (replacedQ) matchingPool.push(replacedQ);
-                                if (replacedA && replacedA.id !== itemFromPool.id) matchingPool.push(replacedA);
-                            } else {
-                                // 既に存在する場合はプールに戻す
-                                matchingPool.push(itemFromPool);
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        // ▼▼▼▼▼ ここから修正後のコード ▼▼▼▼▼
         const handleMatchingClick = e => {
             const target = e.target.closest('.matching-item');
             // クリック対象外、または既にマッチ済みの場合は処理しない
@@ -509,149 +396,21 @@
                     selectedMatchingItem.classList.remove('selected');
                     selectedMatchingItem = null;
                     
-                    // アニメーションが終わるのを待ってからDOMを更新
+                    // マッチしたペアを記録
+                    matchedPairs.add(questionEl.dataset.id);
+                    
                     setTimeout(() => {
-                        // 【バグ修正】 表示されているリスト内での正しいインデックスを取得
-                        const qIndex = Array.from(matchingQuestions.children).indexOf(questionEl);
-                        const aIndex = Array.from(matchingAnswers.children).indexOf(answerEl);
-                        
-                        // 【改善対応】 解答可能性を維持しながら強制ペアリングを回避
-                        // 戦略: 新しいアイテムを追加した後、すべての問題に対する答えが存在することを保証
-                        
-                        if (matchingPool.length > 0) {
-                            // プールから新しい問題を取得（重複チェック付き）
-                            let newQuestion = null;
-                            let attempts = 0;
-                            const maxAttempts = matchingPool.length;
-                            
-                            // 重複しない問題を探す
-                            while (attempts < maxAttempts) {
-                                const candidate = matchingPool.shift();
-                                const isDuplicate = questionSlots.some((q, idx) => 
-                                    idx !== qIndex && q && q.id === candidate.id
-                                );
-                                
-                                if (!isDuplicate) {
-                                    newQuestion = candidate;
-                                    break;
-                                } else {
-                                    // 重複している場合は後ろに回す
-                                    matchingPool.push(candidate);
-                                    attempts++;
-                                }
-                            }
-                            
-                            // 重複しない問題が見つからなかった場合、仕方なく使用
-                            if (!newQuestion && matchingPool.length > 0) {
-                                newQuestion = matchingPool.shift();
-                            }
-                            
-                            questionSlots[qIndex] = newQuestion;
-                            
-                            // 現在表示されている問題のIDを収集
-                            const displayedQuestionIds = new Set(
-                                questionSlots.filter(q => q !== null).map(q => q.id)
-                            );
-                            
-                            // 現在表示されている答えのIDを収集（新しく追加する位置を除く）
-                            const displayedAnswerIds = new Set(
-                                answerSlots.filter((a, idx) => idx !== aIndex && a !== null).map(a => a.id)
-                            );
-                            
-                            // 答えが欠けている問題を特定
-                            const missingAnswerIds = [...displayedQuestionIds].filter(id => !displayedAnswerIds.has(id));
-                            
-                            // 新しい答えを選択（重複チェック付き）
-                            let newAnswer = null;
-                            
-                            if (missingAnswerIds.length > 0) {
-                                // 答えが欠けている問題がある場合、プールからその答えを探す
-                                const availableAnswers = matchingPool.filter(item => 
-                                    missingAnswerIds.includes(item.id) &&
-                                    !answerSlots.some((a, idx) => idx !== aIndex && a && a.id === item.id)
-                                );
-                                
-                                if (availableAnswers.length > 0) {
-                                    // ランダムに選択（強制ペアリングを避けるため）
-                                    const randomIndex = Math.floor(Math.random() * availableAnswers.length);
-                                    newAnswer = availableAnswers[randomIndex];
-                                    const poolIndex = matchingPool.indexOf(newAnswer);
-                                    matchingPool.splice(poolIndex, 1);
-                                } else if (matchingPool.length > 0) {
-                                    // プールに適切な答えがない場合、重複チェックして任意のアイテムを取得
-                                    attempts = 0;
-                                    while (attempts < matchingPool.length) {
-                                        const candidate = matchingPool.shift();
-                                        const isDuplicate = answerSlots.some((a, idx) => 
-                                            idx !== aIndex && a && a.id === candidate.id
-                                        );
-                                        
-                                        if (!isDuplicate) {
-                                            newAnswer = candidate;
-                                            break;
-                                        } else {
-                                            matchingPool.push(candidate);
-                                            attempts++;
-                                        }
-                                    }
-                                    
-                                    // 重複しない答えが見つからなかった場合、仕方なく使用
-                                    if (!newAnswer && matchingPool.length > 0) {
-                                        newAnswer = matchingPool.shift();
-                                    }
-                                } else {
-                                    // プールが空の場合、nullのまま
-                                    newAnswer = null;
-                                }
-                            } else if (matchingPool.length > 0) {
-                                // すべての問題に答えがある場合、プールから任意のアイテムを追加（重複チェック付き）
-                                attempts = 0;
-                                while (attempts < matchingPool.length) {
-                                    const candidate = matchingPool.shift();
-                                    const isDuplicate = answerSlots.some((a, idx) => 
-                                        idx !== aIndex && a && a.id === candidate.id
-                                    );
-                                    
-                                    if (!isDuplicate) {
-                                        newAnswer = candidate;
-                                        break;
-                                    } else {
-                                        matchingPool.push(candidate);
-                                        attempts++;
-                                    }
-                                }
-                                
-                                // 重複しない答えが見つからなかった場合、仕方なく使用
-                                if (!newAnswer && matchingPool.length > 0) {
-                                    newAnswer = matchingPool.shift();
-                                }
-                            } else {
-                                newAnswer = null;
-                            }
-                            
-                            answerSlots[aIndex] = newAnswer;
-                            
-                            // 【重要】解答可能性を確保：少なくとも1つのマッチが可能であることを保証
-                            ensureAtLeastOneMatch();
-                        } else {
-                            // プールが空の場合、両方nullに設定
-                            questionSlots[qIndex] = null;
-                            answerSlots[aIndex] = null;
-                        }
-                        
-                        // DOMを再描画して変更を反映
-                        renderMatchingGame();
+                        updateMatchingProgress();
                         matchingContainer.style.pointerEvents = 'auto';
                         
                         // 全ての問題を解き終わったかチェック
-                        if (questionSlots.every(q => q === null)) {
-                            updateMatchingProgress();
+                        if (matchedPairs.size === allMatchingQuestions.length) {
                             setTimeout(() => {
                                 alert('全問正解！クリアです！');
                                 endMatchingMode();
-                            }, 500); // アニメーション後にアラート
+                            }, 500);
                         }
-                    }, 400); // .matchedのアニメーション時間
+                    }, 400);
                 } else {
                     // 不正解の場合
                     questionEl.classList.add('incorrect-flash');
@@ -667,9 +426,12 @@
                 }
             }
         };
-        // ▲▲▲▲▲ ここまで修正後のコード ▲▲▲▲▲
 
-        const updateMatchingProgress = () => { const totalCount = parseInt(matchingCountInput.value, 10); const solvedCount = totalCount - (matchingPool.length + questionSlots.filter(Boolean).length); matchingProgress.textContent = `${solvedCount} / ${totalCount}`; };
+        const updateMatchingProgress = () => { 
+            const totalCount = allMatchingQuestions.length; 
+            const solvedCount = matchedPairs.size; 
+            matchingProgress.textContent = `${solvedCount} / ${totalCount}`; 
+        };
         const endMatchingMode = () => { hideModal(matchingModal); };
         
         const generateShareUrl = () => { try { const jsonString = JSON.stringify(questions); const compressed = pako.deflate(jsonString, { to: 'string' }); const base64String = btoa(compressed); const url = `${location.origin}${location.pathname}#${base64String}`; navigator.clipboard.writeText(url).then(() => showToast('共有URLをクリップボードにコピーしました。')); } catch (e) { alert('URLの生成に失敗しました。'); } };
