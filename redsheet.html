@@ -158,7 +158,7 @@ function pickFromPool(pool, forbiddenSet) {
 }
 
 function ensureAtLeastOneMatchPerQuestion() {
-  // Keep the board solvable without forcing every question to have its answer visible.
+  // Keep the board solvable by guaranteeing at least one visible question-answer pair shares the same id.
   const aSet = new Set(answerSlots);
   const hasAnyMatch = questionSlots.some(qid => aSet.has(qid));
   if (hasAnyMatch) return;
@@ -174,7 +174,7 @@ function ensureAtLeastOneMatchPerQuestion() {
   }
 
   const qSet = new Set(questionSlots);
-  // Prefer to replace an answer that is unrelated to currently shown questions; otherwise replace a random one.
+  // Prefer to replace an answer that doesn't correspond to any visible question; otherwise replace a random one.
   let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
   if (replaceIndex === -1) replaceIndex = Math.floor(Math.random() * answerSlots.length);
 
