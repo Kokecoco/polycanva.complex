@@ -158,48 +158,29 @@ function pickFromPool(pool, forbiddenSet) {
 }
 
 function ensureAtLeastOneMatchPerQuestion() {
-  // For each displayed question id, ensure its corresponding answer id exists somewhere in answerSlots.
+  // Keep the board solvable without forcing every question to have its answer visible.
   const aSet = new Set(answerSlots);
-  const missing = questionSlots.filter(qid => !aSet.has(qid));
-  if (missing.length === 0) return;
+  const hasAnyMatch = questionSlots.some(qid => aSet.has(qid));
+  if (hasAnyMatch) return;
 
-  // We need to bring in missing answer ids by swapping out answers that aren't required.
-  const required = new Set(questionSlots);
-  const mustHave = new Set(questionSlots); // same ids
+  if (questionSlots.length === 0) return;
 
-  // Candidates to remove: answers not corresponding to any displayed question
-  const removableIdx = [];
-  for (let i = 0; i < answerSlots.length; i++) {
-    if (!mustHave.has(answerSlots[i])) removableIdx.push(i);
+  const targetId = questionSlots[Math.floor(Math.random() * questionSlots.length)];
+  removeFromArray(answerPool, targetId);
+
+  if (answerSlots.length === 0) {
+    answerSlots.push(targetId);
+    return;
   }
 
-  for (const neededId of missing) {
-    if (aSet.has(neededId)) continue;
+  const qSet = new Set(questionSlots);
+  let replaceIndex = answerSlots.findIndex(aid => !qSet.has(aid));
+  if (replaceIndex === -1) replaceIndex = Math.floor(Math.random() * answerSlots.length);
 
-    // Try to source neededId from answerPool; if not there, it might be currently in questionPool but not in answerSlots.
-    // Since pools are separate, neededId may still be present in answerPool (if not displayed).
-    // If it's displayed as an answer already, we'd have had it.
-    // If it's neither in answerPool nor answerSlots, it means answerSlots already contains it (contradiction) or data mismatch.
+  const removed = answerSlots[replaceIndex];
+  answerSlots[replaceIndex] = targetId;
 
-    // Remove neededId from answerPool if present; else allow injecting it anyway (we'll keep pools consistent afterwards).
-    removeFromArray(answerPool, neededId);
-
-    let swapIndex = removableIdx.pop();
-    if (swapIndex === undefined) {
-      // No removable slots (answerSlots exactly equals questionSlots but missing can't happen). Safety break.
-      break;
-    }
-
-    const removed = answerSlots[swapIndex];
-    answerSlots[swapIndex] = neededId;
-    aSet.delete(removed);
-    aSet.add(neededId);
-
-    // Put removed id back into answerPool if it's not currently displayed.
-    if (!aSet.has(removed)) answerPool.push(removed);
-  }
-
-  shuffle(answerPool);
+  if (!answerSlots.includes(removed)) answerPool.push(removed);
 }
 
 function reshuffleAnswersPreservingSolvability() {
