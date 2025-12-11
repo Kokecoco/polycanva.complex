@@ -340,7 +340,7 @@
             updateMatchingProgress();
         };
 
-        // 解答可能性を確保する関数（少なくとも1つのマッチが可能であることを保証）
+        // 解答可能性を確保する関数（常に少なくとも1つのマッチが可能であることを保証）
         const ensureAtLeastOneMatch = () => {
             // 現在表示されている問題と答えのIDを収集
             const questionIds = new Set(questionSlots.filter(q => q !== null).map(q => q.id));
@@ -349,10 +349,11 @@
             // マッチする組み合わせが少なくとも1つ存在するかチェック
             const hasMatch = [...questionIds].some(id => answerIds.has(id));
             
-            if (!hasMatch && questionIds.size > 0 && matchingPool.length > 0) {
-                // マッチが1つもない場合、プールから任意の問題の答えを追加
+            if (!hasMatch && questionIds.size > 0) {
+                // マッチが1つもない場合、必ず1つ作成する
+                // 戦略1: プールから任意の問題の答えを探す
                 const anyQuestionId = [...questionIds][0];
-                const matchingAnswer = matchingPool.find(item => item.id === anyQuestionId);
+                let matchingAnswer = matchingPool.find(item => item.id === anyQuestionId);
                 
                 if (matchingAnswer) {
                     // プールにマッチする答えがある場合、それを追加
@@ -365,6 +366,60 @@
                         targetIndex = Math.floor(Math.random() * answerSlots.length);
                     }
                     answerSlots[targetIndex] = matchingAnswer;
+                } else {
+                    // 戦略2: プールにマッチする答えがない場合、
+                    // 既存の答えの1つを、プールまたは表示中の問題に対応する答えと交換
+                    // まず、表示中の問題に対応する答えをプールから探す
+                    let foundMatch = false;
+                    for (const qid of questionIds) {
+                        matchingAnswer = matchingPool.find(item => item.id === qid);
+                        if (matchingAnswer) {
+                            const poolIndex = matchingPool.indexOf(matchingAnswer);
+                            matchingPool.splice(poolIndex, 1);
+                            
+                            // ランダムな答えスロットを置き換え
+                            const targetIndex = Math.floor(Math.random() * answerSlots.length);
+                            const replacedItem = answerSlots[targetIndex];
+                            answerSlots[targetIndex] = matchingAnswer;
+                            
+                            // 置き換えられたアイテムをプールに戻す
+                            if (replacedItem) {
+                                matchingPool.push(replacedItem);
+                            }
+                            foundMatch = true;
+                            break;
+                        }
+                    }
+                    
+                    // 戦略3: それでもない場合、プールと表示中の答えを全体的に調整
+                    if (!foundMatch && matchingPool.length > 0) {
+                        // プールから1つ取得し、それに対応する問題を探す
+                        const itemFromPool = matchingPool.shift();
+                        
+                        // この答えに対応する問題が表示されているかチェック
+                        if (questionIds.has(itemFromPool.id)) {
+                            // 既に問題が表示されている場合、答えを追加
+                            const targetIndex = Math.floor(Math.random() * answerSlots.length);
+                            const replacedItem = answerSlots[targetIndex];
+                            answerSlots[targetIndex] = itemFromPool;
+                            if (replacedItem) {
+                                matchingPool.push(replacedItem);
+                            }
+                        } else {
+                            // 問題が表示されていない場合、問題も追加する（最終手段）
+                            const qTargetIndex = Math.floor(Math.random() * questionSlots.length);
+                            const aTargetIndex = Math.floor(Math.random() * answerSlots.length);
+                            
+                            const replacedQ = questionSlots[qTargetIndex];
+                            const replacedA = answerSlots[aTargetIndex];
+                            
+                            questionSlots[qTargetIndex] = itemFromPool;
+                            answerSlots[aTargetIndex] = itemFromPool;
+                            
+                            if (replacedQ) matchingPool.push(replacedQ);
+                            if (replacedA && replacedA.id !== itemFromPool.id) matchingPool.push(replacedA);
+                        }
+                    }
                 }
             }
         };
