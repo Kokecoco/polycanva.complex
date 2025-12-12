@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Demo Matching Mode</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .matching-container { display: flex; justify-content: space-between; gap: 20px; height: 400px; background: #f5f5f5; padding: 10px; }
+        .matching-list { list-style: none; padding: 0; width: 48%; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; overflow-x: hidden; max-height: 100%; background: white; border: 2px solid #ddd; border-radius: 8px; padding: 10px; }
+        .matching-item { padding: 12px; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; transition: all 0.2s; word-wrap: break-word; min-height: 50px; display: flex; align-items: center; flex-shrink: 0; background: white; }
+        .matching-item.selected { background-color: #a5d6a7; border-color: #28a745; transform: scale(1.03); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .matching-item.matched { opacity: 0.3; text-decoration: line-through; pointer-events: none; }
+        h3 { text-align: center; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <h1>マッチング問題（全問表示・スクロール型）</h1>
+    <p>問題列と答え列をそれぞれスクロールできます。正解のペアをクリックするとマッチします。</p>
+    <div class="matching-container">
+        <div>
+            <h3>問題</h3>
+            <ul class="matching-list">
+                <li class="matching-item">2 + 2 = ?</li>
+                <li class="matching-item">フランスの首都は？</li>
+                <li class="matching-item">H2Oは？</li>
+                <li class="matching-item">暑いの反対は？</li>
+                <li class="matching-item">赤 + 青 = ?</li>
+                <li class="matching-item">10 / 2 = ?</li>
+                <li class="matching-item">最大の惑星は？</li>
+                <li class="matching-item">HTMLは何の略？</li>
+            </ul>
+        </div>
+        <div>
+            <h3>答え</h3>
+            <ul class="matching-list">
+                <li class="matching-item">水</li>
+                <li class="matching-item">4</li>
+                <li class="matching-item">HyperText Markup Language</li>
+                <li class="matching-item">紫</li>
+                <li class="matching-item">寒い</li>
+                <li class="matching-item">5</li>
+                <li class="matching-item">パリ</li>
+                <li class="matching-item">木星</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
