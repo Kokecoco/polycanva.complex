@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>核被害想定シミュレーター (日本地域版)</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: "Helvetica Neue", Arial, sans-serif; display: flex; height: 100vh; }
+        #sidebar { width: 380px; background: #f9f9f9; padding: 20px; box-shadow: 2px 0 8px rgba(0,0,0,0.1); overflow-y: auto; z-index: 500; }
+        #map { flex-grow: 1; height: 100%; cursor: crosshair; }
+        
+        h2 { margin-top: 0; font-size: 1.1rem; color: #333; border-bottom: 2px solid #555; padding-bottom: 10px; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px dashed #ddd; padding-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.85rem; }
+        select, input[type="number"], input[type="range"] { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+        
+        .radio-group { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .radio-group label { font-weight: normal; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 4px; }
+
+        .checkbox-group { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+        .checkbox-group input { width: auto; margin: 0; cursor: pointer; }
+        .checkbox-group label { margin: 0; font-weight: normal; cursor: pointer; font-size: 0.9rem; }
+
+        button { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9rem; transition: background 0.2s; }
+        button.action-btn { background-color: #d32f2f; color: white; margin-top: 10px; font-size: 1.1rem; box-shadow: 0 4px 0 #b71c1c; }
+        button.action-btn:active { box-shadow: 0 2px 0 #b71c1c; transform: translateY(2px); }
+        button.clear-btn { background-color: #555; color: white; margin-top: 5px; font-size: 0.8rem; }
+        
+        .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; }
+        button.preset { background-color: #ddd; color: #333; font-size: 0.75rem; padding: 6px; }
+        button.preset:hover { background-color: #bbb; }
+
+        .result-box { background: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd; margin-top: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .stat-line { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; }
+        .stat-value { font-weight: bold; font-family: monospace; font-size: 1.1rem; }
+        .stat-dead { color: #d32f2f; }
+        .stat-injured { color: #f57c00; }
+        .stat-fallout { color: #555; font-size: 0.9rem; margin-top:5px; border-top:1px dashed #eee; padding-top:5px;}
+
+        .list-container { font-size: 0.8rem; color: #555; max-height: 150px; overflow-y: auto; border: 1px solid #eee; padding: 5px; margin-top: 5px; background: #fff; }
+        .list-item { padding: 3px 0; border-bottom: 1px dashed #eee; display: flex; justify-content: space-between; }
+        .infra-destroyed { color: red; font-weight: bold; }
+        .infra-damaged { color: orange; }
+
+        .target-list { margin-bottom: 10px; font-size: 0.8rem; color: #d32f2f; font-weight: bold; }
+        
+        /* 免責事項モーダル */
+        #disclaimerModal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.85); z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .modal-content {
+            background: white; width: 90%; max-width: 650px; max-height: 85vh;
+            padding: 30px; border-radius: 8px; overflow-y: auto;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); font-size: 0.9rem; line-height: 1.6;
+        }
+        .modal-content h3 { margin-top: 0; color: #333; border-bottom: 2px solid #d32f2f; padding-bottom: 10px; }
+        .modal-content p { margin-bottom: 15px; text-align: justify; }
+        .modal-btn {
+            background-color: #333; color: white; padding: 12px 20px;
+            border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; width: 100%; margin-top: 10px;
+        }
+        .modal-btn:hover { background-color: #555; }
+
+        @media (max-width: 600px) {
+            body { flex-direction: column; }
+            #sidebar { width: 100%; height: 50%; box-sizing: border-box; }
+            #map { height: 50%; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- 免責事項モーダル -->
+<div id="disclaimerModal">
+    <div class="modal-content">
+        <h3>本サイトの利用について（免責事項）</h3>
+        
+        <p><strong>1. 目的と理念</strong><br>
+        本シミュレーターは、核兵器が使用された場合の被害規模を地図上で視覚化し、その破壊力の甚大さと危険性を客観的に理解するための学習・研究用ツールです。戦争行為、暴力、または核兵器の使用を肯定・助長・推奨する目的は一切ありません。</p>
+
+        <p><strong>2. データの精度と計算モデルについて</strong><br>
+        本プログラムは、物理学的なスケーリング則および統計的な人口分布データに基づいた「簡易的な概算モデル」を使用しています。実際の被害は詳細な気象条件、地形（山地・谷）、建物の構造、避難状況などに大きく左右されるため、算出される数値や範囲はあくまで理論上の目安であり、正確性を保証するものではありません。また、AIで生成したコードなのでデータもそのままを使用しており、私は確認しておりません。不正確な場合があります。</p>
+
+        <p><strong>3. 計算対象範囲について（重要）</strong><br>
+        本ツールは<strong>「日本国内の人口データ」のみ</strong>を使用して計算を行っています。被害範囲が国境や海上へ広がった場合、日本国外の被害状況や、近隣諸国への放射性物質の拡散等は計算に含まれません。国外に被害が及ばないことを示唆するものではありません。</p>
+
+        <p><strong>4. 免責事項・お問い合わせ</strong><br>
+        本ツールの利用結果、または利用に伴い生じたいかなる損害・トラブルについても、製作者は一切の責任を負いません。また、本ツールは現状有姿での提供であり、ご質問・ご意見・技術的なお問い合わせ等には、理由の如何を問わず一切回答いたしかねます。</p>
+
+        <button class="modal-btn" onclick="closeModal()">上記を理解し、同意して利用する</button>
+    </div>
+</div>
+
+<div id="sidebar">
+    <h2>🇯🇵 核被害想定シミュレーター<br><span style="font-size:0.7rem; color:#666;">Nuclear Damage Simulator (Japan Region)</span></h2>
+    <p style="font-size:0.75rem; color:#666;">
+        スケーリング則と人口分布モデルに基づく被害試算ツールです。<br>
+        ※数値は全て概算です。地形や建物は考慮されていません。
+    </p>
+    
+    <div class="control-group">
+        <label>1. 爆発・時間設定</label>
+        <div class="radio-group">
+            <label><input type="radio" name="burstType" value="air" checked> 空中爆発 (広範囲)</label>
+            <label><input type="radio" name="burstType" value="surface"> 地上爆発 (局所/汚染)</label>
+        </div>
+        <div class="radio-group">
+            <label><input type="radio" name="timeOfDay" value="day" checked> ☀️ 昼間 (都心集中)</label>
+            <label><input type="radio" name="timeOfDay" value="night"> 🌙 夜間 (郊外分散)</label>
+        </div>
+        
+        <label>爆発威力 (キロトン)</label>
+        <input type="number" id="yieldInput" value="150">
+        <div class="preset-grid">
+            <button class="preset" onclick="setYield(15)">広島級 (15kt)</button>
+            <button class="preset" onclick="setYield(150)">2017年実験規模 (150kt)</button>
+            <button class="preset" onclick="setYield(300)">現代の戦略兵器 (300kt)</button>
+            <button class="preset" onclick="setYield(50000)">史上最大の実験 (50Mt)</button>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label>2. 風向き (放射性降下物)</label>
+        <div class="checkbox-group">
+            <input type="checkbox" id="noWind" onchange="toggleWindControl(this.checked)">
+            <label for="noWind">無風 (拡散なし)</label>
+        </div>
+        <input type="range" id="windDir" min="0" max="360" value="135" oninput="updateWindLabel(this.value)">
+        <div style="font-size:0.8rem; text-align:center;">
+            風向き: <span id="windLabel">135</span>°
+        </div>
+        <p style="font-size:0.7rem; color:#666; margin-top:5px;">
+            ※「地上爆発」または「巨大な弾頭」の場合のみ、風下に放射性降下物（死の灰）の影響範囲が表示されます。
+        </p>
+    </div>
+
+    <div class="control-group">
+        <label>3. ターゲット設定 (地図操作)</label>
+        <p style="font-size:0.75rem; margin:5px 0; color:#444;">
+            ● 地図クリック: 爆心地を追加<br>● <span style="color:red;">赤マーカー</span>クリック: 個別に削除
+        </p>
+        <div class="target-list">セットされた弾頭数: <span id="targetCount">0</span> 発</div>
+        <button class="clear-btn" onclick="clearTargets()">ターゲット全消去</button>
+    </div>
+
+    <button class="action-btn" onclick="simulate()">シミュレーション実行</button>
+
+    <div id="results" class="result-box" style="display:none;">
+        <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:5px; font-size:1rem;">被害推定総数 (日本国内)</h3>
+        <div class="stat-line"><span>死者数 (推計):</span> <span id="deadCount" class="stat-value stat-dead">-</span></div>
+        <div class="stat-line"><span>負傷者数 (推計):</span> <span id="injuredCount" class="stat-value stat-injured">-</span></div>
+        <div class="stat-fallout">☢️ 残留放射能 影響圏人口: <br><span id="falloutPop" style="font-weight:bold;">-</span> 人</div>
+        
+        <div style="margin-top:10px; font-weight:bold; font-size:0.8rem;">都市別・地域別 内訳:</div>
+        <div id="hitAreas" class="list-container"></div>
+        
+        <div style="margin-top:10px; font-weight:bold; font-size:0.8rem;">重要施設への影響:</div>
+        <div id="infraList" class="list-container"></div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    function closeModal() { document.getElementById('disclaimerModal').style.display = 'none'; }
+    
+    function updateWindLabel(val) { 
+        if(!document.getElementById('noWind').checked) {
+            document.getElementById('windLabel').innerText = val; 
+        }
+    }
+
+    function toggleWindControl(isNoWind) {
+        const slider = document.getElementById('windDir');
+        const label = document.getElementById('windLabel');
+        if (isNoWind) {
+            slider.disabled = true;
+            slider.style.opacity = 0.5;
+            label.innerText = "-";
+        } else {
+            slider.disabled = false;
+            slider.style.opacity = 1;
+            label.innerText = slider.value;
+        }
+    }
+
+    // --- 都道府県データ (広域背景用) ---
+    const prefectures = [
+        { name: "北海道", lat: 43.5, lon: 142.5, pop: 5100000, radius: 150 },
+        { name: "青森県", lat: 40.8, lon: 140.7, pop: 1200000, radius: 50 },
+        { name: "岩手県", lat: 39.7, lon: 141.1, pop: 1180000, radius: 60 },
+        { name: "宮城県", lat: 38.3, lon: 140.9, pop: 2280000, radius: 40 },
+        { name: "秋田県", lat: 39.7, lon: 140.1, pop: 940000, radius: 50 },
+        { name: "山形県", lat: 38.2, lon: 140.3, pop: 1050000, radius: 50 },
+        { name: "福島県", lat: 37.4, lon: 140.4, pop: 1800000, radius: 60 },
+        { name: "茨城県", lat: 36.3, lon: 140.4, pop: 2830000, radius: 50 },
+        { name: "栃木県", lat: 36.5, lon: 139.8, pop: 1920000, radius: 40 },
+        { name: "群馬県", lat: 36.4, lon: 139.1, pop: 1920000, radius: 40 },
+        { name: "埼玉県", lat: 36.0, lon: 139.5, pop: 7330000, radius: 30 },
+        { name: "千葉県", lat: 35.5, lon: 140.2, pop: 6270000, radius: 40 },
+        { name: "東京都", lat: 35.7, lon: 139.5, pop: 14000000, radius: 20 },
+        { name: "神奈川県", lat: 35.4, lon: 139.5, pop: 9230000, radius: 20 },
+        { name: "新潟県", lat: 37.4, lon: 138.9, pop: 2190000, radius: 80 },
+        { name: "富山県", lat: 36.7, lon: 137.2, pop: 1030000, radius: 30 },
+        { name: "石川県", lat: 36.6, lon: 136.6, pop: 1130000, radius: 40 },
+        { name: "福井県", lat: 35.9, lon: 136.2, pop: 760000, radius: 40 },
+        { name: "山梨県", lat: 35.6, lon: 138.6, pop: 800000, radius: 30 },
+        { name: "長野県", lat: 36.1, lon: 138.0, pop: 2030000, radius: 70 },
+        { name: "岐阜県", lat: 35.7, lon: 136.7, pop: 1970000, radius: 60 },
+        { name: "静岡県", lat: 34.9, lon: 138.3, pop: 3600000, radius: 60 },
+        { name: "愛知県", lat: 35.1, lon: 137.0, pop: 7520000, radius: 40 },
+        { name: "三重県", lat: 34.7, lon: 136.5, pop: 1760000, radius: 50 },
+        { name: "滋賀県", lat: 35.2, lon: 136.1, pop: 1410000, radius: 30 },
+        { name: "京都府", lat: 35.2, lon: 135.6, pop: 2560000, radius: 40 },
+        { name: "大阪府", lat: 34.7, lon: 135.5, pop: 8800000, radius: 20 },
+        { name: "兵庫県", lat: 35.0, lon: 134.9, pop: 5430000, radius: 60 },
+        { name: "奈良県", lat: 34.5, lon: 135.8, pop: 1320000, radius: 30 },
+        { name: "和歌山県", lat: 33.9, lon: 135.4, pop: 910000, radius: 50 },
+        { name: "鳥取県", lat: 35.4, lon: 133.9, pop: 550000, radius: 40 },
+        { name: "島根県", lat: 35.0, lon: 132.5, pop: 660000, radius: 60 },
+        { name: "岡山県", lat: 34.9, lon: 133.8, pop: 1870000, radius: 50 },
+        { name: "広島県", lat: 34.6, lon: 132.8, pop: 2790000, radius: 50 },
+        { name: "山口県", lat: 34.2, lon: 131.6, pop: 1330000, radius: 50 },
+        { name: "徳島県", lat: 33.9, lon: 134.4, pop: 720000, radius: 40 },
+        { name: "香川県", lat: 34.2, lon: 134.0, pop: 940000, radius: 30 },
+        { name: "愛媛県", lat: 33.6, lon: 132.8, pop: 1320000, radius: 50 },
+        { name: "高知県", lat: 33.5, lon: 133.4, pop: 680000, radius: 60 },
+        { name: "福岡県", lat: 33.6, lon: 130.6, pop: 5100000, radius: 40 },
+        { name: "佐賀県", lat: 33.3, lon: 130.1, pop: 800000, radius: 30 },
+        { name: "長崎県", lat: 33.0, lon: 129.8, pop: 1300000, radius: 50 },
+        { name: "熊本県", lat: 32.6, lon: 130.8, pop: 1730000, radius: 50 },
+        { name: "大分県", lat: 33.2, lon: 131.4, pop: 1120000, radius: 50 },
+        { name: "宮崎県", lat: 32.1, lon: 131.3, pop: 1060000, radius: 60 },
+        { name: "鹿児島県", lat: 31.6, lon: 130.5, pop: 1580000, radius: 60 },
+        { name: "沖縄県", lat: 26.5, lon: 127.9, pop: 1460000, radius: 50 }
+    ];
+
+    // --- 主要都市データ ---
+    const cities = [
+        { name: "札幌", pref: "北海道", lat: 43.0618, lon: 141.3545, pop: 1970000, radius: 12 },
+        { name: "旭川", pref: "北海道", lat: 43.7706, lon: 142.3649, pop: 330000, radius: 7 },
+        { name: "函館", pref: "北海道", lat: 41.7687, lon: 140.7288, pop: 250000, radius: 6 },
+        { name: "苫小牧", pref: "北海道", lat: 42.6366, lon: 141.6033, pop: 170000, radius: 6 },
+        { name: "釧路", pref: "北海道", lat: 42.9849, lon: 144.3817, pop: 160000, radius: 6 },
+        { name: "帯広", pref: "北海道", lat: 42.9239, lon: 143.1961, pop: 165000, radius: 6 },
+        { name: "仙台", pref: "宮城県", lat: 38.2682, lon: 140.8694, pop: 1090000, radius: 10 },
+        { name: "青森", pref: "青森県", lat: 40.8244, lon: 140.7400, pop: 270000, radius: 6 },
+        { name: "盛岡", pref: "岩手県", lat: 39.7020, lon: 141.1545, pop: 290000, radius: 6 },
+        { name: "秋田", pref: "秋田県", lat: 39.7186, lon: 140.1024, pop: 300000, radius: 6 },
+        { name: "山形", pref: "山形県", lat: 38.2554, lon: 140.3396, pop: 240000, radius: 6 },
+        { name: "福島", pref: "福島県", lat: 37.7608, lon: 140.4748, pop: 280000, radius: 6 },
+        { name: "郡山", pref: "福島県", lat: 37.3976, lon: 140.3883, pop: 320000, radius: 7 },
+        { name: "いわき", pref: "福島県", lat: 37.0504, lon: 140.8877, pop: 330000, radius: 8 },
+        { name: "東京(23区)", pref: "東京都", lat: 35.6895, lon: 139.6917, pop: 9700000, radius: 15 },
+        { name: "横浜", pref: "神奈川県", lat: 35.4437, lon: 139.6380, pop: 3770000, radius: 12 },
+        { name: "川崎", pref: "神奈川県", lat: 35.5304, lon: 139.7030, pop: 1540000, radius: 9 },
+        { name: "相模原", pref: "神奈川県", lat: 35.5713, lon: 139.3731, pop: 720000, radius: 8 },
+        { name: "さいたま", pref: "埼玉県", lat: 35.8616, lon: 139.6455, pop: 1320000, radius: 10 },
+        { name: "千葉", pref: "千葉県", lat: 35.6074, lon: 140.1065, pop: 970000, radius: 9 },
+        { name: "宇都宮", pref: "栃木県", lat: 36.5551, lon: 139.8828, pop: 520000, radius: 8 },
+        { name: "水戸", pref: "茨城県", lat: 36.3659, lon: 140.4715, pop: 270000, radius: 6 },
+        { name: "前橋", pref: "群馬県", lat: 36.3895, lon: 139.0634, pop: 330000, radius: 6 },
+        { name: "高崎", pref: "群馬県", lat: 36.3219, lon: 139.0033, pop: 370000, radius: 6 },
+        { name: "新潟", pref: "新潟県", lat: 37.9162, lon: 139.0364, pop: 780000, radius: 9 },
+        { name: "金沢", pref: "石川県", lat: 36.5613, lon: 136.6562, pop: 460000, radius: 7 },
+        { name: "富山", pref: "富山県", lat: 36.6959, lon: 137.2137, pop: 410000, radius: 7 },
+        { name: "長野", pref: "長野県", lat: 36.6486, lon: 138.1942, pop: 370000, radius: 7 },
+        { name: "名古屋", pref: "愛知県", lat: 35.1815, lon: 136.9066, pop: 2320000, radius: 12 },
+        { name: "豊田", pref: "愛知県", lat: 35.0825, lon: 137.1560, pop: 420000, radius: 8 },
+        { name: "静岡", pref: "静岡県", lat: 34.9756, lon: 138.3828, pop: 690000, radius: 8 },
+        { name: "浜松", pref: "静岡県", lat: 34.7108, lon: 137.7261, pop: 780000, radius: 9 },
+        { name: "岐阜", pref: "岐阜県", lat: 35.4233, lon: 136.7607, pop: 400000, radius: 7 },
+        { name: "大阪", pref: "大阪府", lat: 34.6937, lon: 135.5023, pop: 2750000, radius: 10 },
+        { name: "堺", pref: "大阪府", lat: 34.5733, lon: 135.4830, pop: 820000, radius: 8 },
+        { name: "京都", pref: "京都府", lat: 35.0116, lon: 135.7681, pop: 1470000, radius: 9 },
+        { name: "神戸", pref: "兵庫県", lat: 34.6901, lon: 135.1955, pop: 1520000, radius: 10 },
+        { name: "奈良", pref: "奈良県", lat: 34.6851, lon: 135.8048, pop: 350000, radius: 6 },
+        { name: "和歌山", pref: "和歌山県", lat: 34.2259, lon: 135.1675, pop: 350000, radius: 6 },
+        { name: "大津", pref: "滋賀県", lat: 35.0177, lon: 135.8549, pop: 340000, radius: 6 },
+        { name: "広島", pref: "広島県", lat: 34.3853, lon: 132.4553, pop: 1190000, radius: 9 },
+        { name: "福山", pref: "広島県", lat: 34.4859, lon: 133.3623, pop: 460000, radius: 7 },
+        { name: "岡山", pref: "岡山県", lat: 34.6551, lon: 133.9195, pop: 720000, radius: 8 },
+        { name: "松江", pref: "島根県", lat: 35.4681, lon: 133.0485, pop: 200000, radius: 5 },
+        { name: "鳥取", pref: "鳥取県", lat: 35.5011, lon: 134.2351, pop: 180000, radius: 5 },
+        { name: "高松", pref: "香川県", lat: 34.3428, lon: 134.0466, pop: 420000, radius: 6 },
+        { name: "松山", pref: "愛媛県", lat: 33.8392, lon: 132.7656, pop: 510000, radius: 7 },
+        { name: "高知", pref: "高知県", lat: 33.5588, lon: 133.5311, pop: 320000, radius: 6 },
+        { name: "徳島", pref: "徳島県", lat: 34.0702, lon: 134.5548, pop: 250000, radius: 6 },
+        { name: "福岡", pref: "福岡県", lat: 33.5902, lon: 130.4017, pop: 1600000, radius: 10 },
+        { name: "北九州", pref: "福岡県", lat: 33.8835, lon: 130.8752, pop: 930000, radius: 9 },
+        { name: "久留米", pref: "福岡県", lat: 33.3192, lon: 130.5083, pop: 300000, radius: 6 },
+        { name: "熊本", pref: "熊本県", lat: 32.8031, lon: 130.7079, pop: 740000, radius: 8 },
+        { name: "鹿児島", pref: "鹿児島県", lat: 31.5966, lon: 130.5571, pop: 600000, radius: 8 },
+        { name: "大分", pref: "大分県", lat: 33.2382, lon: 131.6126, pop: 480000, radius: 7 },
+        { name: "長崎", pref: "長崎県", lat: 32.7503, lon: 129.8779, pop: 400000, radius: 6 },
+        { name: "宮崎", pref: "宮崎県", lat: 31.9076, lon: 131.4202, pop: 400000, radius: 7 },
+        { name: "佐賀", pref: "佐賀県", lat: 33.2635, lon: 130.3008, pop: 230000, radius: 6 },
+        { name: "那覇", pref: "沖縄県", lat: 26.2124, lon: 127.6809, pop: 320000, radius: 6 }
+    ];
+
+    // --- インフラデータ ---
+    const infrastructures = [
+        { name: "首相官邸・国会", type: "government", lat: 35.6758, lon: 139.7448 },
+        { name: "防衛省 (市ヶ谷)", type: "base", lat: 35.6925, lon: 139.7289 },
+        { name: "横須賀基地 (米海軍)", type: "base", lat: 35.2923, lon: 139.6641 },
+        { name: "横田基地", type: "base", lat: 35.7397, lon: 139.3409 },
+        { name: "三沢基地", type: "base", lat: 40.7020, lon: 141.3688 },
+        { name: "嘉手納基地", type: "base", lat: 26.3556, lon: 127.7679 },
+        { name: "岩国基地", type: "base", lat: 34.1444, lon: 132.2356 },
+        { name: "佐世保基地", type: "base", lat: 33.1672, lon: 129.7153 },
+        { name: "浜岡原発", type: "plant", lat: 34.6231, lon: 138.1396 },
+        { name: "柏崎刈羽原発", type: "plant", lat: 37.4287, lon: 138.5962 },
+        { name: "玄海原発", type: "plant", lat: 33.5152, lon: 129.8373 },
+        { name: "川内原発", type: "plant", lat: 31.8358, lon: 130.1837 },
+        { name: "大飯・高浜原発群", type: "plant", lat: 35.5414, lon: 135.6521 },
+        { name: "六ヶ所再処理工場", type: "plant", lat: 40.9576, lon: 141.3283 },
+        { name: "福島第一原発跡", type: "plant", lat: 37.4211, lon: 141.0328 },
+        { name: "伊方原発", type: "plant", lat: 33.4908, lon: 132.3112 },
+        { name: "泊原発", type: "plant", lat: 43.0410, lon: 140.5132 },
+        { name: "女川原発", type: "plant", lat: 38.4009, lon: 141.4996 },
+        { name: "島根原発", type: "plant", lat: 35.5393, lon: 132.9996 },
+        { name: "羽田空港", type: "airport", lat: 35.5494, lon: 139.7798 },
+        { name: "成田空港", type: "airport", lat: 35.7720, lon: 140.3929 },
+        { name: "関西国際空港", type: "airport", lat: 34.4320, lon: 135.2304 },
+        { name: "中部国際空港", type: "airport", lat: 34.8584, lon: 136.8046 },
+        { name: "新千歳空港", type: "airport", lat: 42.7752, lon: 141.6923 },
+        { name: "福岡空港", type: "airport", lat: 33.5859, lon: 130.4506 },
+        { name: "那覇空港", type: "airport", lat: 26.2048, lon: 127.6458 }
+    ];
+
+    // --- メッシュ生成 ---
+    let populationNodes = [];
+
+    function generateGaussianHybridMesh() {
+        populationNodes = [];
+        
+        // 1. 都道府県背景 (Rural)
+        prefectures.forEach(pref => {
+            const citiesInPref = cities.filter(c => c.pref === pref.name);
+            const urbanPopSum = citiesInPref.reduce((sum, c) => sum + c.pop, 0);
+            let ruralPop = pref.pop - urbanPopSum;
+            if (ruralPop < 0) ruralPop = 0;
+
+            const ruralPoints = 50; 
+            for(let i=0; i<ruralPoints; i++) {
+                const r = pref.radius * Math.sqrt(Math.random());
+                const theta = Math.random() * 2 * Math.PI;
+                const latOffset = r * Math.cos(theta) / 111.0;
+                const lonOffset = r * Math.sin(theta) / (111.0 * Math.cos(pref.lat * Math.PI / 180));
+                
+                populationNodes.push({
+                    name: `${pref.name}(全域)`,
+                    type: 'rural',
+                    lat: pref.lat + latOffset,
+                    lon: pref.lon + lonOffset,
+                    pop: ruralPop / ruralPoints
+                });
+            }
+        });
+
+        // 2. 主要都市 (Urban - Gaussian)
+        cities.forEach(city => {
+            const sigma = city.radius / 2.0; 
+            let points = [];
+            points.push({ dist: 0, lat: city.lat, lon: city.lon });
+            
+            const rings = 10; 
+            for (let i = 1; i <= rings; i++) {
+                const rRatio = i / rings; 
+                const distKm = city.radius * 1.2 * rRatio;
+                const pointsInRing = Math.floor(6 * i);
+                const latPerKm = 1 / 111.0;
+                const lonPerKm = 1 / (111.0 * Math.cos(city.lat * Math.PI / 180));
+
+                for (let j = 0; j < pointsInRing; j++) {
+                    const angle = (j / pointsInRing) * 2 * Math.PI;
+                    points.push({
+                        dist: distKm,
+                        lat: city.lat + (distKm * Math.cos(angle)) * latPerKm,
+                        lon: city.lon + (distKm * Math.sin(angle)) * lonPerKm
+                    });
+                }
+            }
+
+            let totalWeight = 0;
+            points.forEach(p => {
+                p.weight = Math.exp(- (p.dist * p.dist) / (2 * sigma * sigma));
+                totalWeight += p.weight;
+            });
+
+            points.forEach(p => {
+                populationNodes.push({
+                    name: city.name,
+                    type: 'urban',
+                    lat: p.lat,
+                    lon: p.lon,
+                    pop: city.pop * (p.weight / totalWeight)
+                });
+            });
+        });
+    }
+
+    generateGaussianHybridMesh();
+
+    // --- マップ初期化 ---
+    const map = L.map('map').setView([36.0, 138.0], 5);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+    }).addTo(map);
+
+    infrastructures.forEach(infra => {
+        let color = "gray";
+        if(infra.type === "plant") color = "green";
+        if(infra.type === "base") color = "blue";
+        if(infra.type === "airport") color = "purple";
+        if(infra.type === "government") color = "black";
+        L.circleMarker([infra.lat, infra.lon], { radius: 4, color: color, fillOpacity: 0.8, weight: 1 }).addTo(map).bindTooltip(infra.name);
+    });
+
+    let targets = [];
+    let mapCircles = [];
+    let targetMarkers = [];
+    let falloutLayers = [];
+
+    map.on('click', function(e) {
+        const yieldVal = parseFloat(document.getElementById('yieldInput').value);
+        const burstType = document.querySelector('input[name="burstType"]:checked').value;
+        addTarget(e.latlng.lat, e.latlng.lng, yieldVal, burstType);
+    });
+
+    function setYield(val) { document.getElementById('yieldInput').value = val; }
+
+    function addTarget(lat, lon, yieldKt, type) {
+        const targetData = { lat, lon, yield: yieldKt, type: type };
+        targets.push(targetData);
+        const marker = L.circleMarker([lat, lon], { radius: 8, color: 'red', fillColor: '#f00', fillOpacity: 1, weight: 2 }).addTo(map);
+        marker.bindTooltip("削除", {direction: 'top', offset: [0, -10]});
+        marker.on('click', function(e) {
+            L.DomEvent.stopPropagation(e);
+            map.removeLayer(marker);
+            const index = targets.indexOf(targetData);
+            if (index > -1) targets.splice(index, 1);
+            const mIndex = targetMarkers.indexOf(marker);
+            if (mIndex > -1) targetMarkers.splice(mIndex, 1);
+            updateCount();
+            resetResults();
+        });
+        targetMarkers.push(marker);
+        updateCount();
+    }
+    
+    function updateCount() { document.getElementById('targetCount').innerText = targets.length; }
+    function resetResults() {
+        mapCircles.forEach(c => map.removeLayer(c)); mapCircles = [];
+        falloutLayers.forEach(l => map.removeLayer(l)); falloutLayers = [];
+        document.getElementById('results').style.display = 'none';
+    }
+    function clearTargets() {
+        targets = [];
+        targetMarkers.forEach(m => map.removeLayer(m)); targetMarkers = [];
+        resetResults(); updateCount();
+    }
+
+    function getDistanceKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function calculateRadii(yieldKt, type) {
+        const mod = (type === 'surface') ? 0.7 : 1.0;
+        return {
+            fireball: 1.45 * Math.pow(yieldKt / 1000, 0.4) * mod,
+            heavyBlast: 0.28 * Math.pow(yieldKt, 0.333) * mod,     
+            moderateBlast: 0.71 * Math.pow(yieldKt, 0.333) * mod,  
+            thermal: 6.0 * Math.pow(yieldKt / 1000, 0.45) * mod 
+        };
+    }
+
+    // ポリゴン内判定 (Ray Casting)
+    function isPointInPolygon(point, vs) {
+        var x = point[0], y = point[1];
+        var inside = false;
+        for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+            var xi = vs[i][0], yi = vs[i][1];
+            var xj = vs[j][0], yj = vs[j][1];
+            var intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function simulate() {
+        if (targets.length === 0) { alert("地図をクリックしてターゲットを追加してください。"); return; }
+        resetResults();
+
+        const windDir = parseInt(document.getElementById('windDir').value);
+        const isNoWind = document.getElementById('noWind').checked;
+        const timeOfDay = document.querySelector('input[name="timeOfDay"]:checked').value;
+        
+        // 昼夜補正係数
+        const urbanMod = (timeOfDay === 'day') ? 1.3 : 0.7;
+        const ruralMod = (timeOfDay === 'day') ? 0.8 : 1.1;
+
+        let falloutPolys = [];
+
+        targets.forEach(t => {
+            const radii = calculateRadii(t.yield, t.type);
+            
+            // 円描画
+            const zones = [
+                { r: radii.thermal, color: 'orange', opacity: 0.15 },
+                { r: radii.moderateBlast, color: 'red', opacity: 0.2 },
+                { r: radii.heavyBlast, color: 'purple', opacity: 0.3 },
+                { r: radii.fireball, color: 'black', opacity: 0.5 }
+            ];
+            zones.forEach(z => {
+                const c = L.circle([t.lat, t.lon], { color: z.color, fillColor: z.color, fillOpacity: z.opacity, radius: z.r * 1000, weight: 1 }).addTo(map);
+                mapCircles.push(c);
+            });
+
+            // フォールアウト (Surface爆発 または >100kt かつ 無風でない場合)
+            if ((t.type === 'surface' || t.yield > 100) && !isNoWind) {
+                const falloutLen = 1.2 * Math.pow(t.yield, 0.45); 
+                const falloutWid = falloutLen * 0.25;
+                
+                let polyPoints = [];
+                const centerLat = t.lat; 
+                const centerLon = t.lon;
+                const steps = 36;
+                const radDir = (windDir - 90) * (Math.PI / 180);
+
+                for (let i = 0; i < steps; i++) {
+                    const theta = (i / steps) * 2 * Math.PI;
+                    const a = falloutLen; 
+                    const b = falloutWid;
+                    const localX = (a * Math.cos(theta) + a) / 2; 
+                    const localY = (b * Math.sin(theta)) / 2;
+
+                    const rotX = localX * Math.cos(radDir) - localY * Math.sin(radDir);
+                    const rotY = localX * Math.sin(radDir) + localY * Math.cos(radDir);
+
+                    const latOffset = rotY / 111.0;
+                    const lonOffset = rotX / (111.0 * Math.cos(centerLat * Math.PI/180));
+                    
+                    polyPoints.push([centerLat + latOffset, centerLon + lonOffset]);
+                }
+                
+                const pg = L.polygon(polyPoints, { color: 'gray', fillColor: '#333', fillOpacity: 0.3, weight: 0 }).addTo(map);
+                falloutLayers.push(pg);
+                falloutPolys.push(polyPoints);
+            }
+        });
+
+        // 被害計算
+        let totalDead = 0;
+        let totalInjured = 0;
+        let falloutPop = 0;
+        let areaReport = {};
+
+        populationNodes.forEach(node => {
+            const popMod = (node.type === 'urban') ? urbanMod : ruralMod;
+            const currentPop = node.pop * popMod;
+
+            let maxDeathRate = 0;
+            let maxInjuredRate = 0;
+            let isFallout = false;
+
+            // 1. 爆風・熱線
+            targets.forEach(t => {
+                const dist = getDistanceKm(t.lat, t.lon, node.lat, node.lon);
+                const radii = calculateRadii(t.yield, t.type);
+                let dRate = 0; let iRate = 0;
+                
+                if (dist < radii.fireball) { dRate = 1.0; } 
+                else if (dist < radii.heavyBlast) { dRate = 0.95; iRate = 0.05; } 
+                else if (dist < radii.moderateBlast) { dRate = 0.50; iRate = 0.45; } 
+                else if (dist < radii.thermal) { dRate = 0.15; iRate = 0.50; }
+
+                if (dRate > maxDeathRate) { maxDeathRate = dRate; maxInjuredRate = iRate; } 
+                else if (dRate === maxDeathRate && iRate > maxInjuredRate) { maxInjuredRate = iRate; }
+            });
+
+            // 2. フォールアウト判定
+            if (!isNoWind && maxDeathRate < 0.1) {
+                for (let poly of falloutPolys) {
+                    if (isPointInPolygon([node.lat, node.lon], poly)) {
+                        isFallout = true;
+                        break;
+                    }
+                }
+            }
+
+            if (maxDeathRate > 0 || maxInjuredRate > 0) {
+                const dead = currentPop * maxDeathRate;
+                const injured = currentPop * maxInjuredRate;
+                totalDead += dead;
+                totalInjured += injured;
+                if (!areaReport[node.name]) areaReport[node.name] = {dead:0, type: node.type};
+                areaReport[node.name].dead += dead;
+            }
+
+            if (isFallout) {
+                falloutPop += currentPop;
+            }
+        });
+
+        // インフラ被害
+        let infraDamageList = [];
+        infrastructures.forEach(infra => {
+            let status = "safe"; let causedBy = "";
+            for(let t of targets) {
+                const dist = getDistanceKm(t.lat, t.lon, infra.lat, infra.lon);
+                const radii = calculateRadii(t.yield, t.type);
+                if (dist < radii.heavyBlast) { status = "destroyed"; causedBy = "完全破壊"; break; } 
+                else if (dist < radii.moderateBlast) { if(status!=="destroyed"){ status = "damaged"; causedBy = "甚大被害"; } }
+            }
+            if (status !== "safe") infraDamageList.push({ name: infra.name, status: status, desc: causedBy });
+        });
+
+        // 表示
+        document.getElementById('results').style.display = 'block';
+        document.getElementById('deadCount').innerText = Math.round(totalDead).toLocaleString();
+        document.getElementById('injuredCount').innerText = Math.round(totalInjured).toLocaleString();
+        document.getElementById('falloutPop').innerText = Math.round(falloutPop).toLocaleString();
+
+        const infraElem = document.getElementById('infraList');
+        infraElem.innerHTML = "";
+        if(infraDamageList.length > 0) {
+            infraDamageList.forEach(infra => {
+                const div = document.createElement('div');
+                div.className = "list-item";
+                const colorClass = infra.status === "destroyed" ? "infra-destroyed" : "infra-damaged";
+                div.innerHTML = `<span>${infra.name}</span> <span class="${colorClass}">${infra.desc}</span>`;
+                infraElem.appendChild(div);
+            });
+        } else { infraElem.innerHTML = "<div class='list-item'>被害なし</div>"; }
+
+        const areaElem = document.getElementById('hitAreas');
+        areaElem.innerHTML = "";
+        const sortedAreas = Object.keys(areaReport).sort((a,b) => areaReport[b].dead - areaReport[a].dead);
+        if(sortedAreas.length > 0) {
+            sortedAreas.slice(0, 15).forEach(area => {
+                const d = areaReport[area];
+                const div = document.createElement('div');
+                div.className = "list-item";
+                const style = d.type === 'urban' ? 'font-weight:bold;' : 'color:#666; font-size:0.75rem;';
+                div.innerHTML = `<span style="${style}">${area}</span> <span>死者: ${Math.round(d.dead).toLocaleString()}</span>`;
+                areaElem.appendChild(div);
+            });
+        } else { areaElem.innerHTML = "<div class='list-item'>被害なし</div>"; }
+    }
+</script>
+</body>
+</html>
