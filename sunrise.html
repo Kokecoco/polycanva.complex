@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ダイヤモンド富士 2025</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* デザイン調整 */
+            --sea-height: 30vh;
+            
+            /* 山の比率計算（ここを合わせることで形が綺麗になります） */
+            /* 山全体 */
+            --mt-height: 200px;
+            --mt-width-half: 300px; /* 片側の幅 */
+            
+            /* 雪の部分（山全体の30%の高さにする場合） */
+            --snow-ratio: 0.35; 
+            --snow-height: calc(var(--mt-height) * var(--snow-ratio)); /* 70px */
+            --snow-width-half: calc(var(--mt-width-half) * var(--snow-ratio)); /* 105px (これで角度が一致) */
+
+            --sun-size: 70px;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Shippori Mincho', serif;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* --- 1. 背景（空） --- */
+        .sky {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to top, #0f2027, #203a43, #2c5364);
+            z-index: 1;
+        }
+        .sky-dawn {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to top, #f8cdda 0%, #1d2671 100%); /* より綺麗な紫〜ピンクのグラデ */
+            z-index: 2;
+            opacity: 0;
+            transition: opacity 15s ease;
+        }
+
+        /* --- 2. 太陽 --- */
+        .sun {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: var(--sun-size);
+            height: var(--sun-size);
+            border-radius: 50%;
+            background: radial-gradient(circle, #ffffff 20%, #ffc107 50%, #ff5722 90%);
+            box-shadow: 0 0 40px #ff5722;
+            
+            /* 初期位置：海の中 */
+            bottom: 5vh; 
+            z-index: 3;
+
+            /* 15秒かけてゆっくり登る */
+            transition: bottom 15s ease-in-out;
+        }
+
+        /* 太陽の光（クロス） */
+        .sun::after, .sun::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            background: rgba(255, 255, 255, 0.95);
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            /* 登りきったタイミング(13秒後)で光る */
+            transition: opacity 2s ease 13s; 
+        }
+        .sun::before { width: 300%; height: 2px; box-shadow: 0 0 15px white; } 
+        .sun::after { width: 2px; height: 300%; box-shadow: 0 0 15px white; }
+
+
+        /* --- 3. 富士山 (計算済みの形) --- */
+        .mountain {
+            position: absolute;
+            bottom: var(--sea-height);
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            /* 黒い部分 */
+            border-left: var(--mt-width-half) solid transparent;
+            border-right: var(--mt-width-half) solid transparent;
+            border-bottom: var(--mt-height) solid #050505;
+            z-index: 4;
+        }
+        
+        /* 雪の部分 */
+        .mountain::after {
+            content: '';
+            position: absolute;
+            /* 親要素(borderで作った三角)の座標基準点に配置 */
+            left: calc(var(--snow-width-half) * -1); /* 中心合わせ */
+            top: 0; /* border-bottomの上端が0ではないため、調整が必要に見えるが、border三角の場合はtop指定ではなくborder配置になる */
+            
+            /* borderテクニックの場合、親の内部配置はtop/leftの起点が特殊なため、位置を直接指定 */
+            top: 0px; 
+            
+            width: 0;
+            height: 0;
+            /* 計算済みの角度で白を描画 */
+            border-left: var(--snow-width-half) solid transparent;
+            border-right: var(--snow-width-half) solid transparent;
+            border-bottom: var(--snow-height) solid rgba(255, 255, 255, 0.9);
+            
+            /* 夜は暗く、朝になると明るくするアニメーション */
+            filter: brightness(0.5);
+            transition: filter 10s ease 5s;
+        }
+
+        /* --- 4. 海 --- */
+        .sea {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: var(--sea-height);
+            background: linear-gradient(to bottom, #000000 0%, #091c2b 100%);
+            z-index: 10;
+        }
+        
+        /* --- 5. メッセージ --- */
+        #message-box {
+            position: absolute;
+            /* 太陽と重なる位置 */
+            top: calc(100vh - var(--sea-height) - var(--mt-height) - 80px); 
+            width: 100%;
+            text-align: center;
+            z-index: 20; /* 太陽(3)より手前 */
+            opacity: 0;
+            
+            /* ★ここが重要：12.5秒待ってから3秒かけて表示 */
+            transition: opacity 3s ease 12.5s; 
+            pointer-events: none;
+        }
+        .main-title {
+            font-size: 4rem;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(0,0,0,0.5), 0 0 20px #ff5722;
+            letter-spacing: 0.5rem;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+        .sub-title {
+            font-size: 1.2rem;
+            color: #eee;
+            letter-spacing: 0.2rem;
+            text-shadow: 0 0 5px rgba(0,0,0,0.8);
+        }
+
+        /* --- コントロールパネル --- */
+        #controls {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(8px);
+            padding: 30px 50px;
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.2);
+            text-align: center;
+            z-index: 100;
+            color: white;
+            transition: opacity 1s, visibility 1s;
+        }
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 5px;
+            background: #ff5722;
+            color: white;
+            cursor: pointer;
+        }
+
+        /* --- アニメーション発火時 --- */
+        
+        body.active .sky-dawn { opacity: 1; }
+        
+        /* 停止位置の計算：海(30vh) + 山(200px) - 太陽半径(35px) */
+        body.active .sun {
+            bottom: calc(var(--sea-height) + var(--mt-height) - (var(--sun-size) / 2));
+            box-shadow: 0 0 60px #fff, 0 0 100px #ff5722;
+        }
+        
+        body.active .sun::before, body.active .sun::after { opacity: 1; }
+        
+        body.active .mountain::after { filter: brightness(1); } /* 雪が明るくなる */
+
+        body.active #message-box { opacity: 1; } /* メッセージ出現 */
+
+    </style>
+</head>
+<body>
+
+    <div class="sky"></div>
+    <div class="sky-dawn"></div>
+
+    <!-- メッセージ (初期は透明) -->
+    <div id="message-box">
+        <div class="main-title">迎春</div>
+        <div class="sub-title">A Happy New Year 2025</div>
+    </div>
+
+    <div class="sun"></div>
+    <div class="mountain"></div>
+    <div class="sea"></div>
+
+    <div id="controls">
+        <h3 style="margin-top:0;">初日の出セット</h3>
+        <input type="time" id="timeSet" style="font-size:1.5rem; padding:5px;">
+        <br>
+        <button onclick="ready()">時間をセットして待機</button>
+    </div>
+
+    <script>
+        const now = new Date();
+        document.getElementById('timeSet').value = 
+            ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+
+        let targetTime;
+        let waiting = false;
+
+        function ready() {
+            const val = document.getElementById('timeSet').value;
+            if(!val) return;
+
+            const [h, m] = val.split(':');
+            const target = new Date();
+            target.setHours(h);
+            target.setMinutes(m);
+            target.setSeconds(0);
+
+            // 過去時刻なら明日に
+            if (target < new Date()) {
+                if (new Date() - target > 60000) { 
+                    target.setDate(target.getDate() + 1);
+                }
+            }
+
+            targetTime = target;
+            waiting = true;
+
+            const btn = document.querySelector('button');
+            btn.innerText = "日の出を待っています...";
+            btn.style.backgroundColor = "#666";
+            document.getElementById('controls').style.opacity = 0.6;
+            document.getElementById('controls').style.top = "80%";
+
+            checkLoop();
+        }
+
+        function checkLoop() {
+            if (!waiting) return;
+
+            if (new Date() >= targetTime) {
+                waiting = false;
+                document.getElementById('controls').style.opacity = 0;
+                document.getElementById('controls').style.visibility = 'hidden';
+                document.body.classList.add('active');
+            } else {
+                requestAnimationFrame(checkLoop);
+            }
+        }
+    </script>
+</body>
+</html>
