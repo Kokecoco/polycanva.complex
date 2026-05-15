@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ジェスチャー操作のホワイトボード</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #ffffff;
+            transition: background-color 0.1s ease-out;
+        }
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="board"></canvas>
+
+    <script>
+        const canvas = document.getElementById('board');
+        const ctx = canvas.getContext('2d');
+
+        let isDrawing = false;
+        let mode = 'pen';
+        let penOnlyMode = true;
+        const penColors = ['#000000', '#e53935', '#1e88e5']; // 黒, 赤, 青
+        let colorIndex = 0;
+        
+        let p1 = { x: 0, y: 0 };
+        let p2 = { x: 0, y: 0 };
+        
+        const activePointers = new Map();
+        let gestureStartTime = 0;
+        let maxPointers = 0;
+
+        function resizeCanvas() {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.putImageData(imageData, 0, 0);
+            applyPenSettings(false);
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function applyPenSettings(showFeedback = true, feedbackColor = '#e0f7ff') {
+            if (mode === 'pen') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = penColors[colorIndex];
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+            } else if (mode === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.lineWidth = 30;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+            }
+            if (showFeedback) {
+                flashFeedback(feedbackColor);
+            }
+        }
+
+        function flashFeedback(color) {
+            document.body.style.backgroundColor = color;
+            setTimeout(() => {
+                document.body.style.backgroundColor = '#ffffff';
+            }, 100);
+        }
+
+        canvas.addEventListener('pointerdown', (e) => {
+            if (activePointers.size === 0) {
+                gestureStartTime = Date.now();
+            }
+            activePointers.set(e.pointerId, e);
+            maxPointers = Math.max(maxPointers, activePointers.size);
+
+            if (activePointers.size > 1) {
+                isDrawing = false;
+                ctx.beginPath();
+            }
+
+            if (activePointers.size === 1) {
+                if (penOnlyMode && e.pointerType === 'touch') return;
+                isDrawing = true;
+                p1 = { x: e.clientX, y: e.clientY };
+                p2 = { x: e.clientX, y: e.clientY };
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p1.x, p1.y);
+                ctx.stroke();
+            }
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (!isDrawing || activePointers.size !== 1) return;
+            e.preventDefault();
+            
+            const p3 = { x: e.clientX, y: e.clientY };
+            const mid1 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+            const mid2 = { x: (p2.x + p3.x) / 2, y: (p2.y + p3.y) / 2 };
+            ctx.beginPath();
+            ctx.moveTo(mid1.x, mid1.y);
+            ctx.quadraticCurveTo(p2.x, p2.y, mid2.x, mid2.y);
+            ctx.stroke();
+            p1 = p2;
+            p2 = p3;
+        });
+
+        function endPointerAction(e) {
+            if (isDrawing) {
+                const midPoint = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                ctx.beginPath();
+                ctx.moveTo(midPoint.x, midPoint.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+                isDrawing = false;
+            }
+            activePointers.delete(e.pointerId);
+
+            if (activePointers.size === 0 && maxPointers > 1) {
+                const duration = Date.now() - gestureStartTime;
+                
+                if (duration < 300) {
+                    // 【修正箇所】ジェスチャーの順番を入れ替え
+                    switch (maxPointers) {
+                        case 5: // ペンのみ ⇔ 指許可
+                            penOnlyMode = !penOnlyMode;
+                            flashFeedback('#e0f7ff');
+                            break;
+                        case 4: // 全消し
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            flashFeedback('#ffffff');
+                            break;
+                        case 3: // 色変更
+                            colorIndex = (colorIndex + 1) % penColors.length;
+                            const feedbackColor = colorIndex === 0 ? '#f0f0f0' : penColors[colorIndex] + '33';
+                            applyPenSettings(true, feedbackColor);
+                            break;
+                        case 2: // ペン ⇔ 消しゴム
+                            mode = (mode === 'pen' ? 'eraser' : 'pen');
+                            applyPenSettings();
+                            break;
+                    }
+                }
+            }
+            
+            if (activePointers.size === 0) {
+                maxPointers = 0;
+            }
+        }
+
+        canvas.addEventListener('pointerup', endPointerAction);
+        canvas.addEventListener('pointerout', endPointerAction);
+        canvas.addEventListener('pointercancel', endPointerAction);
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+    </script>
+</body>
+</html>
