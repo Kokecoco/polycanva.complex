@@ -1,21 +1,24 @@
-<!DOCTYPE html>
-<html>
-<body>
-<script>
 const API = "https://script.google.com/macros/s/AKfycbwvAmBdLKDubcpNKFgc6_ozpWeOXsUHWOu-NOYaIoegxGFxEckIVFNzHkeXgD670GC7/exec";
 
-let seen = new Set();
+let seen = JSON.parse(localStorage.getItem("seen") || "[]");
+seen = new Set(seen);
 
 async function check() {
-  const res = await fetch(API);
-  const data = await res.json();
+  try {
+    const res = await fetch(API);
+    const data = await res.json();
 
-  data.forEach(item => {
-    if (!seen.has(item.id)) {
-      notify(item.title);
-      seen.add(item.id);
-    }
-  });
+    data.forEach(item => {
+      if (!seen.has(item.id)) {
+        notify(item.title);
+        seen.add(item.id);
+      }
+    });
+
+    localStorage.setItem("seen", JSON.stringify([...seen]));
+  } catch (e) {
+    console.log("fetch error:", e);
+  }
 }
 
 function notify(text) {
@@ -29,8 +32,11 @@ function notify(text) {
   });
 }
 
+// 初回許可要求
+if (Notification.permission !== "granted") {
+  Notification.requestPermission();
+}
+
+// ポーリング開始
 setInterval(check, 300000); // 5分
 check();
-</script>
-</body>
-</html>
