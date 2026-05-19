@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+const API = "https://script.google.com/macros/s/AKfycbwvAmBdLKDubcpNKFgc6_ozpWeOXsUHWOu-NOYaIoegxGFxEckIVFNzHkeXgD670GC7/exec";
+
+let seen = new Set();
+
+async function check() {
+  const res = await fetch(API);
+  const data = await res.json();
+
+  data.forEach(item => {
+    if (!seen.has(item.id)) {
+      notify(item.title);
+      seen.add(item.id);
+    }
+  });
+}
+
+function notify(text) {
+  if (Notification.permission !== "granted") {
+    Notification.requestPermission();
+    return;
+  }
+
+  new Notification("Classroom", {
+    body: text
+  });
+}
+
+setInterval(check, 300000); // 5分
+check();
+</script>
+</body>
+</html>
