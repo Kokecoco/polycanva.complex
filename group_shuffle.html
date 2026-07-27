@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ランダムグループ分けメーカー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg1: #F4F2FB;
+    --bg2: #ECEFFC;
+    --card: rgba(255,255,255,0.86);
+    --card-solid: #FFFFFF;
+    --ink: #241F3D;
+    --sub: #8B84A8;
+    --violet: #7B61FF;
+    --violet-deep: #5B3FE0;
+    --mint: #2FD6BE;
+    --grad: linear-gradient(135deg, var(--violet), var(--mint));
+    --chip-off: #F1EEFB;
+    --chip-line: #E3DEF7;
+    --line: #E7E3F6;
+    --shadow-soft: 0 10px 30px rgba(123,97,255,0.12);
+    --shadow-lift: 0 16px 40px rgba(123,97,255,0.20);
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body{
+    margin:0; padding:0; color: var(--ink);
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2));
+    min-height: 100vh;
+    -webkit-user-select:none; user-select:none;
+    overscroll-behavior-y: contain;
+  }
+  textarea, input{ user-select:text; -webkit-user-select:text; }
+  .blob{
+    position: fixed; border-radius: 50%; filter: blur(60px); opacity: 0.35; z-index:0; pointer-events:none;
+  }
+  .blob1{ width:260px; height:260px; background: var(--violet); top:-80px; right:-70px; }
+  .blob2{ width:220px; height:220px; background: var(--mint); bottom:0; left:-90px; opacity:0.25; }
+  .wrap{
+    max-width: 480px; margin: 0 auto; padding: 30px 18px 70px;
+    min-height: 100vh; position: relative; z-index: 1;
+  }
+  header{ text-align:center; padding: 8px 0 26px; }
+  .badge-icon{
+    width:52px; height:52px; margin: 0 auto 12px; border-radius: 18px;
+    background: var(--grad); display:flex; align-items:center; justify-content:center;
+    box-shadow: var(--shadow-lift);
+  }
+  h1{
+    font-family: "Zen Maru Gothic", sans-serif;
+    font-weight: 900; font-size: 22px; color: var(--ink);
+    margin: 0; letter-spacing: 0.01em;
+    display:inline-block; padding: 6px 14px; border-radius: 14px;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  h1.pressing{ background: rgba(123,97,255,0.10); transform: scale(0.96); }
+  .lead{
+    margin-top:8px; font-size: 13.5px; color: var(--sub); font-weight:500;
+  }
+  .card{
+    background: var(--card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.6);
+    border-radius: 24px; box-shadow: var(--shadow-soft);
+    padding: 22px; margin-bottom: 18px;
+  }
+  .card h2{
+    font-family:"Zen Maru Gothic", sans-serif;
+    font-size: 14.5px; font-weight:700; color: var(--ink);
+    margin: 0 0 14px; display:flex; align-items:center; gap:10px;
+  }
+  .card h2 .num{
+    background: var(--grad); color:#fff; width:24px;height:24px;border-radius:9px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700; box-shadow: 0 4px 10px rgba(123,97,255,0.35);
+  }
+  textarea{
+    width:100%; min-height: 118px; border: 1.5px solid var(--line); border-radius: 16px;
+    padding: 14px 16px; font-size: 15px; font-family: inherit; color: var(--ink);
+    resize:vertical; line-height:1.75; background: rgba(255,255,255,0.7);
+  }
+  textarea:focus{ outline:none; border-color: var(--violet); background: #fff; }
+  textarea::placeholder{ color: #B4AFCB; }
+  .count-badge{
+    margin-top:10px; font-size:12px; color:var(--sub); font-weight:600;
+  }
+  .total-badge{
+    margin-top:12px; font-size:12px; color:var(--sub); font-weight:600; text-align:right;
+  }
+  .stepper-row{ display:flex; align-items:center; justify-content:space-between; padding: 11px 2px; }
+  .stepper-row + .stepper-row{ border-top:1px dashed var(--line); }
+  .gsize-row{ display:flex; align-items:center; justify-content:space-between; padding: 10px 2px; }
+  .gsize-row + .gsize-row{ border-top:1px dashed var(--line); }
+  .stepper-label, .gsize-label{ font-size:14px; font-weight:500; color: var(--ink); }
+  .stepper{ display:flex; align-items:center; gap: 10px; }
+  .stepper button{
+    width:32px; height:32px; border-radius:11px; border:none;
+    background: var(--chip-off); color: var(--violet-deep); font-size:17px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .stepper button:active{ background: var(--grad); color:#fff; }
+  .stepper .val{ min-width: 26px; text-align:center; font-size:16px; font-weight:700; color: var(--ink); }
+  .cta{
+    width:100%; padding: 18px; border:none; border-radius: 18px;
+    background: var(--grad);
+    color:#fff; font-size:16px; font-weight:700; font-family:"Zen Maru Gothic", sans-serif;
+    box-shadow: var(--shadow-lift);
+    margin-top: 8px; display:flex; align-items:center; justify-content:center; gap:9px;
+  }
+  .cta:active{ transform: translateY(1px) scale(0.99); }
+  .cta.secondary{
+    background: rgba(255,255,255,0.7); color: var(--violet-deep); border: 1.5px solid var(--chip-line);
+    box-shadow:none; margin-top:14px;
+  }
+  .results{ display:none; }
+  .results.show{ display:block; margin-top:6px; }
+  .group-card{
+    background: var(--card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.6);
+    border-radius: 20px; box-shadow: var(--shadow-soft);
+    padding: 18px 20px; margin-bottom: 12px; opacity:0; transform: translateY(10px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .group-card.in{ opacity:1; transform: translateY(0); }
+  .group-card .gname{
+    font-family:"Zen Maru Gothic", sans-serif; font-weight:700; font-size:13.5px;
+    color: var(--violet-deep); margin-bottom: 10px; display:flex; align-items:center; gap:8px;
+  }
+  .group-card .gname .dot{ width:8px; height:8px; border-radius:50%; background: var(--grad); }
+  .group-card .members{ display:flex; flex-wrap:wrap; gap:8px; }
+  .member-chip{
+    background: var(--chip-off); color: var(--ink); padding:8px 14px;
+    border-radius: 12px; font-size:14px; font-weight:600; border: 1px solid var(--chip-line);
+    opacity:0; transform: scale(0.85);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  .member-chip.in{ opacity:1; transform:scale(1); }
+  .shuffle-anim{
+    text-align:center; padding: 34px 0; color: var(--sub); font-size:13.5px; font-weight:600;
+    display:none;
+  }
+  .shuffle-anim.show{ display:block; }
+  .shuffle-icon{ display:inline-block; animation: spin 0.9s cubic-bezier(.5,0,.5,1) infinite; }
+  @keyframes spin{ from{ transform: rotate(0deg);} to{ transform: rotate(360deg);} }
+
+  /* hidden panel */
+  .overlay{
+    position:fixed; inset:0; background: rgba(36,31,61,0.45); backdrop-filter: blur(2px);
+    display:none; align-items:flex-end; justify-content:center; z-index: 999;
+  }
+  .overlay.show{ display:flex; }
+  .sheet{
+    background: var(--card-solid); width:100%; max-width:480px; border-radius: 26px 26px 0 0;
+    max-height: 84vh; overflow-y:auto; padding: 14px 20px 28px;
+    animation: slideup 0.28s cubic-bezier(.2,.9,.3,1);
+  }
+  @keyframes slideup{ from{ transform: translateY(40px); opacity:0;} to{ transform: translateY(0); opacity:1;} }
+  .drag-handle{ width:40px; height:5px; border-radius:99px; background: var(--line); margin: 0 auto 16px; }
+  .sheet h3{
+    font-family:"Zen Maru Gothic", sans-serif; font-size:16px; color: var(--ink);
+    margin: 0 0 6px;
+  }
+  .sheet .note{ font-size:12px; color: var(--sub); margin-bottom:16px; line-height:1.6; }
+  .pin-row{ padding: 13px 0; border-bottom: 1px dashed var(--line); }
+  .pin-row .pname{ font-size:14px; font-weight:700; margin-bottom:9px; color: var(--ink); }
+  .chip-set{ display:flex; flex-wrap:wrap; gap:7px; }
+  .chip-btn{
+    border:1.5px solid var(--chip-line); background:#fff; color: var(--sub);
+    padding: 7px 13px; border-radius: 11px; font-size:12.5px; font-weight:600;
+  }
+  .chip-btn.active{ background: var(--grad); border-color: transparent; color:#fff; }
+  .sheet-actions{ display:flex; gap:10px; margin-top:18px; }
+  .sheet-actions button{
+    flex:1; padding:14px; border-radius:14px; border:none; font-weight:700; font-size:14px;
+    font-family:"Zen Maru Gothic", sans-serif;
+  }
+  .btn-close{ background: var(--grad); color:#fff; box-shadow: var(--shadow-lift); }
+  .btn-clear{ background: var(--chip-off); color: var(--ink); }
+  .empty-note{ font-size:13px; color: var(--sub); text-align:center; padding: 24px 0; }
+</style>
+</head>
+<body>
+<div class="blob blob1"></div>
+<div class="blob blob2"></div>
+<div class="wrap">
+  <header>
+    <div class="badge-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+        <path d="M4 7h9M4 7l3-3M4 7l3 3M20 17h-9M20 17l-3-3M20 17l-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1 id="title">ランダムグループ分けメーカー</h1>
+    <div class="lead">名前を入れて、ボタン一つでグループ分け</div>
+  </header>
+
+  <div class="card">
+    <h2><span class="num">1</span>参加者を入力</h2>
+    <textarea id="names" placeholder="1行に1人ずつ入力してください&#10;例）&#10;たなか&#10;すずき&#10;やまだ"></textarea>
+    <div class="count-badge" id="countBadge">参加者：0人</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">2</span>グループの設定</h2>
+    <div class="stepper-row">
+      <div class="stepper-label">グループ数</div>
+      <div class="stepper">
+        <button type="button" onclick="changeVal('groupCount',-1)">−</button>
+        <div class="val" id="groupCount">3</div>
+        <button type="button" onclick="changeVal('groupCount',1)">＋</button>
+      </div>
+    </div>
+    <div id="groupSizesList"></div>
+    <div class="total-badge" id="totalBadge"></div>
+  </div>
+
+  <button class="cta" id="shuffleBtn" onclick="startShuffle()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7h9M4 7l3-3M4 7l3 3M20 17h-9M20 17l-3-3M20 17l-3 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    グループ分けする！
+  </button>
+
+  <div class="shuffle-anim" id="shuffleAnim">
+    <svg class="shuffle-icon" width="30" height="30" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke="#7B61FF" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="14 10"/>
+    </svg>
+    <div style="margin-top:10px;">シャッフル中…</div>
+  </div>
+
+  <div class="results" id="results"></div>
+  <button class="cta secondary" id="againBtn" style="display:none;" onclick="startShuffle()">もう一度分ける</button>
+</div>
+
+<!-- hidden panel -->
+<div class="overlay" id="overlay">
+  <div class="sheet">
+    <div class="drag-handle"></div>
+    <h3>配置固定設定</h3>
+    <div class="note">ここで指定した人は、必ずそのグループに入ります。指定しない人はランダムに配分されます。設定後は普通に「グループ分けする」を押すだけでOKです。</div>
+    <div id="pinList"></div>
+    <div class="sheet-actions">
+      <button class="btn-clear" onclick="clearPins()">すべて解除</button>
+      <button class="btn-close" onclick="closeOverlay()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let groupCount = 3;
+let groupSizes = [3, 3, 3]; // per-group target size, index = group
+const MIN = 1, MAX = 20, MIN_SIZE = 0, MAX_SIZE = 30;
+let pinnedMap = {}; // name -> groupIndex (0-based)
+
+function changeVal(which, delta){
+  if(which === 'groupCount'){
+    groupCount = Math.min(MAX, Math.max(MIN, groupCount + delta));
+    document.getElementById('groupCount').textContent = groupCount;
+    while(groupSizes.length < groupCount) groupSizes.push(3);
+    groupSizes.length = groupCount;
+    renderGroupSizes();
+  }
+}
+
+function changeGroupSize(i, delta){
+  groupSizes[i] = Math.min(MAX_SIZE, Math.max(MIN_SIZE, groupSizes[i] + delta));
+  renderGroupSizes();
+}
+
+function renderGroupSizes(){
+  const container = document.getElementById('groupSizesList');
+  container.innerHTML = '';
+  for(let i = 0; i < groupCount; i++){
+    const row = document.createElement('div');
+    row.className = 'gsize-row';
+
+    const label = document.createElement('div');
+    label.className = 'gsize-label';
+    label.textContent = 'グループ' + (i+1) + 'の人数';
+    row.appendChild(label);
+
+    const stepper = document.createElement('div');
+    stepper.className = 'stepper';
+
+    const minus = document.createElement('button');
+    minus.type = 'button';
+    minus.textContent = '−';
+    minus.onclick = () => changeGroupSize(i, -1);
+    stepper.appendChild(minus);
+
+    const val = document.createElement('div');
+    val.className = 'val';
+    val.textContent = groupSizes[i];
+    stepper.appendChild(val);
+
+    const plus = document.createElement('button');
+    plus.type = 'button';
+    plus.textContent = '＋';
+    plus.onclick = () => changeGroupSize(i, 1);
+    stepper.appendChild(plus);
+
+    row.appendChild(stepper);
+    container.appendChild(row);
+  }
+
+  const total = groupSizes.reduce((a,b) => a+b, 0);
+  document.getElementById('totalBadge').textContent = '合計人数の目安：' + total + '人';
+}
+
+const namesArea = document.getElementById('names');
+namesArea.addEventListener('input', updateCount);
+function getNames(){
+  return namesArea.value.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+}
+function updateCount(){
+  const n = getNames();
+  document.getElementById('countBadge').textContent = '参加者：' + n.length + '人';
+}
+
+/* ---- long press on title to open hidden panel ---- */
+const title = document.getElementById('title');
+let pressTimer = null;
+function pressStart(){
+  title.classList.add('pressing');
+  pressTimer = setTimeout(() => {
+    title.classList.remove('pressing');
+    openOverlay();
+    if(navigator.vibrate) navigator.vibrate(30);
+  }, 2200);
+}
+function pressEnd(){
+  title.classList.remove('pressing');
+  clearTimeout(pressTimer);
+}
+title.addEventListener('touchstart', (e) => { pressStart(); }, {passive:true});
+title.addEventListener('touchend', pressEnd);
+title.addEventListener('touchmove', pressEnd);
+title.addEventListener('touchcancel', pressEnd);
+title.addEventListener('mousedown', pressStart);
+title.addEventListener('mouseup', pressEnd);
+title.addEventListener('mouseleave', pressEnd);
+
+function openOverlay(){
+  renderPinList();
+  document.getElementById('overlay').classList.add('show');
+}
+function closeOverlay(){
+  document.getElementById('overlay').classList.remove('show');
+}
+function clearPins(){
+  pinnedMap = {};
+  renderPinList();
+}
+
+function renderPinList(){
+  const names = getNames();
+  const container = document.getElementById('pinList');
+  container.innerHTML = '';
+  if(names.length === 0){
+    container.innerHTML = '<div class="empty-note">まず参加者を入力してください</div>';
+    return;
+  }
+  names.forEach(name => {
+    const row = document.createElement('div');
+    row.className = 'pin-row';
+
+    const pname = document.createElement('div');
+    pname.className = 'pname';
+    pname.textContent = name;
+    row.appendChild(pname);
+
+    const chipSet = document.createElement('div');
+    chipSet.className = 'chip-set';
+
+    const randomChip = document.createElement('button');
+    randomChip.type = 'button';
+    randomChip.className = 'chip-btn' + (pinnedMap[name] === undefined ? ' active' : '');
+    randomChip.textContent = 'ランダム';
+    randomChip.onclick = () => { delete pinnedMap[name]; renderPinList(); };
+    chipSet.appendChild(randomChip);
+
+    for(let g = 0; g < groupCount; g++){
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip-btn' + (pinnedMap[name] === g ? ' active' : '');
+      btn.textContent = 'グループ' + (g+1);
+      btn.onclick = () => { pinnedMap[name] = g; renderPinList(); };
+      chipSet.appendChild(btn);
+    }
+    row.appendChild(chipSet);
+    container.appendChild(row);
+  });
+}
+
+/* ---- shuffle logic ---- */
+function fisherYates(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i+1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function computeGroups(){
+  const names = getNames();
+  const groups = Array.from({length: groupCount}, () => []);
+
+  const validNames = new Set(names);
+  Object.keys(pinnedMap).forEach(n => {
+    if(!validNames.has(n) || pinnedMap[n] >= groupCount){
+      delete pinnedMap[n];
+    }
+  });
+
+  const pinnedNames = names.filter(n => pinnedMap[n] !== undefined);
+  const freeNames = fisherYates(names.filter(n => pinnedMap[n] === undefined));
+
+  pinnedNames.forEach(n => { groups[pinnedMap[n]].push(n); });
+
+  let idx = 0;
+  freeNames.forEach(n => {
+    let placed = false;
+    for(let k = 0; k < groupCount; k++){
+      const g = (idx + k) % groupCount;
+      if(groups[g].length < groupSizes[g]){
+        groups[g].push(n);
+        idx = g + 1;
+        placed = true;
+        break;
+      }
+    }
+    if(!placed){
+      groups[idx % groupCount].push(n);
+      idx++;
+    }
+  });
+
+  return groups;
+}
+
+function startShuffle(){
+  const names = getNames();
+  if(names.length === 0){
+    namesArea.focus();
+    return;
+  }
+  document.getElementById('results').classList.remove('show');
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('againBtn').style.display = 'none';
+  document.getElementById('shuffleBtn').style.display = 'none';
+  document.getElementById('shuffleAnim').classList.add('show');
+
+  const finalGroups = computeGroups();
+
+  setTimeout(() => {
+    document.getElementById('shuffleAnim').classList.remove('show');
+    document.getElementById('shuffleBtn').style.display = 'flex';
+    renderResults(finalGroups);
+  }, 1100);
+}
+
+function renderResults(groups){
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+  container.classList.add('show');
+
+  groups.forEach((members, i) => {
+    const card = document.createElement('div');
+    card.className = 'group-card';
+    const gname = document.createElement('div');
+    gname.className = 'gname';
+    gname.innerHTML = '<span class="dot"></span>グループ ' + (i+1) + '（' + members.length + '人）';
+    card.appendChild(gname);
+    const memWrap = document.createElement('div');
+    memWrap.className = 'members';
+    members.forEach(m => {
+      const chip = document.createElement('div');
+      chip.className = 'member-chip';
+      chip.textContent = m;
+      memWrap.appendChild(chip);
+    });
+    card.appendChild(memWrap);
+    container.appendChild(card);
+
+    setTimeout(() => {
+      card.classList.add('in');
+      Array.from(memWrap.children).forEach((chip, ci) => {
+        setTimeout(() => chip.classList.add('in'), ci * 60);
+      });
+    }, i * 140);
+  });
+
+  document.getElementById('againBtn').style.display = 'block';
+}
+
+updateCount();
+renderGroupSizes();
+</script>
+</body>
+</html>
