@@ -56,6 +56,8 @@
     margin: 0; letter-spacing: 0.01em;
     display:inline-block; padding: 6px 14px; border-radius: 14px;
     transition: transform 0.15s ease, background 0.15s ease;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+    touch-action: none;
   }
   h1.pressing{ background: rgba(123,97,255,0.10); transform: scale(0.96); }
   .lead{
@@ -320,25 +322,57 @@ function updateCount(){
 /* ---- long press on title to open hidden panel ---- */
 const title = document.getElementById('title');
 let pressTimer = null;
-function pressStart(){
+let pressStartX = 0, pressStartY = 0;
+const MOVE_TOLERANCE = 14; // px of finger drift still counted as "holding"
+
+function pressStart(e){
+  const p = (e.touches && e.touches[0]) ? e.touches[0] : e;
+  pressStartX = p.clientX;
+  pressStartY = p.clientY;
   title.classList.add('pressing');
+  clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
     title.classList.remove('pressing');
     openOverlay();
     if(navigator.vibrate) navigator.vibrate(30);
-  }, 2200);
+  }, 1600);
+}
+function pressMove(e){
+  const p = (e.touches && e.touches[0]) ? e.touches[0] : e;
+  const dx = p.clientX - pressStartX;
+  const dy = p.clientY - pressStartY;
+  if(Math.sqrt(dx*dx + dy*dy) > MOVE_TOLERANCE){
+    pressEnd();
+  }
 }
 function pressEnd(){
   title.classList.remove('pressing');
   clearTimeout(pressTimer);
 }
-title.addEventListener('touchstart', (e) => { pressStart(); }, {passive:true});
+
+if(window.PointerEvent){
+  title.addEventListener('pointerup', pressEnd);
+  title.addEventListener('pointercancel', pressEnd);
+  title.addEventListener('pointerleave', pressEnd);
+}
+
+let usingTouch = false;
+title.addEventListener('touchstart', (e) => {
+  usingTouch = true;
+  e.preventDefault();
+  pressStart(e);
+}, {passive:false});
+title.addEventListener('touchmove', pressMove, {passive:true});
 title.addEventListener('touchend', pressEnd);
-title.addEventListener('touchmove', pressEnd);
 title.addEventListener('touchcancel', pressEnd);
-title.addEventListener('mousedown', pressStart);
-title.addEventListener('mouseup', pressEnd);
-title.addEventListener('mouseleave', pressEnd);
+
+title.addEventListener('mousedown', (e) => { if(usingTouch) return; pressStart(e); });
+title.addEventListener('mousemove', (e) => { if(usingTouch) return; pressMove(e); });
+title.addEventListener('mouseup', (e) => { if(usingTouch) return; pressEnd(); });
+title.addEventListener('mouseleave', (e) => { if(usingTouch) return; pressEnd(); });
+
+title.addEventListener('contextmenu', (e) => e.preventDefault());
+title.addEventListener('selectstart', (e) => e.preventDefault());
 
 function openOverlay(){
   renderPinList();
