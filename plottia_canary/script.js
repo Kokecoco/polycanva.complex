@@ -69,6 +69,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const copyQrLinkBtn = document.getElementById("copy-qr-link-btn");
   const downloadQrBtn = document.getElementById("download-qr-btn");
   const closeQrBtn = document.getElementById("close-qr-btn");
+  // AI Settings modal elements
+  const aiSettingsBtn = document.getElementById("ai-settings-btn");
+  const aiSettingsOverlay = document.getElementById("ai-settings-overlay");
+  const aiProviderSelect = document.getElementById("ai-provider-select");
+  const geminiSettings = document.getElementById("gemini-settings");
+  const openrouterSettings = document.getElementById("openrouter-settings");
+  const geminiApiKeyInput = document.getElementById("gemini-api-key");
+  const openrouterApiKeyInput = document.getElementById("openrouter-api-key");
+  const openrouterModelSelect = document.getElementById("openrouter-model");
+  const aiStatusText = document.getElementById("ai-status-text");
+  const testAiConnectionBtn = document.getElementById("test-ai-connection-btn");
+  const saveAiSettingsBtn = document.getElementById("save-ai-settings-btn");
+  const closeAiSettingsBtn = document.getElementById("close-ai-settings-btn");
 
   // --- グローバル変数 ---
   let currentFileId = null;
@@ -169,6 +182,121 @@ document.addEventListener("DOMContentLoaded", () => {
   let drawingBuffer = [];
   const DRAWING_CHUNK_INTERVAL = 100;
   let drawingInterval = null;
+
+  // AI Configuration
+  const AI_STORAGE_KEY = 'plottia_ai_config';
+  let aiConfig = {
+    provider: 'none', // 'none', 'gemini', 'openrouter'
+    geminiApiKey: '',
+    openrouterApiKey: '',
+    openrouterModel: 'google/gemini-2.0-flash-exp:free'
+  };
+
+  // Load AI configuration from localStorage
+  function loadAiConfig() {
+    try {
+      const saved = localStorage.getItem(AI_STORAGE_KEY);
+      if (saved) {
+        aiConfig = { ...aiConfig, ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.warn('Could not load AI config', e);
+    }
+  }
+
+  // Save AI configuration to localStorage
+  function saveAiConfig() {
+    try {
+      localStorage.setItem(AI_STORAGE_KEY, JSON.stringify(aiConfig));
+    } catch (e) {
+      console.warn('Could not save AI config', e);
+    }
+  }
+
+  // Check if AI is configured
+  function isAiConfigured() {
+    if (aiConfig.provider === 'gemini' && aiConfig.geminiApiKey) return true;
+    if (aiConfig.provider === 'openrouter' && aiConfig.openrouterApiKey) return true;
+    return false;
+  }
+
+  // Call AI API
+  async function callAI(prompt, options = {}) {
+    if (!isAiConfigured()) {
+      throw new Error('AI機能が設定されていません。設定ボタンからAPIキーを設定してください。');
+    }
+
+    const { temperature = 0.7, maxTokens = 1000 } = options;
+
+    if (aiConfig.provider === 'gemini') {
+      return await callGeminiAPI(prompt, temperature, maxTokens);
+    } else if (aiConfig.provider === 'openrouter') {
+      return await callOpenRouterAPI(prompt, temperature, maxTokens);
+    }
+    throw new Error('不明なAIプロバイダーです');
+  }
+
+  // Call Gemini API
+  async function callGeminiAPI(prompt, temperature, maxTokens) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${aiConfig.geminiApiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: temperature,
+          maxOutputTokens: maxTokens
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+      return data.candidates[0].content.parts[0].text;
+    }
+    throw new Error('予期しないAPI応答形式です');
+  }
+
+  // Call OpenRouter API
+  async function callOpenRouterAPI(prompt, temperature, maxTokens) {
+    const url = 'https://openrouter.ai/api/v1/chat/completions';
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${aiConfig.openrouterApiKey}`,
+        'HTTP-Referer': window.location.origin,
+        'X-Title': 'Plottia'
+      },
+      body: JSON.stringify({
+        model: aiConfig.openrouterModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: temperature,
+        max_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    if (data.choices && data.choices[0]?.message?.content) {
+      return data.choices[0].message.content;
+    }
+    throw new Error('予期しないAPI応答形式です');
+  }
 
   // Constants
   const noteColors = ["#ffc", "#cfc", "#ccf", "#fcc", "#cff", "#fff"];
@@ -994,6 +1122,86 @@ document.addEventListener("DOMContentLoaded", () => {
     renderShortcutUI();
   });
 
+  // AI Settings handlers
+  aiSettingsBtn?.addEventListener('click', () => {
+    loadAiConfig();
+    aiProviderSelect.value = aiConfig.provider;
+    geminiApiKeyInput.value = aiConfig.geminiApiKey;
+    openrouterApiKeyInput.value = aiConfig.openrouterApiKey;
+    openrouterModelSelect.value = aiConfig.openrouterModel;
+    updateAiSettingsVisibility();
+    updateAiStatus();
+    aiSettingsOverlay.classList.remove('hidden');
+  });
+
+  closeAiSettingsBtn?.addEventListener('click', () => {
+    aiSettingsOverlay.classList.add('hidden');
+  });
+
+  aiProviderSelect?.addEventListener('change', () => {
+    updateAiSettingsVisibility();
+  });
+
+  function updateAiSettingsVisibility() {
+    const provider = aiProviderSelect.value;
+    geminiSettings.classList.toggle('hidden', provider !== 'gemini');
+    openrouterSettings.classList.toggle('hidden', provider !== 'openrouter');
+  }
+
+  function updateAiStatus() {
+    if (aiConfig.provider === 'none') {
+      aiStatusText.textContent = '未設定';
+      aiStatusText.className = '';
+    } else if (isAiConfigured()) {
+      aiStatusText.textContent = '設定済み';
+      aiStatusText.className = 'success';
+    } else {
+      aiStatusText.textContent = 'APIキーが未設定';
+      aiStatusText.className = 'error';
+    }
+  }
+
+  saveAiSettingsBtn?.addEventListener('click', () => {
+    aiConfig.provider = aiProviderSelect.value;
+    aiConfig.geminiApiKey = geminiApiKeyInput.value.trim();
+    aiConfig.openrouterApiKey = openrouterApiKeyInput.value.trim();
+    aiConfig.openrouterModel = openrouterModelSelect.value;
+    saveAiConfig();
+    updateAiStatus();
+    alert('AI設定を保存しました');
+  });
+
+  testAiConnectionBtn?.addEventListener('click', async () => {
+    const originalText = testAiConnectionBtn.textContent;
+    try {
+      testAiConnectionBtn.disabled = true;
+      testAiConnectionBtn.innerHTML = '接続中... <span class="ai-loading"></span>';
+      
+      // Temporarily update config from UI
+      const tempConfig = { ...aiConfig };
+      aiConfig.provider = aiProviderSelect.value;
+      aiConfig.geminiApiKey = geminiApiKeyInput.value.trim();
+      aiConfig.openrouterApiKey = openrouterApiKeyInput.value.trim();
+      aiConfig.openrouterModel = openrouterModelSelect.value;
+      
+      const response = await callAI('こんにちは。応答をテストしています。', { maxTokens: 50 });
+      
+      // Restore temp config
+      aiConfig = tempConfig;
+      
+      aiStatusText.textContent = '接続成功！';
+      aiStatusText.className = 'success';
+      alert('AI接続テスト成功: ' + response.substring(0, 100));
+    } catch (error) {
+      aiStatusText.textContent = '接続失敗: ' + error.message;
+      aiStatusText.className = 'error';
+      alert('AI接続エラー: ' + error.message);
+    } finally {
+      testAiConnectionBtn.disabled = false;
+      testAiConnectionBtn.textContent = originalText;
+    }
+  });
+
   // Integrate custom bindings into the lightweight handler by checking them first
   // We wrap the original handler behavior with a top-level check here
   document.addEventListener('keydown', (e) => {
@@ -1022,7 +1230,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Capture-phase handler to ensure Tab cycles and Enter toggles edit reliably
   document.addEventListener('keydown', (e) => {
     const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+      // Allow Ctrl+Space for AI completion even when editing
+      if (e.ctrlKey && e.key === ' ') {
+        e.preventDefault();
+        aiCompletion();
+        return;
+      }
+      return;
+    }
     if (e.key === 'Tab') {
       e.preventDefault();
       cycleSelection(!e.shiftKey);
@@ -3613,6 +3829,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     // --- END FIX ---
 
+    // Load AI configuration
+    loadAiConfig();
+
     const urlHash = window.location.hash.substring(1);
     const [fileIdFromUrl, hostIdInUrl] = urlHash.split("/");
 
@@ -3800,6 +4019,244 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ----------------------------
+  // AI Features
+  // ----------------------------
+  
+  // AI Styling - Suggest style improvements for selected element
+  async function aiStyling() {
+    if (!selectedElement) {
+      alert('要素を選択してください');
+      return;
+    }
+    
+    const elementType = selectedElement.classList.contains('note') ? 'ノート' :
+                       selectedElement.classList.contains('section') ? 'セクション' :
+                       selectedElement.classList.contains('text-box') ? 'テキストボックス' :
+                       selectedElement.classList.contains('shape') ? 'シェイプ' : '要素';
+    
+    const content = selectedElement.querySelector('.note-content, .section-title, .text-content, .shape-label')?.textContent || '';
+    
+    try {
+      const loadingMsg = alert('AIがスタイルを提案しています...');
+      const prompt = `この${elementType}のデザイン改善案を提案してください。
+内容: "${content}"
+
+以下の形式でJSON形式で応答してください：
+{
+  "color": "背景色の16進数コード（例: #ffcccc）",
+  "suggestion": "スタイリング提案の説明（日本語で簡潔に）"
+}`;
+      
+      const response = await callAI(prompt, { temperature: 0.7, maxTokens: 300 });
+      
+      // Try to parse JSON from response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const suggestion = JSON.parse(jsonMatch[0]);
+        if (confirm(`AIの提案:\n${suggestion.suggestion}\n\n色: ${suggestion.color}\n\nこのスタイルを適用しますか？`)) {
+          // Apply the suggested color
+          const colorDot = selectedElement.querySelector('.color-dot');
+          if (colorDot) {
+            colorDot.dataset.color = suggestion.color;
+            generateOperation('UPDATE_COLOR', {
+              id: selectedElement.id,
+              color: suggestion.color
+            });
+          }
+        }
+      } else {
+        alert('AI応答: ' + response);
+      }
+    } catch (error) {
+      alert('AIスタイリングエラー: ' + error.message);
+    }
+  }
+
+  // AI Template - Generate board template from theme
+  async function aiTemplate() {
+    const theme = prompt('どのようなボードを作成しますか？\n例: プロジェクト計画、ブレインストーミング、週次レビュー');
+    if (!theme) return;
+    
+    try {
+      const loadingMsg = 'AIがテンプレートを生成しています...';
+      alert(loadingMsg);
+      
+      const promptText = `"${theme}"というテーマでデジタルボードのテンプレートを作成してください。
+5-7個の付箋や要素を含めてください。各要素には簡潔なタイトルと説明を付けてください。
+
+以下のJSON形式で応答してください：
+{
+  "notes": [
+    {"content": "タイトル\\n説明文", "x": "100px", "y": "100px", "color": "#ffc"},
+    ...
+  ]
+}
+
+座標は100px-800pxの範囲で、重ならないように配置してください。`;
+      
+      const response = await callAI(promptText, { temperature: 0.8, maxTokens: 1500 });
+      
+      // Try to parse JSON from response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const template = JSON.parse(jsonMatch[0]);
+        if (confirm(`${template.notes?.length || 0}個の要素を作成します。よろしいですか？`)) {
+          // Create notes from template
+          template.notes?.forEach((noteData, index) => {
+            setTimeout(() => {
+              const pos = getNonOverlappingPosition(220, 220);
+              generateOperation('CREATE_NOTE', {
+                x: noteData.x || pos.x,
+                y: noteData.y || pos.y,
+                color: noteData.color || '#ffc',
+                content: noteData.content || `メモ ${index + 1}`
+              });
+            }, index * 100);
+          });
+          scheduleSave(1000);
+        }
+      } else {
+        alert('AI応答: ' + response);
+      }
+    } catch (error) {
+      alert('AIテンプレートエラー: ' + error.message);
+    }
+  }
+
+  // AI Completion - Complete text for selected element
+  async function aiCompletion() {
+    if (!selectedElement) {
+      alert('要素を選択してください');
+      return;
+    }
+    
+    const editable = selectedElement.querySelector('.note-content, .section-title, .text-content, .shape-label, textarea, [contenteditable="true"]');
+    if (!editable) {
+      alert('編集可能な要素を選択してください');
+      return;
+    }
+    
+    const currentText = editable.isContentEditable ? editable.innerHTML : editable.value;
+    if (!currentText.trim()) {
+      alert('テキストを入力してから補完を実行してください');
+      return;
+    }
+    
+    try {
+      const loadingMsg = 'AIが文章を補完しています...';
+      alert(loadingMsg);
+      
+      const prompt = `以下の文章を自然に補完してください。元の文章の続きだけを書いてください。
+
+元の文章:
+${currentText}
+
+補完:`;
+      
+      const response = await callAI(prompt, { temperature: 0.7, maxTokens: 500 });
+      
+      const completion = response.trim();
+      if (confirm(`AI補完:\n\n${completion}\n\nこの補完を追加しますか？`)) {
+        const newContent = currentText + '\n' + completion;
+        if (editable.isContentEditable) {
+          editable.innerHTML = newContent;
+        } else {
+          editable.value = newContent;
+        }
+        generateOperation('UPDATE_CONTENT', {
+          id: selectedElement.id,
+          content: newContent
+        });
+      }
+    } catch (error) {
+      alert('AI補完エラー: ' + error.message);
+    }
+  }
+
+  // AI Spell Check - Check and correct text
+  async function aiSpellCheck() {
+    if (!selectedElement) {
+      alert('要素を選択してください');
+      return;
+    }
+    
+    const editable = selectedElement.querySelector('.note-content, .section-title, .text-content, .shape-label, textarea, [contenteditable="true"]');
+    if (!editable) {
+      alert('編集可能な要素を選択してください');
+      return;
+    }
+    
+    const currentText = editable.isContentEditable ? editable.innerHTML : editable.value;
+    if (!currentText.trim()) {
+      alert('チェックするテキストがありません');
+      return;
+    }
+    
+    try {
+      const loadingMsg = 'AIが文章をチェックしています...';
+      alert(loadingMsg);
+      
+      const prompt = `以下の文章を校正してください。スペルミス、文法エラー、表現の改善点を指摘し、修正案を提示してください。
+
+元の文章:
+${currentText}
+
+校正結果（修正案と説明）:`;
+      
+      const response = await callAI(prompt, { temperature: 0.3, maxTokens: 800 });
+      
+      if (confirm(`AIスペルチェック結果:\n\n${response}\n\nこの内容を確認しました`)) {
+        // User acknowledged the suggestions
+      }
+    } catch (error) {
+      alert('AIスペルチェックエラー: ' + error.message);
+    }
+  }
+
+  // AI Brainstorming - Generate ideas related to selected content
+  async function aiBrainstorm() {
+    const topic = selectedElement ? 
+      (selectedElement.querySelector('.note-content, .section-title, .text-content, .shape-label')?.textContent || '') :
+      prompt('アイデア出しのテーマを入力してください');
+    
+    if (!topic || !topic.trim()) {
+      alert('テーマを入力してください');
+      return;
+    }
+    
+    try {
+      const loadingMsg = 'AIがアイデアを生成しています...';
+      alert(loadingMsg);
+      
+      const prompt = `"${topic}"に関連するアイデアを5つ生成してください。
+各アイデアは簡潔に（1-2文で）説明してください。
+
+アイデアリスト:`;
+      
+      const response = await callAI(prompt, { temperature: 0.9, maxTokens: 800 });
+      
+      if (confirm(`AIアイデア:\n\n${response}\n\nこれらのアイデアを付箋として追加しますか？`)) {
+        // Split response into ideas and create notes
+        const ideas = response.split('\n').filter(line => line.trim() && (line.match(/^\d+[.)]/) || line.match(/^[-*]/)));
+        ideas.slice(0, 5).forEach((idea, index) => {
+          setTimeout(() => {
+            const pos = getNonOverlappingPosition(220, 220);
+            generateOperation('CREATE_NOTE', {
+              x: pos.x,
+              y: pos.y,
+              color: noteColors[index % noteColors.length],
+              content: idea.replace(/^\d+[.)]\s*/, '').replace(/^[-*]\s*/, '').trim()
+            });
+          }, index * 100);
+        });
+        scheduleSave(1000);
+      }
+    } catch (error) {
+      alert('AIアイデア出しエラー: ' + error.message);
+    }
+  }
+
+  // ----------------------------
   // Rapid Capture & Command Palette
   // ----------------------------
   let rapidCaptureMode = false;
@@ -3815,6 +4272,11 @@ document.addEventListener("DOMContentLoaded", () => {
     { id: 'cycle_prev', label: 'Cycle Prev', fn: () => cycleSelection(false) },
     { id: 'toggle_rapid', label: 'Toggle Rapid Capture', fn: () => toggleRapidCapture() },
     { id: 'edit', label: 'Enter Edit', fn: () => { if (selectedElement) enterEditModeFor(selectedElement); } },
+    { id: 'ai_styling', label: 'AI: スタイリング提案', fn: () => aiStyling() },
+    { id: 'ai_template', label: 'AI: テンプレート生成', fn: () => aiTemplate() },
+    { id: 'ai_completion', label: 'AI: 文章補完', fn: () => aiCompletion() },
+    { id: 'ai_spellcheck', label: 'AI: スペルチェック', fn: () => aiSpellCheck() },
+    { id: 'ai_brainstorm', label: 'AI: アイデア出し', fn: () => aiBrainstorm() },
   ];
 
   function renderCommandList(filter = '') {
