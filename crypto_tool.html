@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>短縮公開鍵（ECDH）対応 掲示板暗号化ツール</title>
+</head>
+<body>
+
+    <h1>短縮公開鍵（ECDH）対応 暗号化ツール</h1>
+
+    <!-- 1. 自分の鍵ペア生成と保管 -->
+    <fieldset>
+        <legend>1. 自分の鍵ペア（ECDH P-256）の生成と保管</legend>
+        <p>
+            マスターパスワードを入力して鍵ペアを生成すると、秘密鍵はPBKDF2+AES-GCMで暗号化されてIndexedDBに保存されます。
+        </p>
+        <div>
+            <label for="master-password">マスターパスワード:</label>
+            <input type="password" id="master-password" placeholder="8文字以上のパスワード">
+        </div>
+        <br>
+        <button onclick="generateAndSaveKeyPair()">鍵ペアを生成して保存</button>
+        <button onclick="deleteStoredKeyPair()">自分の鍵ペアを削除</button>
+        <p id="storage-status">ステータス: 確認中...</p>
+    </fieldset>
+
+    <br>
+
+    <!-- 2. 自分の短縮公開鍵 -->
+    <fieldset>
+        <legend>2. 自分の短縮公開鍵（相手に共有用）</legend>
+        <p>この短縮文字列をSNSのプロフィールや掲示板に貼って共有してください。</p>
+        <div>
+            <input type="text" id="my-public-key" size="100" readonly placeholder="鍵ペアを生成すると表示されます">
+            <button onclick="copyMyPublicKey()">コピー</button>
+        </div>
+    </fieldset>
+
+    <br>
+
+    <!-- 3. アドレス帳（他人の公開鍵管理） -->
+    <fieldset>
+        <legend>3. 他人の公開鍵（アドレス帳）の管理</legend>
+        <p>よく連絡する相手の公開鍵に名前（タイトル）をつけて保存できます。</p>
+        
+        <div>
+            <label for="contact-title">名前・タイトル:</label>
+            <input type="text" id="contact-title" placeholder="例: Alice (X: @alice)">
+            <br><br>
+            <label for="contact-pubkey">相手の短縮公開鍵:</label>
+            <input type="text" id="contact-pubkey" size="80" placeholder="相手の短縮公開鍵文字列を貼り付け">
+            <br><br>
+            <button onclick="saveContact()">アドレス帳に保存</button>
+        </div>
+
+        <hr>
+
+        <div>
+            <label for="contact-select">登録済みアドレス帳:</label>
+            <select id="contact-select" onchange="loadSelectedContact()">
+                <option value="">-- アドレス帳から選択 --</option>
+            </select>
+            <button onclick="deleteSelectedContact()">選択中の連絡先を削除</button>
+        </div>
+    </fieldset>
+
+    <br>
+
+    <!-- 4. 鍵ペアのエクスポート/インポート -->
+    <fieldset>
+        <legend>4. 自分の鍵データのエクスポート / インポート</legend>
+        <p>暗号化された状態の自分の鍵データをJSONファイルとしてダウンロード・復元できます。</p>
+        <button onclick="exportKeyPair()">鍵データをファイル出力 (.json)</button>
+        <br><br>
+        <label for="import-file">ファイルから復元:</label>
+        <input type="file" id="import-file" accept=".json" onchange="importKeyPair(event)">
+    </fieldset>
+
+    <br>
+
+    <!-- 5. 暗号化（送信準備） -->
+    <fieldset>
+        <legend>5. メッセージの暗号化（送信準備）</legend>
+        <p>相手の公開鍵を使ってメッセージを暗号化します（アドレス帳から選択可）。</p>
+        <div>
+            <label for="recipient-public-key">送信相手の短縮公開鍵:</label><br>
+            <input type="text" id="recipient-public-key" size="100" placeholder="アドレス帳で選択するか、公開鍵を直接貼り付け">
+        </div>
+        <br>
+        <div>
+            <label for="plain-text">平文メッセージ:</label><br>
+            <textarea id="plain-text" rows="4" cols="80" placeholder="秘密のメッセージを入力"></textarea>
+        </div>
+        <br>
+        <button onclick="encryptMessage()">暗号化実行</button>
+        <br><br>
+        <div>
+            <label for="cipher-text-output">極小ペイロード（SNS/掲示板に投稿するテキスト）:</label><br>
+            <textarea id="cipher-text-output" rows="4" cols="80" readonly></textarea>
+        </div>
+    </fieldset>
+
+    <br>
+
+    <!-- 6. 復号（受信・解読） -->
+    <fieldset>
+        <legend>6. 暗号文の復号（受信・解読）</legend>
+        <p>自分宛ての極小ペイロードを、マスターパスワードで解除した「自分の秘密鍵」で解読します。</p>
+        <div>
+            <label for="decrypt-password">マスターパスワード:</label>
+            <input type="password" id="decrypt-password" placeholder="鍵生成時に設定したパスワード">
+        </div>
+        <br>
+        <div>
+            <label for="cipher-text-input">受け取った極小ペイロード:</label><br>
+            <textarea id="cipher-text-input" rows="4" cols="80" placeholder="掲示板やSNSからコピーしたペイロードを貼り付け"></textarea>
+        </div>
+        <br>
+        <button onclick="decryptMessage()">復号実行</button>
+        <br><br>
+        <div>
+            <label for="decrypted-text">解読されたメッセージ:</label><br>
+            <textarea id="decrypted-text" rows="4" cols="80" readonly></textarea>
+        </div>
+    </fieldset>
+
+    <script>
+        const DB_NAME = "EcdhCryptoDB";
+        const DB_VERSION = 1;
+        const STORE_KEYS = "my_keys";
+        const STORE_CONTACTS = "contacts";
+        const KEY_ID = "user_ecdh_keypair";
+
+        // --- 堅牢な Base64URL 変換ヘルパー ---
+        function bufferToBase64Url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        }
+
+        function base64UrlToBuffer(base64url) {
+            let base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+            while (base64.length % 4) {
+                base64 += "=";
+            }
+            const binary = atob(base64);
+            const len = binary.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // --- IndexedDB ---
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_KEYS)) {
+                        db.createObjectStore(STORE_KEYS);
+                    }
+                    if (!db.objectStoreNames.contains(STORE_CONTACTS)) {
+                        db.createObjectStore(STORE_CONTACTS, { keyPath: "id", autoIncrement: true });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function saveMyKeyToDB(data) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_KEYS, "readwrite");
+                tx.objectStore(STORE_KEYS).put(data, KEY_ID);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function loadMyKeyFromDB() {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_KEYS, "readonly");
+                const req = tx.objectStore(STORE_KEYS).get(KEY_ID);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function deleteMyKeyFromDB() {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_KEYS, "readwrite");
+                tx.objectStore(STORE_KEYS).delete(KEY_ID);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function getAllContacts() {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_CONTACTS, "readonly");
+                const req = tx.objectStore(STORE_CONTACTS).getAll();
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function addContactToDB(title, pubKey) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_CONTACTS, "readwrite");
+                tx.objectStore(STORE_CONTACTS).add({
+                    title: title,
+                    pubKey: pubKey,
+                    createdAt: new Date().toISOString()
+                });
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function deleteContactFromDB(id) {
+            const db = await openDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_CONTACTS, "readwrite");
+                tx.objectStore(STORE_CONTACTS).delete(id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        // --- PBKDF2 + AES-GCM 鍵暗号化 ---
+        async function deriveAesKey(password, salt) {
+            const enc = new TextEncoder();
+            const keyMaterial = await window.crypto.subtle.importKey(
+                "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+            );
+            return await window.crypto.subtle.deriveKey(
+                {
+                    name: "PBKDF2",
+                    salt: salt,
+                    iterations: 600000,
+                    hash: "SHA-256"
+                },
+                keyMaterial,
+                { name: "AES-GCM", length: 256 },
+                false,
+                ["encrypt", "decrypt"]
+            );
+        }
+
+        async function encryptDataWithPassword(dataString, password) {
+            const salt = window.crypto.getRandomValues(new Uint8Array(16));
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const aesKey = await deriveAesKey(password, salt);
+            const enc = new TextEncoder();
+
+            const encryptedBuffer = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv },
+                aesKey,
+                enc.encode(dataString)
+            );
+
+            return {
+                salt: Array.from(salt),
+                iv: Array.from(iv),
+                ciphertext: Array.from(new Uint8Array(encryptedBuffer))
+            };
+        }
+
+        async function decryptDataWithPassword(encryptedContainer, password) {
+            const salt = new Uint8Array(encryptedContainer.salt);
+            const iv = new Uint8Array(encryptedContainer.iv);
+            const ciphertext = new Uint8Array(encryptedContainer.ciphertext);
+            const aesKey = await deriveAesKey(password, salt);
+
+            try {
+                const decryptedBuffer = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    aesKey,
+                    ciphertext
+                );
+                return new TextDecoder().decode(decryptedBuffer);
+            } catch (e) {
+                throw new Error("パスワードが誤っているか、鍵データが改ざんされています。");
+            }
+        }
+
+        // --- アプリ初期化 ---
+        window.onload = async () => {
+            await refreshStatus();
+            await refreshContactList();
+        };
+
+        async function refreshStatus() {
+            const stored = await loadMyKeyFromDB();
+            const statusEl = document.getElementById("storage-status");
+            const publicKeyEl = document.getElementById("my-public-key");
+
+            if (stored) {
+                statusEl.textContent = "ステータス: 自分用の暗号化鍵ペアが保管されています。";
+                publicKeyEl.value = stored.shortPublicKey;
+            } else {
+                statusEl.textContent = "ステータス: 鍵ペアが保存されていません。新規生成してください。";
+                publicKeyEl.value = "";
+            }
+        }
+
+        async function refreshContactList() {
+            const contacts = await getAllContacts();
+            const selectEl = document.getElementById("contact-select");
+            selectEl.innerHTML = '<option value="">-- アドレス帳から選択 --</option>';
+
+            contacts.forEach(c => {
+                const option = document.createElement("option");
+                option.value = c.id;
+                option.dataset.pubkey = c.pubKey;
+                option.textContent = `${c.title} [${c.pubKey.substring(0, 10)}...]`;
+                selectEl.appendChild(option);
+            });
+        }
+
+        // --- 鍵生成 ---
+        async function generateAndSaveKeyPair() {
+            const password = document.getElementById("master-password").value;
+            if (!password || password.length < 8) {
+                alert("セキュリティ向上のため、8文字以上のマスターパスワードを指定してください。");
+                return;
+            }
+
+            try {
+                const keyPair = await window.crypto.subtle.generateKey(
+                    { name: "ECDH", namedCurve: "P-256" },
+                    true,
+                    ["deriveKey", "deriveBits"]
+                );
+
+                const rawPublicKey = await window.crypto.subtle.exportKey("raw", keyPair.publicKey);
+                const shortPublicKey = bufferToBase64Url(rawPublicKey);
+
+                const privateKeyJwk = await window.crypto.subtle.exportKey("jwk", keyPair.privateKey);
+                const encryptedPrivateKey = await encryptDataWithPassword(JSON.stringify(privateKeyJwk), password);
+
+                const payload = {
+                    shortPublicKey: shortPublicKey,
+                    encryptedPrivateKey: encryptedPrivateKey,
+                    createdAt: new Date().toISOString()
+                };
+
+                await saveMyKeyToDB(payload);
+                alert("ECDH鍵ペアを正常に生成し、暗号化保存しました。");
+                await refreshStatus();
+            } catch (err) {
+                alert("鍵生成中にエラーが発生しました: " + err.message);
+            }
+        }
+
+        async function deleteStoredKeyPair() {
+            if (confirm("自分の鍵ペアを削除しますか？送信された暗号文が復号できなくなります。")) {
+                await deleteMyKeyFromDB();
+                await refreshStatus();
+                alert("削除しました。");
+            }
+        }
+
+        function copyMyPublicKey() {
+            const pubKey = document.getElementById("my-public-key").value;
+            if (!pubKey) return;
+            navigator.clipboard.writeText(pubKey);
+            alert("短縮公開鍵をクリップボードにコピーしました。");
+        }
+
+        // --- アドレス帳ロジック ---
+        async function saveContact() {
+            const title = document.getElementById("contact-title").value.trim();
+            const pubKey = document.getElementById("contact-pubkey").value.trim();
+
+            if (!title || !pubKey) {
+                alert("名前と短縮公開鍵を入力してください。");
+                return;
+            }
+
+            await addContactToDB(title, pubKey);
+            document.getElementById("contact-title").value = "";
+            document.getElementById("contact-pubkey").value = "";
+            alert("アドレス帳に登録しました。");
+            await refreshContactList();
+        }
+
+        function loadSelectedContact() {
+            const selectEl = document.getElementById("contact-select");
+            const selectedOption = selectEl.options[selectEl.selectedIndex];
+            if (selectedOption && selectedOption.dataset.pubkey) {
+                document.getElementById("recipient-public-key").value = selectedOption.dataset.pubkey;
+            }
+        }
+
+        async function deleteSelectedContact() {
+            const selectEl = document.getElementById("contact-select");
+            const id = selectEl.value;
+            if (!id) {
+                alert("削除する連絡先を選択してください。");
+                return;
+            }
+
+            if (confirm("選択した連絡先を削除しますか？")) {
+                await deleteContactFromDB(Number(id));
+                alert("削除しました。");
+                await refreshContactList();
+                document.getElementById("recipient-public-key").value = "";
+            }
+        }
+
+        // --- エクスポート / インポート ---
+        async function exportKeyPair() {
+            const stored = await loadMyKeyFromDB();
+            if (!stored) {
+                alert("保存されている鍵データがありません。");
+                return;
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(stored, null, 2));
+            const a = document.createElement('a');
+            a.href = dataStr;
+            a.download = `ecdh_keypair_${Date.now()}.json`;
+            a.click();
+            a.remove();
+        }
+
+        async function importKeyPair(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data.shortPublicKey || !data.encryptedPrivateKey) {
+                        throw new Error("フォーマットが不正です。");
+                    }
+                    await saveMyKeyToDB(data);
+                    alert("鍵データを復元しました。");
+                    await refreshStatus();
+                } catch (err) {
+                    alert("読み込み失敗: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // --- バイナリ結合による極小ペイロード暗号化 ---
+        async function encryptMessage() {
+            const recipientPubKeyStr = document.getElementById("recipient-public-key").value.trim();
+            const plainText = document.getElementById("plain-text").value;
+
+            if (!recipientPubKeyStr || !plainText) {
+                alert("相手の短縮公開鍵とメッセージを入力してください。");
+                return;
+            }
+
+            try {
+                const recipientRawBuffer = base64UrlToBuffer(recipientPubKeyStr);
+                const recipientPublicKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    recipientRawBuffer,
+                    { name: "ECDH", namedCurve: "P-256" },
+                    false,
+                    []
+                );
+
+                const ephemeralKeyPair = await window.crypto.subtle.generateKey(
+                    { name: "ECDH", namedCurve: "P-256" },
+                    true,
+                    ["deriveKey"]
+                );
+
+                const sharedAesKey = await window.crypto.subtle.deriveKey(
+                    { name: "ECDH", public: recipientPublicKey },
+                    ephemeralKeyPair.privateKey,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["encrypt"]
+                );
+
+                const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                const enc = new TextEncoder();
+                const encryptedBuffer = await window.crypto.subtle.encrypt(
+                    { name: "AES-GCM", iv: iv },
+                    sharedAesKey,
+                    enc.encode(plainText)
+                );
+
+                const ephemeralRawPub = await window.crypto.subtle.exportKey("raw", ephemeralKeyPair.publicKey);
+
+                // バイナリ連結: [エフェメラル公開鍵 65B] + [IV 12B] + [暗号文]
+                const combinedBuffer = new Uint8Array(ephemeralRawPub.byteLength + iv.byteLength + encryptedBuffer.byteLength);
+                combinedBuffer.set(new Uint8Array(ephemeralRawPub), 0);
+                combinedBuffer.set(iv, ephemeralRawPub.byteLength);
+                combinedBuffer.set(new Uint8Array(encryptedBuffer), ephemeralRawPub.byteLength + iv.byteLength);
+
+                // 1つの Base64URL 文字列に変換
+                const payloadBase64Url = bufferToBase64Url(combinedBuffer.buffer);
+                document.getElementById("cipher-text-output").value = payloadBase64Url;
+            } catch (err) {
+                alert("暗号化処理に失敗しました: " + err.message);
+            }
+        }
+
+        // --- バイナリ分割による復号 ---
+        async function decryptMessage() {
+            const password = document.getElementById("decrypt-password").value;
+            const payloadStr = document.getElementById("cipher-text-input").value.trim();
+
+            if (!password || !payloadStr) {
+                alert("マスターパスワードと極小ペイロードを入力してください。");
+                return;
+            }
+
+            const stored = await loadMyKeyFromDB();
+            if (!stored) {
+                alert("復号に必要な自分の鍵データがブラウザに存在しません。");
+                return;
+            }
+
+            try {
+                const privateKeyJwkJson = await decryptDataWithPassword(stored.encryptedPrivateKey, password);
+                const privateKeyJwk = JSON.parse(privateKeyJwkJson);
+
+                const myPrivateKey = await window.crypto.subtle.importKey(
+                    "jwk",
+                    privateKeyJwk,
+                    { name: "ECDH", namedCurve: "P-256" },
+                    false,
+                    ["deriveKey"]
+                );
+
+                // バイナリデータに復元
+                const combinedBuffer = base64UrlToBuffer(payloadStr);
+                const combinedBytes = new Uint8Array(combinedBuffer);
+
+                if (combinedBytes.length < 65 + 12) {
+                    throw new Error("データ長が短すぎます（不正なペイロード）。");
+                }
+
+                // スライス分割
+                const ephemeralRawBuffer = combinedBytes.slice(0, 65).buffer;
+                const ivBuffer = combinedBytes.slice(65, 65 + 12);
+                const cipherBuffer = combinedBytes.slice(65 + 12).buffer;
+
+                const ephemeralPublicKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    ephemeralRawBuffer,
+                    { name: "ECDH", namedCurve: "P-256" },
+                    false,
+                    []
+                );
+
+                const sharedAesKey = await window.crypto.subtle.deriveKey(
+                    { name: "ECDH", public: ephemeralPublicKey },
+                    myPrivateKey,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["decrypt"]
+                );
+
+                const decryptedBuffer = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: ivBuffer },
+                    sharedAesKey,
+                    cipherBuffer
+                );
+
+                document.getElementById("decrypted-text").value = new TextDecoder().decode(decryptedBuffer);
+            } catch (err) {
+                alert("復号失敗: パスワード違い、または暗号文が破損・改ざんされています (" + err.message + ")");
+            }
+        }
+    </script>
+</body>
+</html>
